@@ -8,7 +8,8 @@ export default defineConfig({
       includeAssets: ["favicon.svg"],
       // Character art is loaded on demand and must not make the install cache huge.
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg}", "assets/backgrounds/**/*.{png,jpg,jpeg,webp}"],
+        globPatterns: ["**/*.{js,css,html,svg}", "assets/backgrounds/**/*.{png,jpg,jpeg,webp}", "assets/audio/**/*.{mp3,ogg}"],
+        maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /\/assets\/characters\/.*\.png$/i,

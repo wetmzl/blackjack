@@ -1,9 +1,14 @@
 import { expect, test } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { createDefaultSave } from "../../src/persistence/boot";
 import { createMatch } from "../../src/core/match/reducer";
 import type { MatchHistoryRecord } from "../../src/core/match/history";
 import type { MatchState } from "../../src/core/match/types";
 import { getAiTurnDelayMs } from "../../src/presentation/ai-timing";
+
+const wDialogue = (JSON.parse(readFileSync(new URL("../../src/content/characters/data/w.json", import.meta.url), "utf8")) as {
+  dialogue: { PLAYER_BLACKJACK: string[]; PLAYER_WIN_ROUND: string[] };
+}).dialogue;
 
 function findTurnsMatch(prefix: string) {
   for (let index = 0; index < 10_000; index += 1) {
@@ -11,6 +16,14 @@ function findTurnsMatch(prefix: string) {
     if (match.round.phase === "turns" && match.round.currentActor === "opponent") return match;
   }
   throw new Error("No deterministic turns fixture found");
+}
+
+function findPlayerBlackjackMatch() {
+  for (let index = 0; index < 10_000; index += 1) {
+    const match = createMatch(`e2e-player-blackjack-${index}`);
+    if (match.round.outcome?.reason === "blackjack" && match.round.outcome.winner === "player") return match;
+  }
+  throw new Error("No deterministic player Blackjack fixture found");
 }
 
 function playerWinSummary(opponentId = "w"): MatchState {
@@ -22,6 +35,16 @@ function playerWinSummary(opponentId = "w"): MatchState {
     view: "match-summary",
     outcome: { winner: "player", reason: "opponent-killed" },
     round: { ...match.round, phase: "roulette-result", currentActor: null }
+  };
+}
+
+function opponentPenaltyReveal(): MatchState {
+  const match = findTurnsMatch("audio-confirm");
+  const outcome = { winner: "player" as const, reason: "comparison" as const, penaltyTarget: "opponent" as const, bulletsAdded: 1, playerSkillReward: 1 };
+  return {
+    ...match,
+    roulette: { ...match.roulette, opponent: { capacity: 6, bullets: 6 } },
+    round: { ...match.round, phase: "round-reveal", currentActor: null, outcome }
   };
 }
 
@@ -97,6 +120,67 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   await expect(page.locator(".footer")).toContainText("博士战绩 // 7");
 });
 
+test("技能管理展示严格装备状态，清档确认可取消或重置", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.profile.matchesPlayed = 5;
+  imported.profile.wins = 3;
+  imported.history.push({
+    id: "history-skill-ui", timestamp: "2026-08-30T00:00:00.000Z", opponentId: "w", winner: "player", escaped: false,
+    finalRoulette: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 0 } },
+    busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 }
+  });
+  await page.goto("/");
+  await page.locator("button.quiet-button[data-open='settings']").click();
+  await page.locator("#save-file").setInputFiles({ name: "skills.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator(".footer")).toContainText("博士战绩 // 5");
+  await page.getByRole("button", { name: "技能管理" }).click();
+  const skills = page.locator("#skills");
+  await expect(skills.locator(".loadout-skill")).toHaveCount(6);
+  await expect(skills.locator("input[data-equip-skill]:checked")).toHaveCount(4);
+  await expect(skills.locator("input[data-equip-skill='night-queen']")).toBeDisabled();
+  await skills.locator("[data-close]").click();
+  await page.locator("button.quiet-button[data-open='settings']").click();
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.locator("[data-reset]").click();
+  await expect(page.locator(".footer")).toContainText("博士战绩 // 5");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator("[data-reset]").click();
+  await expect(page.locator(".footer")).toContainText("博士战绩 // 0");
+  await expect(page.locator("[data-open-trophies]")).toContainText("0 局");
+});
+
+test("无效 IndexedDB 存档可导出原始标记，清理取消或确认均安全", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined, configurable: true }));
+  await page.goto("/");
+  await expect(page.locator("main.lobby-shell")).toBeVisible();
+  await page.evaluate(async () => {
+    const request = indexedDB.open("house-of-chances");
+    await new Promise<void>((resolve, reject) => {
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const transaction = request.result.transaction("saves", "readwrite");
+        transaction.objectStore("saves").put({ id: "current", data: { marker: "raw-invalid-record", schemaVersion: 3 } });
+        transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  });
+  await page.reload();
+  await expect(page.locator("main.error-shell")).toContainText("存档无效");
+  await expect(page.locator("[data-export-invalid]")).toBeVisible();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.locator("[data-export-invalid]").click()]);
+  expect(download.suggestedFilename()).toBe("house-of-chances-invalid-save.json");
+  const exportedPath = await download.path();
+  expect(exportedPath ? readFileSync(exportedPath, "utf8") : "").toContain("raw-invalid-record");
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await page.locator("[data-reset-invalid]").click();
+  await expect(page.locator("main.error-shell")).toBeVisible();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator("[data-reset-invalid]").click();
+  await expect(page.locator("main.lobby-shell")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("main.lobby-shell")).toBeVisible();
+});
+
 test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
@@ -107,6 +191,19 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await expect(page.getByRole("heading", { name: "博士胜利" })).toBeVisible();
   await expect(page.locator(".summary-character")).toHaveAttribute("src", /w-defeated-summary-chair\.png/);
   await expect(page.locator(".presentation")).toHaveCount(0);
+});
+
+test("玩家 Blackjack 只使用 Blackjack 对话池", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.settings.reducedMotion = true;
+  imported.activeMatch = findPlayerBlackjackMatch();
+  await page.goto("/");
+  await page.locator("button.quiet-button[data-open='settings']").click();
+  await page.locator("#save-file").setInputFiles({ name: "blackjack-dialogue.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
+  const line = await page.locator("#dialogue-text").textContent();
+  expect(wDialogue.PLAYER_BLACKJACK).toContain(line);
+  expect(wDialogue.PLAYER_WIN_ROUND).not.toContain(line);
 });
 
 test("战利品陈列室显示胜利横图、失败透明图并用弹窗查看统计", async ({ page }) => {
@@ -176,6 +273,7 @@ test("AI 发牌后强制等待并只在中点切换一次展示动作", async ({
 });
 
 test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.addInitScript(() => {
     const nativeSetTimeout = window.setTimeout.bind(window);
     window.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: any[]) =>
@@ -187,7 +285,8 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   await page.goto("/");
   await page.locator("button.quiet-button[data-open='settings']").click();
   await page.locator("#save-file").setInputFiles({ name: "active-match.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
-  await expect(page.locator("#dialogue-text")).toHaveAttribute("data-typing", "false");
+  await expect(page.locator("main.table-shell")).toBeVisible();
+  await expect(page.locator(".dialogue")).not.toHaveText("“”");
   await expect(page.locator(".character-portrait")).not.toHaveClass(/character-shake/);
   let sawReveal = false;
   let sawTriggerResult = false;
@@ -197,17 +296,23 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
       sawReveal = true;
       await expect(page.locator(".round-result")).toBeVisible();
       await expect(page.locator(".round-result")).toContainText(/本轮|平局|获胜|爆牌|黑杰克/);
+      const isPush = (await page.locator(".round-result").textContent())?.includes("平局") ?? false;
       const ack = page.locator("button[data-action*='ACK_ROUND_RESULT']:not([disabled])");
       if (await ack.count()) {
+        await expect(ack).toHaveText("确认结果");
         await ack.click();
-        await page.waitForFunction(() => document.querySelector("main.table-shell")?.getAttribute("data-phase") !== "round-reveal");
+        if (isPush) {
+          await expect(page.locator("main.table-shell")).not.toHaveAttribute("data-phase", /roulette-(reaction|trigger)/);
+        } else {
+          await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", /roulette-(reaction|trigger)/);
+        }
       } else await page.waitForTimeout(80);
     }
-    else if (phase === "roulette-reaction") {
+    else if (phase === "roulette-reaction" || phase === "roulette-trigger") {
       const trigger = page.locator("button[data-action*='TRIGGER_ROULETTE']:not([disabled])");
       if (await trigger.count()) {
         await trigger.click();
-        await page.waitForFunction(() => document.querySelector("main.table-shell")?.getAttribute("data-phase") !== "roulette-reaction");
+        await page.waitForFunction((previousPhase) => document.querySelector("main.table-shell")?.getAttribute("data-phase") !== previousPhase, phase);
       } else await page.waitForTimeout(80);
     }
     else if (phase === "roulette-result") { sawTriggerResult = true; const ack = page.locator("button[data-action*='ACK_TRIGGER_RESULT']:not([disabled])"); if (await ack.count()) await ack.click(); else await page.waitForTimeout(80); }
@@ -224,4 +329,54 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await page.locator("[data-open-trophies]").click();
   await expect(page.locator(".trophy-card")).toHaveCount(1);
+});
+
+test("确认结果启动循环心跳且扣扳机立即切换为击发音效", async ({ page }) => {
+  await page.addInitScript(() => {
+    type AudioEvent = { type: "start" | "stop"; duration: number; loop: boolean };
+    const target = window as typeof window & { __audioEvents: AudioEvent[] };
+    target.__audioEvents = [];
+    const NativeAudioContext = window.AudioContext;
+    class ObservedAudioContext extends NativeAudioContext {
+      override createBufferSource(): AudioBufferSourceNode {
+        const source = super.createBufferSource();
+        const nativeStart = source.start.bind(source);
+        const nativeStop = source.stop.bind(source);
+        source.start = (...args) => {
+          target.__audioEvents.push({ type: "start", duration: source.buffer?.duration ?? 0, loop: source.loop });
+          nativeStart(...args);
+        };
+        source.stop = (...args) => {
+          target.__audioEvents.push({ type: "stop", duration: source.buffer?.duration ?? 0, loop: source.loop });
+          nativeStop(...args);
+        };
+        return source;
+      }
+    }
+    Object.defineProperty(window, "AudioContext", { value: ObservedAudioContext, configurable: true });
+  });
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.settings.reducedMotion = false;
+  imported.activeMatch = opponentPenaltyReveal();
+  await page.goto("/");
+  await page.locator("button.quiet-button[data-open='settings']").click();
+  await page.locator("#save-file").setInputFiles({ name: "audio-reveal.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
+
+  await page.getByRole("button", { name: "确认结果" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "roulette-trigger");
+  await page.waitForFunction(() => {
+    const events = (window as typeof window & { __audioEvents: Array<{ type: string; duration: number; loop: boolean }> }).__audioEvents;
+    return events.some((event) => event.type === "start" && event.loop && event.duration > 10);
+  });
+  const afterConfirm = await page.evaluate(() => (window as typeof window & { __audioEvents: Array<{ type: string; duration: number; loop: boolean }> }).__audioEvents);
+  expect(afterConfirm.some((event) => event.type === "start" && !event.loop && event.duration > 0.1 && event.duration < 0.4)).toBe(true);
+
+  await page.getByRole("button", { name: "静观好戏" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "roulette-result");
+  await page.waitForFunction(() => {
+    const events = (window as typeof window & { __audioEvents: Array<{ type: string; duration: number; loop: boolean }> }).__audioEvents;
+    return events.some((event) => event.type === "stop" && event.loop)
+      && events.some((event) => event.type === "start" && !event.loop && event.duration > 0.4 && event.duration < 0.8);
+  });
 });

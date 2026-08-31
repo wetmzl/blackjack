@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "character.schema.json",
+  "title": "命运牌桌角色定义",
+  "description": "角色档案、结算文案、资源、AI 参数和互斥对话池的标准格式。角色 JSON 通过顶层 $schema 引用本文件，编辑器会显示这里的中文说明。",
+  "$comment": "对话解析顺序固定为：轮盘状态 > 本轮结果特殊牌型 > Blackjack/Bust/Comparison/Push > 当前轮最新行动 > MATCH_START。一次渲染只会选择一个池。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "assets", "profile", "matchSummary", "revolverPlacement", "ai", "dialogue"],
+  "properties": {
+    "$schema": {
+      "const": "../character.schema.json",
+      "description": "固定的角色 JSON Schema 相对路径；不要修改。"
+    },
+    "assets": {
+      "type": "object",
+      "description": "该角色在牌桌、轮盘和总结页使用的图像资源。",
+      "additionalProperties": false,
+      "required": ["relaxed", "conflicted", "mocking", "threatened", "staffRevolver", "unconscious", "defeatedSummary"],
+      "properties": {
+        "relaxed": { "$ref": "#/$defs/assetPath", "description": "普通牌桌立绘。" },
+        "conflicted": { "$ref": "#/$defs/assetPath", "description": "AI 思考时立绘。" },
+        "mocking": { "$ref": "#/$defs/assetPath", "description": "对手赢得一轮时立绘。" },
+        "threatened": { "$ref": "#/$defs/assetPath", "description": "对手等待扣扳机时立绘。" },
+        "staffRevolver": { "$ref": "#/$defs/assetPath", "description": "工作人员持有的左轮叠加图。" },
+        "unconscious": { "$ref": "#/$defs/assetPath", "description": "对手被击发命中后的牌桌立绘。" },
+        "defeatedSummary": { "$ref": "#/$defs/assetPath", "description": "玩家获胜总结页全身图。" }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "description": "大厅角色档案。",
+      "additionalProperties": false,
+      "required": ["description"],
+      "properties": { "description": { "type": "string", "minLength": 1, "description": "角色档案正文。" } }
+    },
+    "matchSummary": {
+      "type": "object",
+      "description": "整局结束后的角色专属文案。",
+      "additionalProperties": false,
+      "required": ["playerVictory", "playerDefeat", "escaped"],
+      "properties": {
+        "playerVictory": { "type": "string", "minLength": 1, "description": "玩家击败该角色。" },
+        "playerDefeat": { "type": "string", "minLength": 1, "description": "玩家败给该角色。" },
+        "escaped": { "type": "string", "minLength": 1, "description": "玩家中途离席。" }
+      }
+    },
+    "revolverPlacement": {
+      "type": "object",
+      "description": "工作人员左轮相对角色立绘的位置，单位为 CSS 像素。",
+      "additionalProperties": false,
+      "required": ["top", "left", "mobileTop", "mobileLeft"],
+      "properties": {
+        "top": { "type": "number", "description": "桌面端 top。" },
+        "left": { "type": "number", "description": "桌面端 left。" },
+        "mobileTop": { "type": "number", "description": "移动端 top。" },
+        "mobileLeft": { "type": "number", "description": "移动端 left。" }
+      }
+    },
+    "ai": {
+      "type": "object",
+      "description": "角色 AI 决策参数，范围均为 0 到 1。",
+      "additionalProperties": false,
+      "required": ["rationality", "personalityHitProbability"],
+      "properties": {
+        "rationality": { "type": "number", "minimum": 0, "maximum": 1, "description": "采用概率最优动作的倾向。" },
+        "personalityHitProbability": { "type": "number", "minimum": 0, "maximum": 1, "description": "性格层面的 Hit 倾向。" }
+      }
+    },
+    "dialogue": {
+      "type": "object",
+      "description": "有限状态对话池。每个字段都必填；解析器每次只选择其中一个字段。",
+      "additionalProperties": false,
+      "required": [
+        "MATCH_START", "PLAYER_HIT", "PLAYER_STAND",
+        "OPPONENT_FIRST_HIT", "OPPONENT_FIRST_STAND", "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND",
+        "PLAYER_BLACKJACK", "OPPONENT_BLACKJACK", "PLAYER_BUST", "OPPONENT_BUST",
+        "PLAYER_SURVIVED_TRIGGER", "OPPONENT_SURVIVED_TRIGGER",
+        "PLAYER_WIN_ROUND", "OPPONENT_WIN_ROUND", "PUSH_ROUND",
+        "PLAYER_TRIGGER_READY", "OPPONENT_TRIGGER_READY", "PLAYER_TRIGGER_HIT", "OPPONENT_TRIGGER_HIT",
+        "SPECIAL_TWENTY_ONE_PUSH", "SPECIAL_ONE_POINT_FINISH", "SPECIAL_SMALL_HAND_TWENTY_ONE", "SPECIAL_LOW_PUSH"
+      ],
+      "properties": {
+        "MATCH_START": { "$ref": "#/$defs/dialoguePool", "description": "本轮尚无行动时。" },
+        "PLAYER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "当前轮最新有效行动是玩家 Hit。" },
+        "PLAYER_STAND": { "$ref": "#/$defs/dialoguePool", "description": "玩家刚刚 Stand，且本轮尚未结算。" },
+        "OPPONENT_FIRST_HIT": { "$ref": "#/$defs/dialoguePool", "description": "AI 在当前轮第一次行动选择 Hit。" },
+        "OPPONENT_FIRST_STAND": { "$ref": "#/$defs/dialoguePool", "description": "AI 在当前轮第一次行动选择 Stand，且没有立即结算。" },
+        "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": { "$ref": "#/$defs/dialoguePool", "description": "玩家已 Stand，AI 在当前轮完成第一次 Hit 后进行第二次或更多次 Hit。" },
+        "PLAYER_BLACKJACK": { "$ref": "#/$defs/dialoguePool", "description": "仅 reason=blackjack 且玩家独有 Blackjack；不会落入 PLAYER_WIN_ROUND。" },
+        "OPPONENT_BLACKJACK": { "$ref": "#/$defs/dialoguePool", "description": "仅 reason=blackjack 且 AI 独有 Blackjack；不会落入 OPPONENT_WIN_ROUND。" },
+        "PLAYER_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅玩家爆牌。" },
+        "OPPONENT_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅 AI 爆牌。" },
+        "PLAYER_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "玩家扣下扳机但未击发。" },
+        "OPPONENT_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "AI 扣下扳机但未击发。" },
+        "PLAYER_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由玩家获胜；不含 Blackjack、爆牌和特殊牌型。" },
+        "OPPONENT_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由 AI 获胜；不含 Blackjack、爆牌和特殊牌型。" },
+        "PUSH_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "不属于特殊 21 对 21 或低点数平局的普通平局。" },
+        "PLAYER_TRIGGER_READY": { "$ref": "#/$defs/dialoguePool", "description": "玩家受罚，确认结果后等待点击“扣下扳机”。" },
+        "OPPONENT_TRIGGER_READY": { "$ref": "#/$defs/dialoguePool", "description": "AI 受罚，确认结果后等待点击“静观好戏”。" },
+        "PLAYER_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "玩家扣下扳机并击发。" },
+        "OPPONENT_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "AI 扣下扳机并击发。" },
+        "SPECIAL_TWENTY_ONE_PUSH": { "$ref": "#/$defs/dialoguePool", "description": "双方都是 21；优先于其他 21 类特殊牌型。" },
+        "SPECIAL_ONE_POINT_FINISH": { "$ref": "#/$defs/dialoguePool", "description": "普通比较中 21:20 或 20:19 的一分胜负；多张牌 21 优先。" },
+        "SPECIAL_SMALL_HAND_TWENTY_ONE": { "$ref": "#/$defs/dialoguePool", "description": "任一方用 4 至 5 张牌凑到 21；仅双方 21 的优先级更高。" },
+        "SPECIAL_LOW_PUSH": { "$ref": "#/$defs/dialoguePool", "description": "双方以相同的 12 至 16 点形成低点数平局。" }
+      }
+    }
+  },
+  "$defs": {
+    "assetPath": { "type": "string", "minLength": 1, "pattern": "^/assets/" },
+    "dialoguePool": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

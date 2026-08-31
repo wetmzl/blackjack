@@ -5,7 +5,7 @@ import type { CharacterData, CharacterDefinition, CharacterMetadata } from "./ty
 type DataLoader = () => Promise<{ default: unknown }>;
 
 const DATA_LOADERS = import.meta.glob<{ default: unknown }>("./data/*.json");
-const METADATA_KEYS = ["id", "name", "subtitle", "tier", "description", "previewImage", "trophyImage"] as const satisfies readonly (keyof CharacterMetadata)[];
+const METADATA_KEYS = ["id", "name", "subtitle", "tier", "previewImage", "trophyImage"] as const satisfies readonly (keyof CharacterMetadata)[];
 
 function dataPath(dataFile: string): string {
   return `./data/${dataFile}`;

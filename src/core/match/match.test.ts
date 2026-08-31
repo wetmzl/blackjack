@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createCard } from "../blackjack/card";
-import { createHand } from "../blackjack/hand";
+import { createHand, handValue } from "../blackjack/hand";
 import { createRng } from "../rng/seeded";
 import { buildObservation } from "../ai/observation";
 import { decideAiAction, finalHitProbability } from "../ai/policy";
-import { getSkillDefinition } from "../skills/definitions";
-import { applySkillEffect } from "../skills/effects";
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
-import { createMatch, gameReducer, getLegalActions } from "./reducer";
+import { createMatch, gameReducer, getLegalActions, resolveRound } from "./reducer";
 import type { MatchState, ParticipantState, RoundState } from "./types";
 
 const W_DIALOGUE = wData.dialogue;
@@ -32,14 +30,14 @@ function findSeed(predicate: (state: MatchState) => boolean): string {
 }
 
 describe("createMatch and legal actions", () => {
-  it("deals a round, gives one opening skill, and starts with the opponent", () => {
+  it("deals a round, gives two opening skills with early preparation, and starts with the opponent", () => {
     const state = createMatch(findSeed((candidate) => candidate.round.phase === "turns"));
     expect(state.round.phase).toBe("turns");
     expect(state.round.starter).toBe("opponent");
     expect(state.round.currentActor).toBe("opponent");
     expect(state.player.hand.cards).toHaveLength(2);
     expect(state.opponent.hand.cards).toHaveLength(2);
-    expect(state.skills.cards).toHaveLength(1);
+    expect(state.skills.cards).toHaveLength(2);
     expect(getLegalActions(state)).toEqual(expect.arrayContaining([{ type: "AI_TURN" }, { type: "ESCAPE_MATCH" }]));
     expect(getLegalActions(state)).not.toContainEqual({ type: "PLAYER_HIT" });
   });
@@ -73,10 +71,9 @@ describe("createMatch and legal actions", () => {
   it("keeps the opponent as starter after a survived round", () => {
     const state = createMatch(findSeed((candidate) => candidate.round.phase === "turns"));
     const completed = gameReducer(withHands(state, [card("10"), card("7")], [card("10"), card("7")]), { type: "PLAYER_STAND" });
-    // Both hands are equal only after the opponent stands; the first transition is still in turns.
-    const afterOpponent = gameReducer(completed, { type: "AI_STAND" });
-    expect(afterOpponent.round.phase).toBe("round-reveal");
-    const next = gameReducer(afterOpponent, { type: "ACK_ROUND_RESULT" });
+    const reveal = gameReducer(completed, { type: "AI_STAND" });
+    expect(reveal.round.phase).toBe("round-reveal");
+    const next = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
     expect(next.round.index).toBe(1);
     expect(next.round.starter).toBe("opponent");
     expect(next.round.currentActor).toBe("opponent");
@@ -84,13 +81,14 @@ describe("createMatch and legal actions", () => {
 });
 
 describe("round resolution and roulette", () => {
-  it("pauses both-Blackjack as a push before starting another round", () => {
+  it("waits for confirmation after both players open with Blackjack", () => {
     const seed = findSeed((candidate) => candidate.history.some((event) => event.type === "INITIAL_BLACKJACK_CHECK" && event.player && event.opponent));
     const state = createMatch(seed);
+    expect(state.round.index).toBe(0);
     expect(state.round.phase).toBe("round-reveal");
-    expect(state.round.outcome).toMatchObject({ winner: null, reason: "push", bulletsAdded: 0, playerSkillReward: 0 });
     expect(getLegalActions(state)).toContainEqual({ type: "ACK_ROUND_RESULT" });
     expect(state.history.filter((event) => event.type === "BLACKJACK")).toHaveLength(2);
+    expect(gameReducer(state, { type: "ACK_ROUND_RESULT" }).round.index).toBe(1);
   });
   it("resolves a player bust immediately and waits for the reaction window", () => {
     const base = createMatch("bust-fixture");
@@ -103,12 +101,15 @@ describe("round resolution and roulette", () => {
     expect(getLegalActions(next)).toEqual(expect.arrayContaining([{ type: "ACK_ROUND_RESULT" }]));
   });
 
-  it("triggers the opponent gun after one player acknowledgement", () => {
+  it("waits after result acknowledgement before triggering the opponent gun", () => {
     const base = createMatch("opponent-trigger");
     const state = withHands(base, [card("10"), card("9")], [card("10"), card("8")]);
     const loaded: MatchState = { ...state, roulette: { ...state.roulette, opponent: { capacity: 6, bullets: 5 } } };
     const reveal = gameReducer(gameReducer(loaded, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
-    const trigger = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    const waiting = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    expect(waiting.round.phase).toBe("roulette-trigger");
+    expect(waiting.history.some((event) => event.type === "TRIGGER_PULLED")).toBe(false);
+    const trigger = gameReducer(waiting, { type: "TRIGGER_ROULETTE" });
     expect(trigger.status).toBe("finished");
     expect(trigger.view).toBe("table");
     expect(trigger.outcome).toEqual({ winner: "player", reason: "opponent-killed" });
@@ -121,26 +122,29 @@ describe("round resolution and roulette", () => {
     const base = createMatch(findSeed((candidate) => {
       const hands = withHands(candidate, [card("10"), card("9")], [card("10"), card("8")]);
       const reveal = gameReducer(gameReducer(hands, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
-      const result = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+      const waiting = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+      const result = gameReducer(waiting, { type: "TRIGGER_ROULETTE" });
       return result.history.some((event) => event.type === "TRIGGER_PULLED" && !event.fired);
     }));
     const state = withHands(base, [card("10"), card("9")], [card("10"), card("8")]);
     const reveal = gameReducer(gameReducer(state, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
-    const result = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    const waiting = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    const result = gameReducer(waiting, { type: "TRIGGER_ROULETTE" });
     expect(result.round.phase).toBe("roulette-result");
     expect(getLegalActions(result)).toContainEqual({ type: "ACK_TRIGGER_RESULT" });
     const next = gameReducer(result, { type: "ACK_TRIGGER_RESULT" });
     expect(next.round.index).toBe(1);
   });
 
-  it("uses a round push with no bullets and supports survival into the next round", () => {
+  it("requires push confirmation before dealing the next round", () => {
     const base = createMatch("push-fixture");
     const state = withHands(base, [card("10"), card("7")], [card("10"), card("7")]);
-    const stood = gameReducer(gameReducer(state, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
-    expect(stood.round.phase).toBe("round-reveal");
-    expect(stood.round.outcome).toMatchObject({ winner: null, reason: "push", bulletsAdded: 0 });
-    const next = gameReducer(stood, { type: "ACK_ROUND_RESULT" });
-    expect(next.status).toBe("active");
+    const reveal = gameReducer(gameReducer(state, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
+    expect(reveal.status).toBe("active");
+    expect(reveal.round.phase).toBe("round-reveal");
+    expect(reveal.round.index).toBe(0);
+    expect(getLegalActions(reveal)).toContainEqual({ type: "ACK_ROUND_RESULT" });
+    const next = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
     expect(next.round.index).toBe(1);
     expect(next.roulette.player.bullets).toBe(0);
     expect(next.roulette.opponent.bullets).toBe(0);
@@ -170,48 +174,97 @@ describe("round resolution and roulette", () => {
 });
 
 describe("skills", () => {
-  it("removes exactly one bullet, never below zero", () => {
-    const skill = getSkillDefinition("remove-bullet");
-    if (!skill) throw new Error("missing skill fixture");
-    const applied = applySkillEffect(skill, { inventory: { cards: [skill.id, skill.id] }, gun: { capacity: 6, bullets: 1 }, shoe: { cards: [], cursor: 0, shuffleIndex: 1 }, peekedCards: [] });
-    expect(applied.gun.bullets).toBe(0);
-    expect(applied.inventory.cards).toEqual([skill.id]);
-  });
-
-  it("peeks without consuming or reordering the shoe", () => {
-    const skill = getSkillDefinition("peek-next-card");
-    if (!skill) throw new Error("missing skill fixture");
-    const next = card("A", "diamonds");
-    const shoe = { cards: [next, card("K")], cursor: 0, shuffleIndex: 1 };
-    const applied = applySkillEffect(skill, { inventory: { cards: [skill.id] }, gun: createGun(), shoe, peekedCards: [] });
-    expect(applied.peekedCards).toEqual([next]);
-    expect(shoe.cursor).toBe(0);
-    expect(applied.inventory.cards).toEqual([]);
-  });
-
-  it("clears a peek as soon as the peeked card is drawn", () => {
-    const base = createMatch("peek-clears");
+  it("shows Hunter advice and clears it on the next action", () => {
+    const base = createMatch("hunter");
     const player = { id: "player" as const, hand: createHand([card("10"), card("6")]), stood: false, busted: false };
     const opponent = { id: "opponent" as const, hand: createHand([card("10"), card("7")]), stood: false, busted: false };
     const round: RoundState = { ...base.round, phase: "turns", currentActor: "player", player, opponent, outcome: null };
-    const state: MatchState = { ...base, player, opponent, round, peekedCards: [card("5", "hearts")], shoe: { cards: [card("5", "hearts")], cursor: 0, shuffleIndex: 1 } };
-    const next = gameReducer(state, { type: "PLAYER_HIT" });
-    expect(next.peekedCards).toEqual([]);
-    expect(next.shoe.cursor).toBe(1);
+    const state: MatchState = { ...base, player, opponent, round, skills: { ...base.skills, cards: ["hunter-instinct"] }, shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 } };
+    const advised = gameReducer(state, { type: "USE_SKILL", skillId: "hunter-instinct" });
+    expect(advised.skills.advice).toBe("hit");
+    expect(gameReducer(advised, { type: "PLAYER_STAND" }).skills.advice).toBeNull();
   });
 
-  it("allows reaction skill after a loss and then still allows trigger", () => {
-    const base = createMatch("skill-reaction");
-    const state = { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]), shoe: { cards: [card("5", "hearts")], cursor: 0, shuffleIndex: 1 } };
-    const loss = gameReducer(state, { type: "PLAYER_HIT" });
-    // Replace opening skill with the reaction skill as a deterministic fixture.
-    const reveal = gameReducer(loss, { type: "ACK_ROUND_RESULT" });
-    const reaction = { ...reveal, skills: { cards: ["remove-bullet"] }, roulette: { ...reveal.roulette, player: { capacity: 6, bullets: 1 } } };
-    expect(getLegalActions(reaction)).toContainEqual({ type: "USE_SKILL", skillId: "remove-bullet" });
-    const used = gameReducer(reaction, { type: "USE_SKILL", skillId: "remove-bullet" });
-    expect(used.roulette.player.bullets).toBe(0);
-    expect(used.skills.cards).toEqual([]);
-    expect(getLegalActions(used)).toContainEqual({ type: "TRIGGER_ROULETTE" });
+  it("gives one opening card without Early Preparation", () => {
+    const state = createMatch(findSeed((candidate) => candidate.round.phase === "turns"), { equippedSkillIds: ["hunter-instinct", "switcheroo", "rhodes-heartthrob"] });
+    expect(state.skills.cards).toHaveLength(1);
+  });
+
+  it("Night Queen guarantees 21 even when no matching shoe card exists", () => {
+    const base = createMatch("night-queen");
+    const state = { ...withHands(base, [card("6", "hearts"), card("6", "hearts")], [card("10"), card("7")]), skills: { ...base.skills, equippedSkillIds: ["night-queen"], cards: ["night-queen"] }, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } };
+    const armed = gameReducer(state, { type: "USE_SKILL", skillId: "night-queen" });
+    const hit = gameReducer(armed, { type: "PLAYER_HIT" });
+    expect(hit.player.hand.cards).toHaveLength(3);
+    expect(handValue(hit.player.hand)).toBe(21);
+    expect(hit.shoe.cursor).toBe(1);
+    expect(hit.skills.nightQueenArmed).toBe(false);
+    expect(hit.history).toContainEqual(expect.objectContaining({ type: "PLAYER_HIT" }));
+    expect(hit.history).toContainEqual(expect.objectContaining({ type: "PLAYER_STOOD" }));
+  });
+
+  it("does not consume a second Night Queen while already armed", () => {
+    const base = createMatch("night-queen-repeat");
+    const state = { ...withHands(base, [card("6", "hearts"), card("6", "hearts")], [card("10"), card("7")]), skills: { ...base.skills, equippedSkillIds: ["night-queen"], cards: ["night-queen", "night-queen"] }, shoe: { cards: [card("9", "clubs")], cursor: 0, shuffleIndex: 1 } };
+    const armed = gameReducer(state, { type: "USE_SKILL", skillId: "night-queen" });
+    const repeated = gameReducer(armed, { type: "USE_SKILL", skillId: "night-queen" });
+    expect(repeated).toBe(armed);
+    expect(repeated.skills.cards).toEqual(["night-queen"]);
+  });
+
+  it("Switcheroo resolves immediately when the opponent already stood", () => {
+    const base = createMatch("switcheroo-stood");
+    const state = { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]), skills: { ...base.skills, cards: ["switcheroo"] }, opponent: { ...base.opponent, stood: true }, round: { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]).round, currentActor: "player" as const, opponent: { ...base.opponent, hand: createHand([card("10"), card("7")]), stood: true, busted: false } }, shoe: { cards: [card("A", "clubs")], cursor: 0, shuffleIndex: 1 } };
+    const next = gameReducer(state, { type: "USE_SKILL", skillId: "switcheroo" });
+    expect(next.round.phase).toBe("round-reveal");
+    expect(next.round.outcome?.winner).toBe("player");
+    expect(next.history.some((event) => event.type === "PLAYER_HIT")).toBe(false);
+  });
+
+  it("Rhodes Heartthrob avoids a non-full player trigger after loading", () => {
+    const base = createMatch("rhodes");
+    const state = { ...withHands(base, [card("10"), card("7")], [card("10"), card("8")]), skills: { ...base.skills, cards: ["rhodes-heartthrob"] } };
+    const armed = gameReducer(state, { type: "USE_SKILL", skillId: "rhodes-heartthrob" });
+    const reveal = gameReducer(gameReducer(armed, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
+    const next = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    expect(next.history).toContainEqual({ type: "TRIGGER_AVOIDED_BY_SKILL", actor: "player", skillId: "rhodes-heartthrob" });
+    expect(next.history.some((event) => event.type === "TRIGGER_PULLED")).toBe(false);
+    expect(next.round.index).toBe(1);
+  });
+
+  it("Rhodes Heartthrob is ineffective when loading fills the gun", () => {
+    const base = createMatch("rhodes-full");
+    const state = { ...withHands(base, [card("10"), card("7")], [card("10"), card("8")]), skills: { ...base.skills, cards: ["rhodes-heartthrob"] }, roulette: { ...base.roulette, player: { capacity: 6, bullets: 5 } } };
+    const armed = gameReducer(state, { type: "USE_SKILL", skillId: "rhodes-heartthrob" });
+    const reveal = gameReducer(gameReducer(armed, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
+    const reaction = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    expect(reaction.round.phase).toBe("roulette-reaction");
+    expect(reaction.history.some((event) => event.type === "TRIGGER_AVOIDED_BY_SKILL")).toBe(false);
+  });
+
+  it("keeps player turn after a non-21 Switcheroo", () => {
+    const base = createMatch("switcheroo-continue");
+    const state = { ...withHands(base, [card("10"), card("5")], [card("10"), card("7")]), skills: { ...base.skills, cards: ["switcheroo"] }, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } };
+    const next = gameReducer(state, { type: "USE_SKILL", skillId: "switcheroo" });
+    expect(next.round.currentActor).toBe("player");
+    expect(next.round.phase).toBe("turns");
+    expect(next.history.some((event) => event.type === "PLAYER_HIT")).toBe(false);
+  });
+
+  it("Siracusan Fury doubles only a lower, non-Blackjack opponent load and clamps", () => {
+    const base = createMatch("fury");
+    const state = { ...base, skills: { ...base.skills, equippedSkillIds: ["siracusan-fury"] }, roulette: { player: { capacity: 6, bullets: 3 }, opponent: { capacity: 6, bullets: 0 } } };
+    const doubled = resolveRound(state, { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1, playerSkillReward: 0 });
+    expect(doubled.round.outcome?.bulletsAdded).toBe(2);
+    expect(doubled.roulette.opponent.bullets).toBe(2);
+    const equal = resolveRound({ ...state, roulette: { ...state.roulette, opponent: { capacity: 6, bullets: 3 } } }, { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1, playerSkillReward: 0 });
+    expect(equal.round.outcome?.bulletsAdded).toBe(1);
+    const blackjack = resolveRound({ ...state, roulette: { player: { capacity: 6, bullets: 5 }, opponent: { capacity: 6, bullets: 5 } } }, { winner: "player", reason: "blackjack", penaltyTarget: "opponent", bulletsAdded: 2, playerSkillReward: 0 });
+    expect(blackjack.round.outcome?.bulletsAdded).toBe(2);
+    expect(blackjack.roulette.opponent.bullets).toBe(6);
+    const clamped = resolveRound({ ...state, roulette: { player: { capacity: 6, bullets: 6 }, opponent: { capacity: 6, bullets: 5 } } }, { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1, playerSkillReward: 0 });
+    expect(clamped.round.outcome?.bulletsAdded).toBe(2);
+    expect(clamped.roulette.opponent.bullets).toBe(6);
   });
 });
 

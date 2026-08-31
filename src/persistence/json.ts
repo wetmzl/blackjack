@@ -4,6 +4,15 @@ export function exportSaveJson(save: SaveFile): string {
   return JSON.stringify(validateAndMigrateSave(save), null, 2);
 }
 
+/** Serializes an untrusted recovery record without validating or changing it. */
+export function exportRawSaveJson(raw: unknown): string {
+  let json: string | undefined;
+  try { json = JSON.stringify(raw, null, 2); }
+  catch { throw new Error("原始存档无法序列化。"); }
+  if (json === undefined) throw new Error("原始存档无法序列化。");
+  return json;
+}
+
 export async function importSave(input: string | File): Promise<SaveFile> {
   const text = typeof input === "string" ? input : await input.text();
   let parsed: unknown;
@@ -23,7 +32,14 @@ interface FileSystemWindow {
 export type SaveExportMethod = "file-system-access" | "blob-download";
 
 export async function downloadSave(save: SaveFile, filename = "house-of-chances-save.json"): Promise<SaveExportMethod> {
-  const json = exportSaveJson(save);
+  return downloadJson(exportSaveJson(save), filename);
+}
+
+export async function downloadRawSave(raw: unknown, filename = "house-of-chances-invalid-save.json"): Promise<SaveExportMethod> {
+  return downloadJson(exportRawSaveJson(raw), filename);
+}
+
+async function downloadJson(json: string, filename: string): Promise<SaveExportMethod> {
   const host = globalThis as unknown as FileSystemWindow;
   if (host.showSaveFilePicker) {
     const handle = await host.showSaveFilePicker({ suggestedName: filename, types: [{ description: "JSON save", accept: { "application/json": [".json"] } }] });

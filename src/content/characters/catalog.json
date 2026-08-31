@@ -6,7 +6,6 @@
       "name": "W",
       "subtitle": "舞会牌桌上的危险戏谑者",
       "tier": "B",
-      "description": "轻佻又鲁莽的赌徒，喜欢把恐惧当作玩笑，把下一张牌当作挑衅。",
       "previewImage": "/assets/characters/w-relaxed.png",
       "trophyImage": "/assets/characters/w-trophy-defeated.png",
       "dataFile": "w.json"
@@ -16,7 +15,6 @@
       "name": "德克萨斯",
       "subtitle": "沉稳寡言的舞会对手",
       "tier": "A",
-      "description": "博士熟悉的可靠干员。即使坐上假面舞会的余兴牌桌，她也习惯先计算风险，再用最少的动作结束一局。",
       "previewImage": "/assets/characters/texas-relaxed.png",
       "trophyImage": "/assets/characters/texas-trophy-defeated.png",
       "dataFile": "texas.json"

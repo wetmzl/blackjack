@@ -46,6 +46,7 @@ export interface MatchRngState {
   readonly roulette: RngSnapshot;
   readonly ai: RngSnapshot;
   readonly loot: RngSnapshot;
+  readonly skill: RngSnapshot;
   readonly dialogue: RngSnapshot;
 }
 
@@ -62,10 +63,12 @@ export type GameEvent =
   | { readonly type: "BULLET_ADDED"; readonly actor: Actor; readonly amount: number }
   | { readonly type: "TRIGGER_PULLED"; readonly actor: Actor; readonly probability: number; readonly fired: boolean }
   | { readonly type: "TRIGGER_SURVIVED"; readonly actor: Actor }
+  | { readonly type: "TRIGGER_AVOIDED_BY_SKILL"; readonly actor: Actor; readonly skillId: string }
   | { readonly type: "TRIGGER_RESULT_ACKNOWLEDGED" }
   | { readonly type: "PARTICIPANT_KILLED"; readonly actor: Actor }
   | { readonly type: "SKILL_GAINED"; readonly skillId: string }
   | { readonly type: "SKILL_USED"; readonly skillId: string }
+  | { readonly type: "SKILL_ADVICE"; readonly advice: "hit" | "stand" }
   | { readonly type: "MATCH_FINISHED"; readonly reason: MatchEndReason }
   | { readonly type: "MATCH_ESCAPED" }
   | { readonly type: "MATCH_RESULT_ACKNOWLEDGED" }
@@ -98,7 +101,6 @@ export interface MatchState {
   readonly shoe: ShoeState;
   readonly roulette: RouletteState;
   readonly skills: SkillInventory;
-  readonly peekedCards: readonly Card[];
   readonly round: RoundState;
   readonly outcome?: MatchOutcome;
   readonly history: readonly GameEvent[];

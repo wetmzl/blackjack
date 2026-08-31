@@ -2,7 +2,7 @@ import Dexie, { type Table } from "dexie";
 import { validateAndMigrateSave, type SaveFile } from "./schema";
 import type { SaveRepository } from "./repository";
 
-interface SaveRecord { readonly id: "current"; readonly data: SaveFile; }
+interface SaveRecord { readonly id: "current"; readonly data: unknown; }
 
 export class IndexedDbSaveRepository implements SaveRepository {
   private readonly db: DexieDatabase;
@@ -12,6 +12,11 @@ export class IndexedDbSaveRepository implements SaveRepository {
   async load(): Promise<SaveFile | null> {
     const record = await this.db.saves.get("current");
     return record ? validateAndMigrateSave(record.data) : null;
+  }
+
+  async loadRaw(): Promise<unknown | null> {
+    const record = await this.db.saves.get("current");
+    return record?.data ?? null;
   }
 
   async save(save: SaveFile): Promise<void> {

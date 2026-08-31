@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { DIALOGUE_EVENT_CODES } from "../../dialogue/types";
+import { DIALOGUE_EVENT_CODES, type DialogueEvent } from "../../dialogue/types";
 
 const safeDataFile = z.string().regex(/^[a-z0-9][a-z0-9_-]*\.json$/, "dataFile 必须是安全文件名");
 const metadataEntry = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), subtitle: z.string().min(1),
-  tier: z.enum(["D", "C", "B", "A", "S"]), description: z.string().min(1),
+  tier: z.enum(["D", "C", "B", "A", "S"]),
   previewImage: z.string().min(1), trophyImage: z.string().min(1), dataFile: safeDataFile
 }).strict();
 export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().min(1), characters: z.array(metadataEntry).min(1) }).strict().superRefine((catalog, ctx) => {
@@ -19,15 +19,17 @@ export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().
   if (!ids.has(catalog.defaultCharacterId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["defaultCharacterId"], message: "默认角色未注册" });
 });
 
-const dialogue = z.record(z.array(z.string().min(1)).min(1)).superRefine((value, ctx) => {
-  const known = new Set<string>(DIALOGUE_EVENT_CODES);
-  for (const code of Object.keys(value)) if (!known.has(code)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `未知对白事件：${code}` });
-});
+const dialoguePool = z.array(z.string().min(1)).min(1);
+const dialogueShape = Object.fromEntries(DIALOGUE_EVENT_CODES.map((code) => [code, dialoguePool])) as Record<DialogueEvent, typeof dialoguePool>;
+const dialogue = z.object(dialogueShape).strict();
 export const CharacterDataSchema = z.object({
+  $schema: z.literal("../character.schema.json"),
   assets: z.object({
     relaxed: z.string().min(1), conflicted: z.string().min(1), mocking: z.string().min(1), threatened: z.string().min(1),
     staffRevolver: z.string().min(1), unconscious: z.string().min(1), defeatedSummary: z.string().min(1)
   }).strict(),
+  profile: z.object({ description: z.string().min(1) }).strict(),
+  matchSummary: z.object({ playerVictory: z.string().min(1), playerDefeat: z.string().min(1), escaped: z.string().min(1) }).strict(),
   revolverPlacement: z.object({ top: z.number().finite(), left: z.number().finite(), mobileTop: z.number().finite(), mobileLeft: z.number().finite() }).strict(),
   ai: z.object({ rationality: z.number().min(0).max(1), personalityHitProbability: z.number().min(0).max(1) }).strict(),
   dialogue: dialogue

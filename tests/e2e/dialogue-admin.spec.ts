@@ -19,7 +19,7 @@ test.beforeAll(async () => {
   fixture = await mkdtemp(join(tmpdir(), "dialogue-admin-e2e-"));
   await writeFile(join(fixture, "catalog.json"), JSON.stringify({
     defaultCharacterId: "w",
-    characters: [{ id: "w", name: "W", subtitle: "样例", tier: "B", description: "样例", previewImage: "/w.png", trophyImage: "/w-trophy.png", dataFile: "w.json" }]
+    characters: [{ id: "w", name: "W", subtitle: "样例", tier: "B", previewImage: "/w.png", trophyImage: "/w-trophy.png", dataFile: "w.json" }]
   }));
   await writeFile(join(fixture, "w.json"), JSON.stringify(characterData, null, 2));
   admin = createDialogueAdminServer({ catalogPath: join(fixture, "catalog.json"), dataDir: fixture, publicDir: join(process.cwd(), "tools/dialogue-admin") });

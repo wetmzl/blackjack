@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createMatch, gameReducer } from "../core/match/reducer";
-import { bootLoad, acknowledgeMatchResult, createDefaultSave, restoreActiveMatch, saveActiveMatch } from "./boot";
+import { bootLoad, acknowledgeMatchResult, createDefaultSave, resetSave, restoreActiveMatch, saveActiveMatch } from "./boot";
 import { createAutosaveController } from "./autosave";
-import { exportSaveJson, importSave } from "./json";
+import { exportRawSaveJson, exportSaveJson, importSave } from "./json";
 import { MemorySaveRepository } from "./memory-repository";
 import { CURRENT_SCHEMA_VERSION, SaveValidationError, validateAndMigrateSave, type SaveFile } from "./schema";
 import type { SaveRepository } from "./repository";
@@ -20,12 +20,10 @@ describe("SaveFile schema, validation, and migration", () => {
     expect(imported.history).toEqual([]);
   });
 
-  it("migrates a v1 save to the current format with an empty history", () => {
+  it("rejects obsolete v1 saves instead of attempting unsafe migration", () => {
     const current = createDefaultSave(NOW);
     const { history: _history, ...v1 } = current;
-    const migrated = validateAndMigrateSave({ ...v1, schemaVersion: 1 });
-    expect(migrated.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(migrated.history).toEqual([]);
+    expect(() => validateAndMigrateSave({ ...v1, schemaVersion: 1 })).toThrow(/Unsupported old save schema version/);
   });
 
   it("rejects malformed nested cards, RNG, guns, and unknown fields", () => {
@@ -54,12 +52,32 @@ describe("SaveFile schema, validation, and migration", () => {
   it("rejects unknown, old, and future schema versions clearly", () => {
     const save = createDefaultSave(NOW);
     expect(() => validateAndMigrateSave({ ...save, schemaVersion: CURRENT_SCHEMA_VERSION + 1 })).toThrow(/future save schema version/);
-    expect(() => validateAndMigrateSave({ ...save, schemaVersion: 0 })).toThrow(/Unsupported save schema version/);
+    expect(() => validateAndMigrateSave({ ...save, schemaVersion: 0 })).toThrow(/Unsupported (old )?save schema version/);
     expect(() => validateAndMigrateSave({ ...save, format: "other-game" })).toThrow(SaveValidationError);
   });
 });
 
 describe("boot and repositories", () => {
+  it("resetSave returns a clean current-schema profile with initial loadout", () => {
+    const reset = resetSave(NOW);
+    expect(reset.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(reset.profile.matchesPlayed).toBe(0);
+    expect(reset.profile.wins).toBe(0);
+    expect(reset.profile.unlockedSkillIds).toEqual(reset.profile.equippedSkillIds);
+    expect(reset.activeMatch).toBeNull();
+    expect(reset.history).toEqual([]);
+  });
+
+  it("repository loadRaw preserves the persisted record and raw JSON does not validate it", async () => {
+    const original = createDefaultSave(NOW);
+    const repository = new MemorySaveRepository(original);
+    const raw = await repository.loadRaw();
+    expect(raw).toEqual(original);
+    const marked = { marker: "raw-invalid-record", payload: raw };
+    expect(exportRawSaveJson(marked)).toContain("raw-invalid-record");
+    const circular: Record<string, unknown> = {}; circular.self = circular;
+    expect(() => exportRawSaveJson(circular)).toThrow(/无法序列化/);
+  });
   it("creates and persists a default save on first boot, then restores active match", async () => {
     const repository = new MemorySaveRepository();
     const fresh = await bootLoad(repository, NOW);
@@ -93,6 +111,7 @@ describe("serial autosave", () => {
     readonly writes: SaveFile[] = [];
     private sequence = Promise.resolve();
     async load(): Promise<SaveFile | null> { return null; }
+    async loadRaw(): Promise<unknown | null> { return null; }
     async save(save: SaveFile): Promise<void> {
       const snapshot = save;
       this.sequence = this.sequence.then(async () => {

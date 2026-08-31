@@ -2,6 +2,9 @@
   { "code": "MATCH_START", "label": "开局" },
   { "code": "PLAYER_HIT", "label": "玩家要牌" },
   { "code": "PLAYER_STAND", "label": "玩家停牌" },
+  { "code": "OPPONENT_FIRST_HIT", "label": "对手首次行动选择要牌" },
+  { "code": "OPPONENT_FIRST_STAND", "label": "对手首次行动选择停牌" },
+  { "code": "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND", "label": "玩家停牌后对手连续要牌" },
   { "code": "PLAYER_BLACKJACK", "label": "玩家黑杰克" },
   { "code": "OPPONENT_BLACKJACK", "label": "对手黑杰克" },
   { "code": "PLAYER_BUST", "label": "玩家爆牌" },
@@ -15,7 +18,8 @@
   { "code": "OPPONENT_TRIGGER_READY", "label": "对手准备扣扳机" },
   { "code": "PLAYER_TRIGGER_HIT", "label": "玩家被命中" },
   { "code": "OPPONENT_TRIGGER_HIT", "label": "对手被命中" },
-  { "code": "MATCH_WIN", "label": "玩家赢得整局" },
-  { "code": "MATCH_LOSS", "label": "玩家输掉整局" },
-  { "code": "PLAYER_ESCAPE", "label": "玩家逃跑" }
+  { "code": "SPECIAL_TWENTY_ONE_PUSH", "label": "特殊牌面：21 对 21" },
+  { "code": "SPECIAL_ONE_POINT_FINISH", "label": "特殊牌面：一点击杀" },
+  { "code": "SPECIAL_SMALL_HAND_TWENTY_ONE", "label": "特殊牌面：多张小牌凑 21" },
+  { "code": "SPECIAL_LOW_PUSH", "label": "特殊牌面：低点数平局" }
 ]

@@ -9,13 +9,9 @@ npm install
 npm run dev
 ```
 
-## 对白维护台（仅开发入口）
+## 角色内容维护
 
-```bash
-npm run dialogue:admin
-```
-
-管理台默认监听 `4174`。它会优先检测名称包含 `tailscale` 的非内部 IPv4 并绑定该精确地址；没有可用地址时回退到 `127.0.0.1`，也可用 `--host`、`--port` 或 `DIALOGUE_ADMIN_HOST`、`DIALOGUE_ADMIN_PORT` 覆盖。管理台直接编辑 `src/content/characters/data/*.json`，不是游戏公开页面，也不使用 HTTPS。
+角色档案、比赛结算文案、AI 参数、牌桌资源和对白统一维护在 `src/content/characters/data/*.json`。每个文件通过 `$schema` 引用带中文字段说明的 `src/content/characters/character.schema.json`；所有有限状态对白池均为必填且互斥解析。直接编辑 JSON 并运行测试即可；旧对白 WebUI 不再是当前维护流程的一部分。
 
 ## 验证
 
@@ -23,7 +19,28 @@ npm run dialogue:admin
 npm test
 npm run test:e2e
 npm run build
-npm run test:dialogue-admin
+```
+
+## systemd 部署
+
+生产网页服务由 `blackjack.service` 维护，监听 `0.0.0.0:4173`，使用构建后的 `dist/`。
+
+首次安装并启动：
+
+```bash
+npm run systemd:install
+```
+
+代码上线后执行：
+
+```bash
+npm run deploy
+```
+
+该命令会先构建，成功后执行 `systemctl daemon-reload`、重启服务并检查首页。查看日志：
+
+```bash
+sudo journalctl -u blackjack.service -f
 ```
 
 领域逻辑位于 `src/core/`，不依赖 DOM、IndexedDB、音频或定时器。存档使用 Dexie + IndexedDB，并通过 Zod 验证和版本迁移。

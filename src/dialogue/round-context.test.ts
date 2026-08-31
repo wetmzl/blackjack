@@ -1,0 +1,56 @@
+import { describe, expect, it } from "vitest";
+import { createCard } from "../core/blackjack/card";
+import { createMatch } from "../core/match/reducer";
+import type { Card } from "../core/blackjack/types";
+import type { GameEvent, MatchState, RoundOutcome } from "../core/match/types";
+import { roundOverrideDialogueEvent } from "./round-context";
+
+const card = (rank: Card["rank"], suit: Card["suit"] = "spades") => createCard(suit, rank);
+
+function contextualState(playerCards: Card[], opponentCards: Card[], outcome: RoundOutcome): MatchState {
+  const base = createMatch(`dialogue-${playerCards.map((entry) => entry.rank).join("")}-${opponentCards.map((entry) => entry.rank).join("")}`);
+  const history: GameEvent[] = [
+    { type: "ROUND_STARTED", roundIndex: 0 },
+    ...playerCards.map((entry): GameEvent => ({ type: "CARD_DEALT", actor: "player", card: entry, private: true })),
+    ...opponentCards.map((entry): GameEvent => ({ type: "CARD_DEALT", actor: "opponent", card: entry, private: true })),
+    { type: "ROUND_RESOLVED", outcome }
+  ];
+  return {
+    ...base,
+    history,
+    roundIndex: 0,
+    round: { ...base.round, index: 0, phase: "round-reveal", outcome }
+  };
+}
+
+const comparison = (winner: "player" | "opponent"): RoundOutcome => ({
+  winner,
+  reason: "comparison",
+  penaltyTarget: winner === "player" ? "opponent" : "player",
+  bulletsAdded: 1,
+  playerSkillReward: winner === "player" ? 1 : 0
+});
+const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 };
+
+describe("special round dialogue", () => {
+  it("recognizes 21 vs 21 on the confirmation screen", () => {
+    expect(roundOverrideDialogueEvent(contextualState([card("A"), card("K")], [card("A", "hearts"), card("Q")], push)))
+      .toBe("SPECIAL_TWENTY_ONE_PUSH");
+  });
+
+  it("recognizes one-point finishes near 21", () => {
+    expect(roundOverrideDialogueEvent(contextualState([card("7"), card("7", "hearts"), card("7", "clubs")], [card("10"), card("Q")], comparison("player"))))
+      .toBe("SPECIAL_ONE_POINT_FINISH");
+  });
+
+  it("prioritizes a four-card 21 miracle", () => {
+    expect(roundOverrideDialogueEvent(contextualState([card("2"), card("4"), card("5"), card("10")], [card("10"), card("8")], comparison("player"))))
+      .toBe("SPECIAL_SMALL_HAND_TWENTY_ONE");
+  });
+
+  it("recognizes low-value pushes only on the confirmation screen", () => {
+    const state = contextualState([card("10"), card("3")], [card("8"), card("5")], push);
+    expect(roundOverrideDialogueEvent(state)).toBe("SPECIAL_LOW_PUSH");
+    expect(roundOverrideDialogueEvent({ ...state, round: { ...state.round, phase: "turns" } })).toBeNull();
+  });
+});

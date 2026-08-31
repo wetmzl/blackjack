@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { CHARACTER_CATALOG, CHARACTER_METADATA_BY_ID, DEFAULT_CHARACTER_ID, getCharacterMetadata, loadCharacter, clearCharacterCache, TABLE_ART_BASELINE } from ".";
-import { CharacterCatalogSchema } from "./schema";
+import standardSchema from "./character.schema.json";
+import wData from "./data/w.json";
+import { CharacterCatalogSchema, CharacterDataSchema, DIALOGUE_EVENT_CODES } from "./schema";
 
 describe("data-driven character registry", () => {
   it("registers W and the calmer Texas profile", () => {
@@ -37,9 +39,34 @@ describe("data-driven character registry", () => {
     expect("trophyDefeated" in texas.assets).toBe(false);
     expect("portraitScale" in w).toBe(false);
     expect("portraitScale" in texas).toBe(false);
+    expect(w.profile.description).toContain("假面舞会");
+    expect(w.matchSummary.playerVictory).toContain("W完成了夸张的败北演出");
+    expect(texas.profile.description).toContain("可靠干员");
+    expect("MATCH_WIN" in w.dialogue).toBe(false);
+    expect("MATCH_LOSS" in w.dialogue).toBe(false);
+    expect("PLAYER_ESCAPE" in w.dialogue).toBe(false);
+    expect(texas.dialogue.SPECIAL_TWENTY_ONE_PUSH).toHaveLength(2);
+    expect(w.$schema).toBe("../character.schema.json");
+    expect(texas.$schema).toBe("../character.schema.json");
+    expect(Object.keys(w.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
+    expect(Object.keys(texas.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(w.id).toBe(getCharacterMetadata(w.id)?.id);
     expect(texas.id).toBe(getCharacterMetadata(texas.id)?.id);
     expect(await loadCharacter("w")).toBe(w);
+  });
+
+  it("keeps the annotated JSON Schema synchronized with every required dialogue pool", () => {
+    const dialogueSchema = standardSchema.properties.dialogue;
+    expect(new Set(dialogueSchema.required)).toEqual(new Set(DIALOGUE_EVENT_CODES));
+    expect(new Set(Object.keys(dialogueSchema.properties))).toEqual(new Set(DIALOGUE_EVENT_CODES));
+    expect(standardSchema.$comment).toContain("一次渲染只会选择一个池");
+  });
+
+  it("rejects missing and unknown finite-state dialogue pools", () => {
+    const missingDialogue = { ...wData.dialogue } as Record<string, readonly string[]>;
+    delete missingDialogue.OPPONENT_FIRST_HIT;
+    expect(CharacterDataSchema.safeParse({ ...wData, dialogue: missingDialogue }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, dialogue: { ...wData.dialogue, UNKNOWN_STATE: ["不应接受"] } }).success).toBe(false);
   });
 
   it("rejects unknown characters", async () => {
@@ -48,7 +75,7 @@ describe("data-driven character registry", () => {
   });
 
   it("rejects duplicate ids, shared data files, and an unregistered default", () => {
-    const base = { id: "w", name: "W", subtitle: "样例", tier: "B", description: "样例", previewImage: "/w.png", trophyImage: "/w-trophy.png", dataFile: "w.json" } as const;
+    const base = { id: "w", name: "W", subtitle: "样例", tier: "B", previewImage: "/w.png", trophyImage: "/w-trophy.png", dataFile: "w.json" } as const;
     expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "w", characters: [base, { ...base }] }).success).toBe(false);
     expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "w", characters: [base, { ...base, id: "texas" }] }).success).toBe(false);
     expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "missing", characters: [base] }).success).toBe(false);

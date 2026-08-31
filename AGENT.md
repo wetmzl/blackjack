@@ -362,6 +362,7 @@ if (character === "bar") { ... }
 
 ```ts
 interface CharacterDefinition {
+  $schema: "../character.schema.json";
   id: string;
 
   name: string;
@@ -369,7 +370,12 @@ interface CharacterDefinition {
 
   tier: Tier;
 
-  description: string;
+  profile: { description: string };
+  matchSummary: {
+    playerVictory: string;
+    playerDefeat: string;
+    escaped: string;
+  };
 
   assets: CharacterAssets;
 
@@ -395,13 +401,14 @@ src/content/characters/
 ├── catalog.json             # defaultCharacterId 与可索引角色元数据
 ├── catalog.ts               # Zod 校验、冻结目录与 O(1) metadata 查找
 ├── loader.ts                # 按 dataFile 动态加载 JSON 并缓存完整 definition
+├── character.schema.json    # 带中文说明的标准角色 JSON Schema
 ├── data/
 │   ├── w.json               # W 完整 AI、对白与牌桌资源
 │   └── texas.json           # 德克萨斯完整 AI、对白与牌桌资源
 └── index.ts                 # 仅导出 catalog/loader/types，不静态导出完整角色
 ```
 
-`catalog.json` 只包含大厅、档案和历史索引所需元数据及安全的 `dataFile` basename；牌桌、AI、对白和完整结算资源必须通过 `loadCharacter(id)` 按需加载。loader 使用 `import.meta.glob("./data/*.json")`，组合并运行时校验 JSON，未知 id、路径穿越、未知对白事件和空对白必须拒绝；definition 与 metadata 的 id 必须一致，默认角色由 `defaultCharacterId` 指定。W 是固定牌桌美术金样本：参考画布为 1536×1024，常规横向坐姿使用统一 scale 1 的布局，其他角色不得提供 portraitScale 覆盖入口。
+`catalog.json` 只包含大厅卡片和历史索引所需元数据及安全的 `dataFile` basename；角色档案正文、比赛结算文案、牌桌、AI、对白和完整结算资源必须位于同一个 `data/<id>.json`，通过 `loadCharacter(id)` 按需加载。每个角色 JSON 必须用 `$schema` 引用 `character.schema.json`，并完整提供所有有限状态对白池。loader 使用 `import.meta.glob("./data/*.json")`，组合并运行时校验 JSON，未知 id、路径穿越、缺失或多余对白事件、空对白必须拒绝；definition 与 metadata 的 id 必须一致，默认角色由 `defaultCharacterId` 指定。W 是固定牌桌美术金样本：参考画布为 1536×1024，常规横向坐姿使用统一 scale 1 的布局，其他角色不得提供 portraitScale 覆盖入口。
 
 后续增加角色应该主要是：
 
@@ -415,7 +422,7 @@ src/content/characters/
 
 而不是修改 Game Core。
 
-对白维护台位于 `tools/dialogue-admin/`，使用 Node 内建 HTTP/FS 模块直接编辑角色 data JSON：运行 `npm run dialogue:admin`，默认端口 4174。它优先绑定名称包含 `tailscale` 的非内部 IPv4，找不到时回退并提示 `127.0.0.1`；可用 `--host`、`--port` 或对应环境变量覆盖。该入口只供开发维护，不是游戏公开页面，不部署 HTTPS。
+角色内容以直接编辑并校验 `data/<id>.json` 为准。`tools/dialogue-admin/` 是冻结的旧开发工具，不再作为必须维护或覆盖完整角色 schema 的入口。
 
 ---
 
@@ -754,7 +761,7 @@ INITIAL_BLACKJACK_CHECK
 * 不扣扳机
 * 不获得 Blackjack 胜利奖励
 
-先开牌、显示平局原因并等待玩家确认，然后进入下一轮。
+记录并显示平局对白，等待玩家点击“确认结果”。确认时播放 Stand 音效，再进入下一轮；不进入轮盘或心跳阶段。
 
 ## 玩家 Blackjack，AI 没有
 
@@ -767,9 +774,13 @@ AI：
 ↓
 开牌并说明结果
 ↓
+玩家点击“确认结果”
+↓
+Stand 确认音 + 循环心跳
+↓
 玩家点击“静观好戏”
 ↓
-AI trigger roulette
+停止心跳并立即执行 AI trigger roulette
 ```
 
 玩家获得：
@@ -789,11 +800,13 @@ AI 立即赢得本轮。
 ↓
 开牌并说明结果
 ↓
-玩家点击“接受判罚”
+玩家点击“确认结果”
 ↓
-skill reaction window
+Stand 确认音 + 循环心跳 + skill reaction window
 ↓
-trigger roulette
+玩家点击“扣下扳机”
+↓
+停止心跳并立即 trigger roulette
 ```
 
 玩家不获得技能。
@@ -898,17 +911,17 @@ trigger roulette
 没人扣扳机
 ```
 
-无论谁赢或平局，Round 结果确定后都必须先：
+只要产生胜负，Round 结果确定后都必须先：
 
 ```text
 翻开双方私人牌
 ↓
 显示双方点数、胜负原因和装填结果
 ↓
-等待玩家交互
+等待玩家点击“确认结果”
 ```
 
-玩家赢时，这个确认按钮显示“静观好戏”，一次点击直接进入对手对自己进行轮盘判定的悬念演出，不要再次要求点击同名按钮。玩家输时，确认后才进入反应技能窗口，再由玩家点击“扣下扳机”。
+所有结果都必须等待玩家点击“确认结果”并播放 Stand 音效。玩家赢时随后开始循环心跳、进入独立等待阶段并显示“静观好戏”；玩家输时随后开始循环心跳、进入反应技能窗口并显示“扣下扳机”。点击这两个扳机按钮时必须立刻停止心跳并播放空枪或击发音效。平局确认后直接进入下一轮，不启动心跳，也不进入轮盘阶段。
 
 任何扳机判定完成后都不能自动进入下一轮或对局总结；必须停留在判定结果画面。空枪时按钮变为“下一轮”，命中时按钮变为“查看结局”。
 
@@ -1692,21 +1705,26 @@ HIT
 Dialogue 必须是：
 
 ```text
-Domain Event
+Current finite match state
 ↓
-Dialogue Director
+Exclusive Dialogue State Resolver
 ↓
 Character dialogue pool
 ↓
 选择台词
 ```
 
-例如事件：
+解析器必须根据当前 phase、RoundOutcome.reason、特殊牌型与当前轮行动历史一次只返回一个池。不能按“最后一个领域事件”决定对白，因为 `ROUND_RESOLVED` 会覆盖同次结算中的 Blackjack/Bust 语义。
+
+当前状态池：
 
 ```text
 MATCH_START
 PLAYER_HIT
 PLAYER_STAND
+OPPONENT_FIRST_HIT
+OPPONENT_FIRST_STAND
+OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND
 PLAYER_BLACKJACK
 OPPONENT_BLACKJACK
 PLAYER_BUST
@@ -1715,21 +1733,27 @@ PLAYER_SURVIVED_TRIGGER
 OPPONENT_SURVIVED_TRIGGER
 PLAYER_WIN_ROUND
 OPPONENT_WIN_ROUND
-MATCH_WIN
-MATCH_LOSS
-PLAYER_ESCAPE
+PUSH_ROUND
+PLAYER_TRIGGER_READY
+OPPONENT_TRIGGER_READY
+PLAYER_TRIGGER_HIT
+OPPONENT_TRIGGER_HIT
+SPECIAL_TWENTY_ONE_PUSH
+SPECIAL_ONE_POINT_FINISH
+SPECIAL_SMALL_HAND_TWENTY_ONE
+SPECIAL_LOW_PUSH
 ```
 
-CharacterDefinition 提供对应台词池。
+CharacterDefinition 必须提供全部对应台词池；角色 JSON 的 `$schema` 会在编辑器中说明每个池的唯一触发条件。
 
 例如：
 
 ```ts
 dialogue: {
-  matchStart: [...],
-  playerHit: [...],
-  playerBlackjack: [...],
-  selfBust: [...]
+  MATCH_START: [...],
+  PLAYER_HIT: [...],
+  PLAYER_BLACKJACK: [...],
+  OPPONENT_FIRST_HIT: [...]
 }
 ```
 

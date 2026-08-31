@@ -1,13 +1,17 @@
 import type { MatchState } from "../core/match/types";
 import { summarizeMatch } from "../core/match/history";
 import { assertMatchStateForSave, CURRENT_GAME_VERSION, CURRENT_SCHEMA_VERSION, SAVE_FORMAT, type GameSettings, type PlayerProfile, type SaveFile } from "./schema";
+import { INITIAL_SKILL_IDS } from "../core/skills/definitions";
 import type { SaveRepository } from "./repository";
 
 export function createDefaultSave(now = new Date().toISOString()): SaveFile {
-  const profile: PlayerProfile = { id: "player", displayName: "博士", matchesPlayed: 0, wins: 0, unlockedCharacterIds: ["w", "texas"] };
+  const profile: PlayerProfile = { id: "player", displayName: "博士", matchesPlayed: 0, wins: 0, unlockedCharacterIds: ["w", "texas"], unlockedSkillIds: [...INITIAL_SKILL_IDS], equippedSkillIds: [...INITIAL_SKILL_IDS] };
   const settings: GameSettings = { soundEnabled: true, reducedMotion: false };
   return { format: SAVE_FORMAT, schemaVersion: CURRENT_SCHEMA_VERSION, gameVersion: CURRENT_GAME_VERSION, createdAt: now, updatedAt: now, profile, activeMatch: null, settings, history: [] };
 }
+
+/** Explicit, recoverable boundary helper used by the dangerous reset action. */
+export function resetSave(now = new Date().toISOString()): SaveFile { return createDefaultSave(now); }
 
 export async function bootLoad(repository: SaveRepository, now = new Date().toISOString()): Promise<SaveFile> {
   const existing = await repository.load();

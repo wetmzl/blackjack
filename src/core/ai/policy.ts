@@ -10,7 +10,8 @@ export interface AiDecisionResult {
 
 /** Approximate policy for this variant: hit below 17, stand at 17 or higher. */
 export function decideOptimalAction(observation: MatchObservation): AiAction {
-  const knownCards = observation.opponent.cards.filter((card): card is Card => card !== null);
+  const side = observation.viewer === "player" ? observation.player : observation.opponent;
+  const knownCards = side.cards.filter((card): card is Card => card !== null);
   if (knownCards.length === 0) return "stand";
   return handValue({ cards: knownCards }) < 17 ? "hit" : "stand";
 }

@@ -1,0 +1,20 @@
+[Unit]
+Description=House of Chances web service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=magallan
+Group=magallan
+WorkingDirectory=/home/magallan/vscodews/blackjack
+Environment=NODE_ENV=production
+Environment=PATH=/home/magallan/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/magallan/.local/bin/npm run preview -- --host 0.0.0.0 --port 4173 --strictPort
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

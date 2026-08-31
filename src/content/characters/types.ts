@@ -3,13 +3,12 @@ import type { CharacterDialogue } from "../../dialogue/types";
 
 export type Tier = "D" | "C" | "B" | "A" | "S";
 
-/** The only character data needed to build the lobby, profile, and history index. */
+/** Lightweight character data used to build the lobby and history index. */
 export interface CharacterMetadata {
   readonly id: string;
   readonly name: string;
   readonly subtitle: string;
   readonly tier: Tier;
-  readonly description: string;
   readonly previewImage: string;
   readonly trophyImage: string;
   readonly dataFile: string;
@@ -32,6 +31,16 @@ export interface RevolverPlacement {
   readonly mobileLeft: number;
 }
 
+export interface CharacterProfile {
+  readonly description: string;
+}
+
+export interface CharacterMatchSummary {
+  readonly playerVictory: string;
+  readonly playerDefeat: string;
+  readonly escaped: string;
+}
+
 /** Fixed W art reference: 1536×1024 source canvas and scale 1 normal sitting composition. */
 export const TABLE_ART_BASELINE = Object.freeze({
   referenceCharacterId: "w",
@@ -42,7 +51,10 @@ export const TABLE_ART_BASELINE = Object.freeze({
 
 /** Full table definition. Load this only when a match needs AI, dialogue, or table art. */
 export interface CharacterData {
+  readonly $schema: "../character.schema.json";
   readonly assets: CharacterAssets;
+  readonly profile: CharacterProfile;
+  readonly matchSummary: CharacterMatchSummary;
   /** All normal table portraits use TABLE_ART_BASELINE; definitions cannot override its scale. */
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;

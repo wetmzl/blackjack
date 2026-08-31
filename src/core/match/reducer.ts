@@ -4,21 +4,42 @@ import type { Card, RoundStarter } from "../blackjack/types";
 import { deriveRng, SeededRng } from "../rng/seeded";
 import { addBullets, createGun, pullTrigger } from "../roulette/roulette";
 import type { RouletteState } from "../roulette/types";
-import { getSkillDefinition } from "../skills/definitions";
-import { applySkillEffect } from "../skills/effects";
-import { drawRandomSkill } from "../skills/skills";
+import { getSkillDefinition, INITIAL_SKILL_IDS, isActiveSkill } from "../skills/definitions";
+import { applySkillEffect, drawNightQueenCard } from "../skills/effects";
+import { drawRandomSkill, validateLoadout } from "../skills/skills";
 import { decideAiAction } from "../ai/policy";
 import { buildObservation } from "../ai/observation";
 import { getRoundStarter } from "../blackjack/round";
 import type {
   Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState
 } from "./types";
+import type { SkillEffect } from "../skills/types";
 import { RECKLESS_B_PROFILE, type AiProfile } from "../ai/types";
 
 export interface CreateMatchOptions {
   readonly id?: string;
   readonly opponentId?: string;
   readonly aiProfile?: AiProfile;
+  readonly equippedSkillIds?: readonly string[];
+}
+
+function normalizeEquipped(ids: readonly string[] | undefined): string[] {
+  const values = ids ? [...ids] : [...INITIAL_SKILL_IDS];
+  const result = validateLoadout(values, values);
+  if (!result.valid) throw new RangeError(`Invalid skill loadout: ${result.reason}`);
+  return [...result.equippedSkillIds];
+}
+
+function skillState(state: MatchState, patch: Partial<MatchState["skills"]> = {}): MatchState["skills"] {
+  return { ...state.skills, ...patch };
+}
+
+function hasEquippedEffect(state: MatchState, effect: SkillEffect["type"]): boolean {
+  return state.skills.equippedSkillIds.some((id) => getSkillDefinition(id)?.effect.type === effect);
+}
+
+function equippedDefinitionByEffect(state: MatchState, effect: SkillEffect["type"]) {
+  return state.skills.equippedSkillIds.map((id) => getSkillDefinition(id)).find((skill) => skill?.effect.type === effect);
 }
 
 function participant(id: Actor, cards: readonly Card[]): ParticipantState {
@@ -57,13 +78,15 @@ function setPhase(state: MatchState, phase: RoundPhase, currentActor: Actor | nu
 }
 
 function gainSkills(state: MatchState, amount: number): MatchState {
+  const equipped = state.skills.equippedSkillIds.filter(isActiveSkill);
+  if (equipped.length === 0 || amount <= 0) return state;
   let next = state;
   let rng = SeededRng.fromSnapshot(state.rng.loot);
   const events: GameEvent[] = [];
   for (let index = 0; index < amount; index += 1) {
-    const drawn = drawRandomSkill(rng);
+    const drawn = drawRandomSkill(rng, equipped);
     rng = SeededRng.fromSnapshot(drawn.rng);
-    next = { ...next, skills: { cards: [...next.skills.cards, drawn.skill.id] } };
+    next = { ...next, skills: skillState(next, { cards: [...next.skills.cards, drawn.skill.id] }) };
     events.push({ type: "SKILL_GAINED", skillId: drawn.skill.id });
   }
   return append({ ...next, rng: { ...next.rng, loot: rng.snapshot() } }, ...events);
@@ -83,23 +106,27 @@ function resolveComparison(state: MatchState): MatchState {
 }
 
 export function resolveRound(state: MatchState, outcome: RoundOutcome): MatchState {
-  // Resolution is deliberately a pause.  The table must reveal both hands and
-  // let the player acknowledge the result before anybody touches the revolver.
+  // Every resolution pauses so the table can reveal both hands. Confirmation
+  // either advances a push or opens the appropriate roulette interaction.
+  const target = outcome.penaltyTarget ? state.roulette[outcome.penaltyTarget] : null;
+  const opponentFury = outcome.penaltyTarget === "opponent" && outcome.reason !== "blackjack" && hasEquippedEffect(state, "double-opponent-load") && Boolean(target && target.bullets < state.roulette.player.bullets);
+  const actualAmount = opponentFury ? outcome.bulletsAdded * 2 : outcome.bulletsAdded;
+  const actualOutcome = actualAmount === outcome.bulletsAdded ? outcome : { ...outcome, bulletsAdded: actualAmount };
   let next = append(
     setPhase(state, "round-reveal", null),
-    { type: "ROUND_RESOLVED", outcome }
+    { type: "ROUND_RESOLVED", outcome: actualOutcome }
   );
-  next = withRound(next, { ...next.round, phase: "round-reveal", currentActor: null, outcome });
+  next = withRound(next, { ...next.round, phase: "round-reveal", currentActor: null, outcome: actualOutcome });
   if (!outcome.penaltyTarget) return next;
 
   const targetGun = next.roulette[outcome.penaltyTarget];
-  const updatedGun = addBullets(targetGun, outcome.bulletsAdded);
+  const updatedGun = addBullets(targetGun, actualAmount);
   const roulette: RouletteState = { ...next.roulette, [outcome.penaltyTarget]: updatedGun };
   next = append(
     { ...next, roulette },
-    { type: "BULLET_ADDED", actor: outcome.penaltyTarget, amount: outcome.bulletsAdded }
+    { type: "BULLET_ADDED", actor: outcome.penaltyTarget, amount: actualAmount }
   );
-  if (outcome.playerSkillReward > 0) next = gainSkills(next, outcome.playerSkillReward);
+  if (actualOutcome.playerSkillReward > 0) next = gainSkills(next, actualOutcome.playerSkillReward);
 
   return setPhase(next, "round-reveal", null);
 }
@@ -117,7 +144,7 @@ function startNextRound(state: MatchState): MatchState {
     opponent: next.opponent,
     outcome: null
   };
-  const stateWithRound = withRound({ ...state, shoe: next.shoe, peekedCards: [], rng: { ...state.rng, deck: next.deckRng.snapshot() } }, round);
+  const stateWithRound = withRound({ ...state, shoe: next.shoe, skills: skillState(state, { advice: null, rhodesArmed: false, nightQueenArmed: false }), rng: { ...state.rng, deck: next.deckRng.snapshot() } }, round);
   return resolveInitialBlackjack(append(stateWithRound, ...next.events));
 }
 
@@ -150,11 +177,19 @@ function resolveInitialBlackjack(state: MatchState): MatchState {
 }
 
 function drawFor(state: MatchState, actor: Actor): MatchState {
-  const drawn = drawCard(state.shoe);
-  const current = state[actor];
+  let drawn = actor === "player" && state.skills.nightQueenArmed
+    ? { card: state.player.hand.cards[0]!, shoe: state.shoe }
+    : drawCard(state.shoe);
+  let activeState = actor === "player" ? { ...state, skills: skillState(state, { advice: null }) } : state;
+  if (actor === "player" && state.skills.nightQueenArmed) {
+    const result = drawNightQueenCard(state.player.hand, state.shoe, SeededRng.fromSnapshot(state.rng.skill));
+    drawn = { card: result.card, shoe: result.shoe };
+    activeState = { ...activeState, rng: { ...state.rng, skill: result.rng }, skills: skillState(activeState, { nightQueenArmed: false, advice: null }) };
+  }
+  const current = activeState[actor];
   const updated: ParticipantState = { ...current, hand: addCard(current.hand, drawn.card) };
   const round = { ...state.round, [actor]: updated } as RoundState;
-  let next = withRound({ ...state, shoe: drawn.shoe, peekedCards: [] }, round);
+  let next = withRound({ ...activeState, shoe: drawn.shoe }, round);
   next = append(next,
     { type: actor === "player" ? "PLAYER_HIT" : "OPPONENT_HIT", value: handValue(updated.hand) },
     { type: "CARD_DEALT", actor, card: drawn.card, private: true }
@@ -190,7 +225,7 @@ function resolveBust(state: MatchState, bustedActor: Actor): MatchState {
 function standFor(state: MatchState, actor: Actor): MatchState {
   const updated = { ...state[actor], stood: true };
   const round = { ...state.round, [actor]: updated } as RoundState;
-  let next = append(withRound(state, round), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
+  let next = append(withRound({ ...state, skills: actor === "player" ? skillState(state, { advice: null }) : state.skills }, round), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
   const other = actor === "player" ? "opponent" : "player";
   if (next[other].stood) return resolveComparison(next);
   return setPhase(next, "turns", next[other].stood ? actor : other);
@@ -220,10 +255,19 @@ function pullTriggerFor(state: MatchState, actor: Actor): MatchState {
 
 function timingAllowsSkill(state: MatchState, skillId: string): boolean {
   const skill = getSkillDefinition(skillId);
-  if (!skill || !state.skills.cards.includes(skillId)) return false;
+  if (!skill || skill.category !== "active" || !state.skills.cards.includes(skillId)) return false;
   const timing = state.round.phase === "roulette-reaction" ? "roulette-reaction" : state.round.phase === "turns" && state.round.currentActor === "player" ? "player-turn" : null;
   if (!timing || !skill.timing.includes(timing)) return false;
-  if (skill.effect.type === "remove-bullet" && state.roulette.player.bullets <= 0) return false;
+  if (skill.effect.type === "switcheroo") {
+    if (state.player.hand.cards.length === 0) return false;
+    if (!state.shoe.cards.slice(state.shoe.cursor).some((card) => handValue({ cards: [...state.player.hand.cards.slice(0, -1), card] }) <= 21)) return false;
+  }
+  if (skill.effect.type === "night-queen") {
+    const cards = state.player.hand.cards;
+    if (cards.length === 0 || new Set(cards.map((card) => card.suit)).size !== 1 || handValue(state.player.hand) <= 10) return false;
+    if (state.skills.nightQueenArmed) return false;
+  }
+  if (skill.effect.type === "rhodes-heartthrob" && state.skills.rhodesArmed) return false;
   return true;
 }
 
@@ -235,15 +279,21 @@ function useSkill(state: MatchState, skillId: string): MatchState {
     inventory: state.skills,
     gun: state.roulette.player,
     shoe: state.shoe,
-    peekedCards: state.peekedCards
+    playerHand: state.player.hand,
+    observation: buildObservation(state, "player"),
+    skillRng: SeededRng.fromSnapshot(state.rng.skill)
   });
-  const next = {
-    ...state,
-    skills: applied.inventory,
-    peekedCards: applied.peekedCards,
-    roulette: { ...state.roulette, player: applied.gun }
-  };
-  return append(next, { type: "SKILL_USED", skillId });
+  const player = { ...state.player, hand: applied.playerHand, stood: false, busted: false };
+  let next = withRound({ ...state, skills: applied.inventory, shoe: applied.shoe, rng: { ...state.rng, skill: applied.skillRng }, roulette: { ...state.roulette, player: applied.gun } }, { ...state.round, player });
+  next = append(next, { type: "SKILL_USED", skillId });
+  if (skill.effect.type === "hunter-advice" && applied.inventory.advice) next = append(next, { type: "SKILL_ADVICE", advice: applied.inventory.advice });
+  if (skill.effect.type === "switcheroo" && isTwentyOne(player.hand)) {
+    const stood = { ...player, stood: true };
+    next = append(withRound(next, { ...next.round, player: stood }), { type: "PLAYER_STOOD" });
+    if (next.opponent.stood) return resolveComparison(next);
+    return setPhase(next, "turns", "opponent");
+  }
+  return next;
 }
 
 export function createMatch(seed: string, options: CreateMatchOptions = {}): MatchState {
@@ -253,6 +303,7 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
   const ai = root.derive("ai");
   const loot = root.derive("loot");
   const dialogue = root.derive("dialogue");
+  const skill = root.derive("skill");
   const shoe = createShoe(deck);
   const initial = makeRound(0, shoe, deck);
   const round: RoundState = {
@@ -276,15 +327,14 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
     opponent: initial.opponent,
     shoe: initial.shoe,
     roulette: { player: createGun(), opponent: createGun() },
-    skills: { cards: [] },
-    peekedCards: [],
+    skills: { equippedSkillIds: normalizeEquipped(options.equippedSkillIds), cards: [], advice: null, rhodesArmed: false, nightQueenArmed: false },
     round,
     history: initial.events,
-    rng: { deck: initial.deckRng.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() },
+    rng: { deck: initial.deckRng.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), skill: skill.snapshot(), dialogue: dialogue.snapshot() },
     aiProfile: options.aiProfile ?? RECKLESS_B_PROFILE,
     lastAiDecision: null
   };
-  const withOpeningSkill = gainSkills(base, 1);
+  const withOpeningSkill = gainSkills(base, 1 + (base.skills.equippedSkillIds.some((id) => getSkillDefinition(id)?.effect.type === "opening-extra-draw") ? 1 : 0));
   return resolveInitialBlackjack(withOpeningSkill);
 }
 
@@ -328,9 +378,11 @@ export function gameReducer(state: MatchState, action: Action): MatchState {
     if (state.status !== "active" || state.scene !== "match" || state.round.phase !== "round-reveal") return state;
     const acknowledged = append(state, { type: "ROUND_RESULT_ACKNOWLEDGED" });
     return acknowledged.round.outcome?.penaltyTarget === "opponent"
-      ? pullTriggerFor(setPhase(acknowledged, "roulette-trigger", null), "opponent")
+      ? setPhase(acknowledged, "roulette-trigger", null)
       : acknowledged.round.outcome?.penaltyTarget === "player"
-        ? setPhase(acknowledged, "roulette-reaction", null)
+        ? (() => { const triggerGuard = equippedDefinitionByEffect(acknowledged, "rhodes-heartthrob"); return triggerGuard && acknowledged.skills.rhodesArmed && acknowledged.roulette.player.bullets < acknowledged.roulette.player.capacity
+          ? startNextRound(append(acknowledged, { type: "TRIGGER_AVOIDED_BY_SKILL", actor: "player", skillId: triggerGuard.id }))
+          : setPhase(acknowledged, "roulette-reaction", null); })()
       : startNextRound(acknowledged);
   }
   if (action.type === "ACK_TRIGGER_RESULT") {
