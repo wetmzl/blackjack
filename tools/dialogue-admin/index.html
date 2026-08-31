@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>对白管理台</title><link rel="stylesheet" href="/styles.css"></head>
+<body><main class="admin"><header><p class="eyebrow">开发维护入口</p><h1>对白管理台</h1><p>直接维护角色数据 JSON；每组对白独立保存。</p></header><div class="layout"><aside><h2>角色</h2><nav id="characters" aria-label="角色列表"></nav></aside><section class="editor"><div id="status" role="status" aria-live="polite"></div><div id="empty">请选择一个角色。</div><div id="dialogue" hidden><div class="editor-head"><div><h2 id="character-name"></h2><p>revision：<code id="revision"></code></p></div><button id="reload" type="button">重新加载</button></div><div id="events"></div><form id="new-event"><h3>新增对白事件</h3><label>事件<select id="event-code" required></select></label><label>首条对白<textarea id="new-line" required placeholder="输入这个事件的第一条对白"></textarea></label><button type="submit">创建对白组</button></form></div></section></div></main><script src="/app.js" defer></script></body>
+</html>

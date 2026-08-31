@@ -1,0 +1,21 @@
+[
+  { "code": "MATCH_START", "label": "开局" },
+  { "code": "PLAYER_HIT", "label": "玩家要牌" },
+  { "code": "PLAYER_STAND", "label": "玩家停牌" },
+  { "code": "PLAYER_BLACKJACK", "label": "玩家黑杰克" },
+  { "code": "OPPONENT_BLACKJACK", "label": "对手黑杰克" },
+  { "code": "PLAYER_BUST", "label": "玩家爆牌" },
+  { "code": "OPPONENT_BUST", "label": "对手爆牌" },
+  { "code": "PLAYER_SURVIVED_TRIGGER", "label": "玩家空枪存活" },
+  { "code": "OPPONENT_SURVIVED_TRIGGER", "label": "对手空枪存活" },
+  { "code": "PLAYER_WIN_ROUND", "label": "玩家赢轮" },
+  { "code": "OPPONENT_WIN_ROUND", "label": "对手赢轮" },
+  { "code": "PUSH_ROUND", "label": "平局" },
+  { "code": "PLAYER_TRIGGER_READY", "label": "玩家准备扣扳机" },
+  { "code": "OPPONENT_TRIGGER_READY", "label": "对手准备扣扳机" },
+  { "code": "PLAYER_TRIGGER_HIT", "label": "玩家被命中" },
+  { "code": "OPPONENT_TRIGGER_HIT", "label": "对手被命中" },
+  { "code": "MATCH_WIN", "label": "玩家赢得整局" },
+  { "code": "MATCH_LOSS", "label": "玩家输掉整局" },
+  { "code": "PLAYER_ESCAPE", "label": "玩家逃跑" }
+]

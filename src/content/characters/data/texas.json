@@ -1,0 +1,42 @@
+{
+  "assets": {
+    "relaxed": "/assets/characters/texas-relaxed.png",
+    "conflicted": "/assets/characters/texas-conflicted.png",
+    "mocking": "/assets/characters/texas-mocking.png",
+    "threatened": "/assets/characters/texas-threatened.png",
+    "staffRevolver": "/assets/characters/staff-revolver-7mm.png",
+    "unconscious": "/assets/characters/texas-unconscious.png",
+    "defeatedSummary": "/assets/characters/texas-defeated-summary-chair.png"
+  },
+  "revolverPlacement": {
+    "top": 142,
+    "left": 128,
+    "mobileTop": 109,
+    "mobileLeft": 110
+  },
+  "ai": {
+    "rationality": 0.92,
+    "personalityHitProbability": 0.2
+  },
+  "dialogue": {
+    "MATCH_START": ["博士，舞会还没散场。坐吧，我陪你打一局。", "只是余兴节目。博士，不必露出那么严肃的表情。"],
+    "PLAYER_HIT": ["继续要牌……明白了。", "风险上升了，博士。你应该已经算过。"],
+    "PLAYER_STAND": ["选择停在这里，很像你的作风。", "Stand。谨慎，但未必保守。"],
+    "PLAYER_BLACKJACK": ["漂亮的二十一点。今晚你的判断很准。", "黑杰克。看来这局该由我接受舞会惩罚。"],
+    "OPPONENT_BLACKJACK": ["二十一点。抱歉，博士，这次我先到了。", "牌面已经决定了。接下来只是舞台效果。"],
+    "PLAYER_BUST": ["超过二十一。你走得稍远了一步。", "爆牌。博士，下次少承担一点风险。"],
+    "OPPONENT_BUST": ["是我算错了。结果很清楚。", "爆牌……看来沉稳也不能替代运气。"],
+    "PLAYER_SURVIVED_TRIGGER": ["空膛。舞会还愿意让你继续。", "没响。博士，可以把呼吸放慢了。"],
+    "OPPONENT_SURVIVED_TRIGGER": ["空膛。那就回到牌桌。", "没有击发，可等待声响仍然很漫长。"],
+    "PLAYER_WIN_ROUND": ["这一轮归你。判断没有多余动作。", "你赢了，博士。继续保持。"],
+    "OPPONENT_WIN_ROUND": ["这一轮我赢。别担心，只是舞会余兴。", "结果在预料之内。下一轮再调整。"],
+    "PUSH_ROUND": ["平局。双方的判断都没有越界。", "没有胜负。重新洗牌吧。"],
+    "PLAYER_TRIGGER_READY": ["轮到你接受舞台惩罚了。稳住，博士。", "工作人员已经就位。7mm 左轮就在你面前。"],
+    "OPPONENT_TRIGGER_READY": ["我知道流程。让工作人员瞄准吧。", "不必担心我。只是等待会让人分神。"],
+    "PLAYER_TRIGGER_HIT": ["枪声响了。博士，先休息一会儿。", "这一发结束了牌局。医疗组就在舞厅外。"],
+    "OPPONENT_TRIGGER_HIT": ["……是我输了。替我记下这局。", "枪声响起。看来今晚的胜者是你。"],
+    "MATCH_WIN": ["整场归你，博士。记录放进陈列室吧。", "你的胜利。下次舞会，我会准备得更好。"],
+    "MATCH_LOSS": ["这次由我获胜。舞会还长，不必急。", "结束了，博士。输掉余兴不影响指挥。"],
+    "PLAYER_ESCAPE": ["想回舞厅了？好，我们改天继续。", "离席也可以。这里本来就只是余兴。"]
+  }
+}
