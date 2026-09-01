@@ -71,6 +71,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(page.getByRole("heading", { name: "绝命之夜" })).toBeVisible();
   await expect(page.locator(".menu-subtitle")).toContainText("终焉赌局");
   await expect(page.locator(".lobby-menu-button")).toHaveCount(4);
+  await expect(page.locator(".button-number")).toHaveCount(0);
   await expect(page.locator(".character-card")).toHaveCount(0);
   await expect(page.locator(".lobby-title-block")).toContainText("奉上自己的一切，包括自己的身体");
   await expect(page.locator(".lobby-title-block")).toContainText("祂终将有求必应");
