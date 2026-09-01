@@ -239,6 +239,9 @@ function pullTriggerFor(state: MatchState, actor: Actor): MatchState {
     { type: "TRIGGER_PULLED", actor, probability: trigger.result.probability, fired: trigger.result.fired }
   );
   if (trigger.result.fired) {
+    // Narrative is deliberately asymmetric: actor=opponent is killed by the
+    // dealer, while actor=player is the immortal Curator firing at the ceiling.
+    // The legacy killed reason/event names stay stable for save compatibility.
     const winner: Actor = actor === "player" ? "opponent" : "player";
     const reason = actor === "player" ? "player-killed" : "opponent-killed";
     const outcome: MatchOutcome = { winner, reason };

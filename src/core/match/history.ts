@@ -2,7 +2,7 @@ import type { GunState } from "../roulette/types";
 import type { Actor, MatchState } from "./types";
 
 /**
- * The compact, immutable result kept for the trophy room.  The full MatchState
+ * The compact, immutable result kept for the Curator's collection history. The full MatchState
  * remains available while a match is active, but a completed match only needs
  * this summary to be restored and rendered later.
  */
@@ -26,7 +26,7 @@ function countEvents(state: MatchState, type: "BUST" | "BLACKJACK"): Readonly<Re
 }
 
 /**
- * Builds a trophy-room entry from a completed match without mutating it.
+ * Builds a collection-history entry from a completed match without mutating it.
  * `timestamp` is supplied by the persistence boundary so this function stays
  * deterministic and straightforward to unit test.
  */
@@ -49,4 +49,3 @@ export function summarizeMatch(state: MatchState, timestamp: string): MatchHisto
     blackjacks: countEvents(state, "BLACKJACK")
   };
 }
-

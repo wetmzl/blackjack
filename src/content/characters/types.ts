@@ -3,7 +3,7 @@ import type { CharacterDialogue } from "../../dialogue/types";
 
 export type Tier = "D" | "C" | "B" | "A" | "S";
 
-/** Lightweight character data used to build the lobby and history index. */
+/** Lightweight attendee data used to build the castle lobby and collection-history index. */
 export interface CharacterMetadata {
   readonly id: string;
   readonly name: string;
@@ -41,7 +41,7 @@ export interface CharacterMatchSummary {
   readonly escaped: string;
 }
 
-/** Percentage coordinates are relative to the portrait trophy-gallery artwork. */
+/** Percentage coordinates are relative to the attendee's portrait collection artwork. */
 export interface TrophyCloseupPoint {
   readonly id: string;
   readonly name: string;
@@ -52,11 +52,11 @@ export interface TrophyCloseupPoint {
 }
 
 export interface CharacterTrophyGallery {
-  /** 5:7 one-inch-photo composition shown in the history detail modal. */
+  /** 5:7 archival head-and-shoulders view of the deceased attendee. */
   readonly headshot: string;
-  /** 2:3 portrait artwork used as the full-screen inspection stage. */
+  /** 2:3 full-body collection record used as the inspection stage. */
   readonly fullBody: string;
-  /** No upper limit: characters can define as many interactive details as needed. */
+  /** No upper limit: attendees can define as many archival details as needed. */
   readonly closeups: readonly TrophyCloseupPoint[];
 }
 
@@ -68,14 +68,14 @@ export const TABLE_ART_BASELINE = Object.freeze({
   composition: "horizontal-seated"
 });
 
-/** Full table definition. Load this only when a match needs AI, dialogue, or table art. */
+/** Full attendee definition. Load this only when a match needs AI, dialogue, or table art. */
 export interface CharacterData {
   readonly $schema: "../character.schema.json";
   readonly assets: CharacterAssets;
   readonly profile: CharacterProfile;
   readonly matchSummary: CharacterMatchSummary;
   readonly trophyGallery?: CharacterTrophyGallery;
-  /** All normal table portraits use TABLE_ART_BASELINE; definitions cannot override its scale. */
+  /** All normal attendee portraits use TABLE_ART_BASELINE; definitions cannot override its scale. */
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;
   readonly dialogue: CharacterDialogue;

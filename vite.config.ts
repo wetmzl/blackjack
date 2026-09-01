@@ -25,7 +25,7 @@ export default defineConfig({
       manifest: {
         name: "命运牌桌",
         short_name: "命运牌桌",
-        description: "一场黑杰克与俄罗斯轮盘的单机对决。",
+        description: "来自高位面的策展人在古堡中邀请泰拉与会者参加致命的黑杰克轮盘赌。",
         theme_color: "#171421",
         background_color: "#171421",
         display: "standalone",

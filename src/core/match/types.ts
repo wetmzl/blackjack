@@ -7,6 +7,7 @@ import type { SkillInventory } from "../skills/types";
 export type AppScene = "lobby" | "match" | "trophy-room";
 export type MatchView = "table" | "execution-room" | "match-summary";
 export type RoundPhase = "dealing" | "initial-blackjack-check" | "turns" | "settlement" | "round-reveal" | "roulette-reaction" | "roulette-trigger" | "roulette-result" | "reward" | "round-end";
+/** Narrative mapping: player is the Curator; opponent is the invited attendee. */
 export type Actor = "player" | "opponent";
 
 export interface ParticipantState {
@@ -35,6 +36,10 @@ export interface RoundState {
   readonly outcome: RoundOutcome | null;
 }
 
+/**
+ * Compatibility identifiers: player-killed means the Curator fired at the
+ * ceiling and lost this timeline; opponent-killed is the attendee's death.
+ */
 export type MatchEndReason = "player-killed" | "opponent-killed" | "escaped";
 export interface MatchOutcome {
   readonly winner: Actor | null;
@@ -65,6 +70,7 @@ export type GameEvent =
   | { readonly type: "TRIGGER_SURVIVED"; readonly actor: Actor }
   | { readonly type: "TRIGGER_AVOIDED_BY_SKILL"; readonly actor: Actor; readonly skillId: string }
   | { readonly type: "TRIGGER_RESULT_ACKNOWLEDGED" }
+  /** Compatibility event name; actor=player never means the Curator physically dies. */
   | { readonly type: "PARTICIPANT_KILLED"; readonly actor: Actor }
   | { readonly type: "SKILL_GAINED"; readonly skillId: string }
   | { readonly type: "SKILL_USED"; readonly skillId: string }

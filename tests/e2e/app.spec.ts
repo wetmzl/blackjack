@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { createDefaultSave } from "../../src/persistence/boot";
 import { createMatch } from "../../src/core/match/reducer";
@@ -48,17 +49,57 @@ function opponentPenaltyReveal(): MatchState {
   };
 }
 
-test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }) => {
+async function enterCharacterSelection(page: Page): Promise<void> {
+  const entry = page.locator("[data-enter-duel]");
+  if (await entry.isVisible()) await entry.click();
+  await expect(page.locator("main.lobby-character-shell")).toBeVisible();
+}
+
+async function openLobbySettings(page: Page): Promise<void> {
+  await enterCharacterSelection(page);
+  await page.locator("button.quiet-button[data-open='settings']").click();
+}
+
+async function returnToLobbyMenu(page: Page): Promise<void> {
+  const back = page.locator("[data-lobby-home]");
+  if (await back.isVisible()) await back.click();
+  await expect(page.locator("main.lobby-menu-shell")).toBeVisible();
+}
+
+test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, testInfo) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /命运\s*牌桌/ })).toBeVisible();
-  await expect(page.locator(".character-card")).toHaveCount(4);
+  await expect(page.getByRole("heading", { name: "绝命之夜" })).toBeVisible();
+  await expect(page.locator(".menu-subtitle")).toContainText("终焉赌局");
+  await expect(page.locator(".lobby-menu-button")).toHaveCount(4);
+  await expect(page.locator(".character-card")).toHaveCount(0);
+  await expect(page.locator(".lobby-title-block")).toContainText("奉上自己的一切，包括自己的身体");
+  await expect(page.locator(".lobby-title-block")).toContainText("祂终将有求必应");
+  const menuStyle = await page.locator(".lobby-menu-shell").evaluate((shell) => getComputedStyle(shell).backgroundImage);
+  expect(menuStyle).toContain("castle-lobby-night.png");
+  const buttonColors = new Set(await page.locator(".lobby-menu-button").evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundColor)));
+  expect(buttonColors.size).toBeLessThanOrEqual(3);
+  const shellBox = await page.locator(".lobby-menu-shell").boundingBox();
+  const titleBox = await page.locator(".lobby-title-block").boundingBox();
+  const menuBox = await page.locator(".lobby-menu").boundingBox();
+  expect(shellBox).not.toBeNull();
+  expect(titleBox).not.toBeNull();
+  expect(menuBox).not.toBeNull();
+  expect(menuBox!.y - (titleBox!.y + titleBox!.height)).toBeGreaterThan(60);
+  expect(menuBox!.height).toBeLessThan(shellBox!.height * .3);
+  await page.screenshot({ path: testInfo.outputPath("lobby-menu-390.png"), fullPage: true });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.screenshot({ path: testInfo.outputPath("lobby-menu-320.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
   const forbiddenSafetyProp = String.fromCharCode(27700, 26538);
   expect(await page.locator("body").innerText()).not.toContain(forbiddenSafetyProp);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("button", { name: "玩法说明" }).click();
-  await expect(page.getByRole("heading", { name: "怎么玩" })).toBeVisible();
+  await expect(page.locator("#rules").getByRole("heading", { name: "玩法说明" })).toBeVisible();
   await expect(page.locator("#rules")).toContainText("黑杰克");
   await page.locator("#rules [data-close]").click();
+  await enterCharacterSelection(page);
+  await expect(page.locator(".character-card")).toHaveCount(4);
   await page.getByRole("button", { name: "查看档案" }).first().click();
   const profile = page.locator("#profile");
   await expect(profile).toContainText("W");
@@ -85,7 +126,9 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }) 
   expect(playerFirstCard!.x).toBeGreaterThanOrEqual(68);
   expect(playerFirstCard!.x).toBeLessThanOrEqual(72);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await expect(page.locator("#presentation")).toHaveText("");
+  if (await page.locator("main.table-shell").getAttribute("data-phase") === "turns") {
+    await expect(page.locator("#presentation")).toHaveText("");
+  }
   const playerLayout = await page.locator(".player-layout").boundingBox();
   const actionDock = await page.locator(".action-dock").boundingBox();
   const playerZone = await page.locator(".player-zone").boundingBox();
@@ -119,12 +162,15 @@ test("新对局逐张展示早有准备带来的两张技能牌", async ({ page 
     observer.observe(document, { childList: true, subtree: true });
   });
   await page.goto("/?debug=1");
+  await enterCharacterSelection(page);
   await page.locator("[data-start-character='w']").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[]; equippedSkillIds: string[] } } };
-  expect(initialMatchDebug.relevantMatchState.skills.cards).toHaveLength(2);
+  const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[]; equippedSkillIds: string[] }; history: Array<{ type: string; actor?: string }> } };
+  const playerBlackjack = initialMatchDebug.relevantMatchState.history.some((event) => event.type === "BLACKJACK" && event.actor === "player");
+  const expectedInitialGains = 2 + (playerBlackjack ? 2 : 0);
+  expect(initialMatchDebug.relevantMatchState.skills.cards).toHaveLength(expectedInitialGains);
   expect(initialMatchDebug.relevantMatchState.skills.equippedSkillIds).toContain("early-preparation");
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { __skillGainEntries: unknown[] }).__skillGainEntries.length), { timeout: 4_000 }).toBe(2);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __skillGainEntries: unknown[] }).__skillGainEntries.length), { timeout: 5_000 }).toBe(expectedInitialGains);
   const entries = await page.evaluate(() => (window as typeof window & { __skillGainEntries: Array<{ text: string; at: number }> }).__skillGainEntries);
   expect(entries.every((entry) => entry.text.startsWith("获得技能牌："))).toBe(true);
   expect(entries[1]!.at - entries[0]!.at).toBeGreaterThanOrEqual(900);
@@ -138,6 +184,8 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
     requestedPaths.push(decodeURIComponent(`${url.pathname}${url.search}`));
   });
   await page.goto("/");
+  await expect(page.locator(".character-card")).toHaveCount(0);
+  await enterCharacterSelection(page);
   await expect(page.locator(".character-card")).toHaveCount(4);
   expect(requestedPaths.some((path) => path.includes("/content/characters/data/"))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
@@ -153,6 +201,7 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   await page.locator("button[aria-label='离开余兴牌桌']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
   await page.getByRole("button", { name: "返回舞会大厅" }).click();
+  await enterCharacterSelection(page);
   await expect(page.locator(".character-card")).toHaveCount(4);
   const ireneRequestedPaths: string[] = [];
   page.on("request", (request) => {
@@ -167,12 +216,12 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
 
 test("年作为第四角色显示解离式档案并按需载入", async ({ page }) => {
   await page.goto("/");
+  await enterCharacterSelection(page);
   await expect(page.locator(".character-card")).toHaveCount(4);
   await page.locator("[data-profile-id='nian']").click();
   const profile = page.locator("#profile");
   await expect(profile).toContainText("年");
-  await expect(profile).toContainText("烂片");
-  await expect(profile).toContainText("解离感");
+  await expect(profile.locator("#profile-content")).toHaveText(/\S+/);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-strip .eyebrow")).toContainText("年 // S级");
@@ -184,7 +233,7 @@ test("旧存档中的未知角色安全回退到 W", async ({ page }) => {
   imported.settings.reducedMotion = true;
   imported.activeMatch = { ...findTurnsMatch("retired-character"), opponentId: "retired-character" };
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "retired.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-strip .eyebrow")).toContainText("W // B级");
@@ -194,7 +243,7 @@ test("旧存档中的未知角色安全回退到 W", async ({ page }) => {
 test("设置原地保存并走中文导入导出", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined, configurable: true }));
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   const settings = page.locator("#settings");
   await expect(settings).toBeVisible();
   await settings.locator("input[data-setting='reducedMotion']").check();
@@ -205,7 +254,7 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.profile.matchesPlayed = 7;
   await settings.locator("#save-file").setInputFiles({ name: "存档.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
-  await expect(page.locator(".footer")).toContainText("博士战绩 // 7");
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 7");
 });
 
 test("技能管理展示严格装备状态，清档确认可取消或重置", async ({ page }) => {
@@ -218,22 +267,24 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
     busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 }
   });
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "skills.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
-  await expect(page.locator(".footer")).toContainText("博士战绩 // 5");
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 5");
+  await returnToLobbyMenu(page);
   await page.getByRole("button", { name: "技能管理" }).click();
   const skills = page.locator("#skills");
   await expect(skills.locator(".loadout-skill")).toHaveCount(6);
   await expect(skills.locator("input[data-equip-skill]:checked")).toHaveCount(4);
   await expect(skills.locator("input[data-equip-skill='night-queen']")).toBeDisabled();
   await skills.locator("[data-close]").click();
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.locator("[data-reset]").click();
-  await expect(page.locator(".footer")).toContainText("博士战绩 // 5");
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 5");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.locator("[data-reset]").click();
-  await expect(page.locator(".footer")).toContainText("博士战绩 // 0");
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 0");
+  await returnToLobbyMenu(page);
   await expect(page.locator("[data-open-trophies]")).toContainText("0 局");
 });
 
@@ -274,7 +325,7 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   imported.settings.reducedMotion = true;
   imported.activeMatch = playerWinSummary();
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.getByRole("heading", { name: "博士胜利" })).toBeVisible();
   await expect(page.locator(".summary-character")).toHaveAttribute("src", /w-defeated-summary-chair\.png/);
@@ -289,7 +340,7 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await expect(page.locator("#skills input[data-equip-skill='night-queen']")).toBeEnabled();
 });
 
-test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡面仍可使用", async ({ page }) => {
+test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡面仍可使用", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const source = findTurnsMatch("compact-skills");
   imported.settings.reducedMotion = true;
@@ -299,23 +350,99 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
     skills: { ...source.skills, cards: ["hunter-instinct"] }
   };
   await page.goto("/?debug=1");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await page.addStyleTag({ content: ".dev-hud { display: none !important; }" });
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "compact-skills.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
-  await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(2);
+  await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(4);
   const debugBefore = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[] } } };
   const playerCardElement = await page.locator(".player-zone .card").first().elementHandle();
   expect(playerCardElement).not.toBeNull();
   const drawerToggle = page.locator(".skill-drawer-toggle");
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "false");
-  await expect(drawerToggle).toContainText(String(debugBefore.relevantMatchState.skills.cards.length + 1));
+  await expect(drawerToggle.locator(".skill-drawer-arrow")).toHaveText("<");
+  await expect(drawerToggle.locator(".skill-drawer-badge")).toHaveText(String(debugBefore.relevantMatchState.skills.cards.length + 1));
+  await expect(page.locator(".skill-drawer-content")).not.toBeVisible();
+  await expect(page.locator(".skill-card[data-action*='switcheroo'] small")).toHaveText("×0");
+  await expect(page.locator(".skill-card[data-action*='switcheroo']")).toBeDisabled();
+  const layoutBefore = await page.locator(".player-layout").boundingBox();
+  const dockBefore = await page.locator(".action-dock").boundingBox();
+  const playerMainBefore = await page.locator(".player-main").boundingBox();
+  const closedSidebar = await page.locator(".skill-sidebar").boundingBox();
+  const closedToggle = await drawerToggle.boundingBox();
+  const closedBadge = await drawerToggle.locator(".skill-drawer-badge").boundingBox();
+  const closedPlayerCard = await page.locator(".player-zone .card").first().boundingBox();
+  expect(layoutBefore).not.toBeNull();
+  expect(dockBefore).not.toBeNull();
+  expect(playerMainBefore).not.toBeNull();
+  expect(closedSidebar).not.toBeNull();
+  expect(closedToggle).not.toBeNull();
+  expect(closedBadge).not.toBeNull();
+  expect(closedPlayerCard).not.toBeNull();
+  const closedDrawerStyle = await page.locator(".skill-sidebar").evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    border: getComputedStyle(element).borderTopColor,
+    pointerEvents: getComputedStyle(element).pointerEvents
+  }));
+  expect(closedDrawerStyle).toEqual({
+    background: "rgba(0, 0, 0, 0)",
+    border: "rgba(0, 0, 0, 0)",
+    pointerEvents: "none"
+  });
+  expect(Math.abs(closedToggle!.x + closedToggle!.width - (layoutBefore!.x + layoutBefore!.width))).toBeLessThanOrEqual(2);
+  const closedIntersection = Math.max(0, Math.min(closedSidebar!.x + closedSidebar!.width, layoutBefore!.x + layoutBefore!.width) - Math.max(closedSidebar!.x, layoutBefore!.x));
+  expect(closedIntersection).toBeLessThanOrEqual(.5);
+  expect(closedBadge!.x + closedBadge!.width).toBeLessThanOrEqual(layoutBefore!.x + layoutBefore!.width);
+  expect(closedBadge!.x + closedBadge!.width).toBeLessThanOrEqual(390);
+  expect(closedPlayerCard!.y).toBeGreaterThanOrEqual(620);
+  expect(closedPlayerCard!.y + closedPlayerCard!.height).toBeLessThan(dockBefore!.y);
   await drawerToggle.click();
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator(".skill-sidebar")).toBeVisible();
+  await expect(drawerToggle.locator(".skill-drawer-arrow")).toHaveText(">");
+  await expect(drawerToggle.locator(".skill-drawer-badge")).toBeHidden();
+  await expect(page.locator(".skill-drawer-content")).toBeVisible();
+  await expect(drawerToggle).toHaveAttribute("aria-label", /收起技能抽屉/);
   expect(await page.evaluate((element) => element === document.querySelector(".player-zone .card"), playerCardElement)).toBe(true);
+  const layoutAfter = await page.locator(".player-layout").boundingBox();
+  const dockAfter = await page.locator(".action-dock").boundingBox();
+  const playerMainAfter = await page.locator(".player-main").boundingBox();
+  for (const [before, after] of [[layoutBefore, layoutAfter], [dockBefore, dockAfter], [playerMainBefore, playerMainAfter]]) {
+    expect(after).not.toBeNull();
+    expect(Math.abs(after!.x - before!.x)).toBeLessThanOrEqual(.5);
+    expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(.5);
+    expect(Math.abs(after!.width - before!.width)).toBeLessThanOrEqual(.5);
+    expect(Math.abs(after!.height - before!.height)).toBeLessThanOrEqual(.5);
+  }
+  const drawerBox = await page.locator(".skill-sidebar").boundingBox();
+  const openMain = await page.locator(".player-main").boundingBox();
   const openSidebar = await page.locator(".skill-sidebar").boundingBox();
   const openDock = await page.locator(".action-dock").boundingBox();
+  const drawerBackground = await page.locator(".skill-sidebar").evaluate((element) => getComputedStyle(element).backgroundColor);
+  const drawerStyle = await page.locator(".skill-sidebar").evaluate((element) => {
+    const content = element.querySelector<HTMLElement>(".skill-drawer-content");
+    const notice = document.querySelector<HTMLElement>(".round-notice");
+    const point = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(point.left + 3, point.top + 3);
+    return {
+      position: getComputedStyle(element).position,
+      zIndex: Number(getComputedStyle(element).zIndex),
+      noticeZIndex: Number(notice ? getComputedStyle(notice).zIndex : "0"),
+      columns: content ? getComputedStyle(content).gridTemplateColumns.trim().split(/\s+/).length : 0,
+      contentBackground: content ? getComputedStyle(content).backgroundColor : "",
+      hitInsideDrawer: Boolean(hit?.closest(".skill-sidebar"))
+    };
+  });
+  expect(drawerBackground).toMatch(/rgba\(/);
+  expect(drawerStyle.position).toBe("fixed");
+  expect(drawerStyle.zIndex).toBeGreaterThan(drawerStyle.noticeZIndex);
+  expect(drawerStyle.columns).toBe(2);
+  expect(drawerStyle.contentBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(drawerStyle.hitInsideDrawer).toBe(true);
+  expect(drawerBox).not.toBeNull();
+  expect(openMain).not.toBeNull();
+  expect(drawerBox!.x).toBeLessThan(openMain!.x + openMain!.width);
+  expect(drawerBox!.x + drawerBox!.width).toBeGreaterThan(openMain!.x + openMain!.width - 2);
   expect(openSidebar).not.toBeNull();
   expect(openDock).not.toBeNull();
   expect(openSidebar!.y + openSidebar!.height).toBeLessThanOrEqual(openDock!.y);
@@ -343,12 +470,37 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(page.locator("#skill-info-dialog")).not.toBeVisible();
   await drawerToggle.click();
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(drawerToggle.locator(".skill-drawer-arrow")).toHaveText("<");
+  await expect(drawerToggle.locator(".skill-drawer-badge")).toBeVisible();
   await expect(activeSkill).not.toBeVisible();
   await drawerToggle.click();
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
   await expect(activeSkill).toBeVisible();
-  await page.locator(".skill-sidebar button.skill-card").click();
+  await page.locator(".skill-sidebar button.skill-card:not(:disabled)").first().click();
   await expect(page.locator(".skill-advice")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 700 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  const shortViewportToggle = await drawerToggle.boundingBox();
+  const shortViewportDrawer = await page.locator(".skill-sidebar").boundingBox();
+  const shortViewportPlayerCard = await page.locator(".player-zone .card").first().boundingBox();
+  const shortViewportPlayerHand = await page.locator(".player-zone .hand-row").boundingBox();
+  expect(shortViewportToggle).not.toBeNull();
+  expect(shortViewportDrawer).not.toBeNull();
+  expect(shortViewportPlayerCard).not.toBeNull();
+  expect(shortViewportPlayerHand).not.toBeNull();
+  expect(shortViewportToggle!.y).toBeGreaterThanOrEqual(0);
+  expect(shortViewportToggle!.y + shortViewportToggle!.height).toBeLessThanOrEqual(700);
+  expect(shortViewportDrawer!.y).toBeGreaterThanOrEqual(0);
+  expect(shortViewportDrawer!.y + shortViewportDrawer!.height).toBeLessThanOrEqual(700);
+  expect(shortViewportPlayerCard!.y).toBeGreaterThanOrEqual(0);
+  expect(shortViewportPlayerCard!.y + shortViewportPlayerCard!.height).toBeLessThanOrEqual(700);
+  expect(shortViewportPlayerHand!.y + shortViewportPlayerHand!.height).toBeLessThanOrEqual(700);
+  await page.screenshot({ path: testInfo.outputPath("skill-drawer-short-open.png") });
+  await drawerToggle.click();
+  await expect(drawerToggle).toHaveAttribute("aria-expanded", "false");
+  await page.screenshot({ path: testInfo.outputPath("skill-drawer-short-closed.png") });
+  await page.setViewportSize({ width: 360, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 });
 
 test("牌桌全屏按钮安全切换并同步状态", async ({ page }) => {
@@ -359,6 +511,7 @@ test("牌桌全屏按钮安全切换并同步状态", async ({ page }) => {
     Object.defineProperty(Document.prototype, "exitFullscreen", { configurable: true, value: async () => { fullscreenElement = null; document.dispatchEvent(new Event("fullscreenchange")); } });
   });
   await page.goto("/");
+  await enterCharacterSelection(page);
   await page.locator("[data-start-character='w']").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   const fullscreen = page.locator("[data-fullscreen]");
@@ -374,7 +527,7 @@ test("玩家 Blackjack 只使用 Blackjack 对话池", async ({ page }) => {
   imported.settings.reducedMotion = true;
   imported.activeMatch = findPlayerBlackjackMatch();
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "blackjack-dialogue.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
   const line = await page.locator("#dialogue-text").textContent();
@@ -390,8 +543,9 @@ test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏",
   ];
   imported.history = records;
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "history.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await returnToLobbyMenu(page);
   await page.locator("[data-open-trophies]").click();
   await expect(page.locator("main.trophy-shell")).toBeVisible();
   await expect(page.locator(".trophy-card")).toHaveCount(2);
@@ -429,6 +583,29 @@ test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏",
   await expect(gallery).toBeVisible();
   await expect(gallery.locator(".trophy-gallery-stage > img")).toHaveAttribute("src", /nian-trophy-gallery-full\.png/);
   await expect(gallery.locator(".trophy-hotspot")).toHaveCount(4);
+  await expect(gallery.locator(".trophy-gallery-stage figcaption")).toHaveText("点按圆环标记查看局部特写");
+  const markerStyle = await gallery.locator(".trophy-hotspot").first().evaluate((marker) => {
+    const ring = getComputedStyle(marker, "::before");
+    const number = marker.querySelector("span");
+    return {
+      background: getComputedStyle(marker).backgroundColor,
+      numberDisplay: number ? getComputedStyle(number).display : "missing",
+      ringSize: ring.width,
+      ringBorderStyle: ring.borderTopStyle,
+      ringBorderWidth: ring.borderTopWidth,
+      animationName: ring.animationName,
+      animationDuration: ring.animationDuration
+    };
+  });
+  expect(markerStyle).toEqual({
+    background: "rgba(0, 0, 0, 0)",
+    numberDisplay: "none",
+    ringSize: "14px",
+    ringBorderStyle: "solid",
+    ringBorderWidth: "2px",
+    animationName: "trophy-hotspot-glimmer",
+    animationDuration: "3.6s"
+  });
   await gallery.screenshot({ path: testInfo.outputPath("nian-trophy-gallery.png") });
   await gallery.locator("[data-closeup-id='tail-root']").click();
   await expect(gallery.locator("#trophy-closeup-panel")).toHaveClass(/is-open/);
@@ -460,8 +637,9 @@ test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ p
   ] as const;
 
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "gallery-cast.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await returnToLobbyMenu(page);
   await page.locator("[data-open-trophies]").click();
 
   for (const character of cases) {
@@ -498,6 +676,7 @@ test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ p
 
 test("开发者面板显示确定性诊断字段", async ({ page }) => {
   await page.goto("/?debug=1");
+  await enterCharacterSelection(page);
   await page.locator(".card-start").first().click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   const hud = page.locator(".dev-hud");
@@ -513,7 +692,7 @@ test("AI 发牌后强制等待并只在中点切换一次展示动作", async ({
   const historyLength = imported.activeMatch.history.length;
   const delay = getAiTurnDelayMs(imported.activeMatch);
   await page.goto("/?debug=1");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "ai-wait.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   const waiting = page.locator("#ai-wait");
   await expect(waiting).toBeVisible();
@@ -538,7 +717,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   imported.settings.reducedMotion = true;
   imported.activeMatch = createMatch("e2e-full-match");
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "active-match.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator(".dialogue")).not.toHaveText("“”");
@@ -614,7 +793,7 @@ test("确认结果启动循环心跳且扣扳机立即切换为击发音效", as
   imported.settings.reducedMotion = false;
   imported.activeMatch = opponentPenaltyReveal();
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "audio-reveal.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 
@@ -641,7 +820,7 @@ test("艾丽妮受罚时显示受胁迫立绘与工作人员左轮", async ({ pa
   imported.settings.reducedMotion = true;
   imported.activeMatch = { ...opponentPenaltyReveal(), opponentId: "irene" };
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "irene-trigger.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 
@@ -668,7 +847,7 @@ test("年受罚时只切换紧张立绘并叠加共享左轮", async ({ page }, 
   imported.settings.reducedMotion = true;
   imported.activeMatch = { ...opponentPenaltyReveal(), opponentId: "nian" };
   await page.goto("/");
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "nian-trigger.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 

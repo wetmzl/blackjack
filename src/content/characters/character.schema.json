@@ -1,72 +1,72 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "character.schema.json",
-  "title": "命运牌桌角色定义",
-  "description": "角色档案、结算文案、资源、AI 参数和互斥对话池的标准格式。角色 JSON 通过顶层 $schema 引用本文件，编辑器会显示这里的中文说明。",
-  "$comment": "对话解析顺序固定为：轮盘状态 > 本轮结果特殊牌型 > Blackjack/Bust/Comparison/Push > 当前轮最新行动 > MATCH_START。一次渲染只会选择一个池。",
+  "title": "古堡魔鬼牌局与会者定义",
+  "description": "泰拉与会者的参局档案、结局文案、指定服装资源、AI 参数和互斥对话池标准。角色 JSON 通过顶层 $schema 引用本文件，编辑器会显示这里的中文说明。",
+  "$comment": "叙事映射固定为 player=来自高位面的策展人，opponent/AI=回应邀请的与会者，staff=执行轮盘惩罚的发牌员。与会者被实弹命中会当场死亡；策展人受罚时枪口朝向天花板，player-killed 只是兼容性标识，公开结果是与会者赢得一个愿望，隐藏结果是策展人回溯到本局以前重开，且与会者绝不知情。对话解析顺序固定为：轮盘状态 > 本轮结果特殊牌型 > Blackjack/Bust/Comparison/Push > 当前轮最新行动 > MATCH_START。一次渲染只会选择一个池。",
   "type": "object",
   "additionalProperties": false,
   "required": ["$schema", "assets", "profile", "matchSummary", "revolverPlacement", "ai", "dialogue"],
   "properties": {
     "$schema": {
       "const": "../character.schema.json",
-      "description": "固定的角色 JSON Schema 相对路径；不要修改。"
+      "description": "固定的与会者 JSON Schema 相对路径；不要修改。"
     },
     "assets": {
       "type": "object",
-      "description": "该角色在牌桌、轮盘和总结页使用的图像资源。",
+      "description": "该与会者在古堡牌桌、致命轮盘和结局总结使用的图像资源；既有字段名为兼容性代码标识。",
       "additionalProperties": false,
       "required": ["relaxed", "conflicted", "mocking", "threatened", "staffRevolver", "unconscious", "defeatedSummary"],
       "properties": {
-        "relaxed": { "$ref": "#/$defs/assetPath", "description": "普通牌桌立绘。" },
-        "conflicted": { "$ref": "#/$defs/assetPath", "description": "AI 思考时立绘。" },
-        "mocking": { "$ref": "#/$defs/assetPath", "description": "对手赢得一轮时立绘。" },
-        "threatened": { "$ref": "#/$defs/assetPath", "description": "对手等待扣扳机时立绘。" },
-        "staffRevolver": { "$ref": "#/$defs/assetPath", "description": "工作人员持有的左轮叠加图。" },
-        "unconscious": { "$ref": "#/$defs/assetPath", "description": "对手被击发命中后的牌桌立绘。" },
-        "defeatedSummary": { "$ref": "#/$defs/assetPath", "description": "玩家获胜总结页全身图。" }
+        "relaxed": { "$ref": "#/$defs/assetPath", "description": "与会者入席后的普通牌桌立绘。" },
+        "conflicted": { "$ref": "#/$defs/assetPath", "description": "与会者权衡手牌和死亡风险时的立绘。" },
+        "mocking": { "$ref": "#/$defs/assetPath", "description": "与会者赢得一轮时的立绘。" },
+        "threatened": { "$ref": "#/$defs/assetPath", "description": "与会者等待发牌员对准头部扣动扳机时的立绘。" },
+        "staffRevolver": { "$ref": "#/$defs/assetPath", "description": "发牌员持有的真实 7mm 左轮叠加图，只用于瞄准受罚与会者。" },
+        "unconscious": { "$ref": "#/$defs/assetPath", "description": "兼容性字段名；实际表示与会者被实弹命中、当场死亡后的牌桌立绘，不得解释为昏迷。" },
+        "defeatedSummary": { "$ref": "#/$defs/assetPath", "description": "策展人获胜、与会者死亡后的结局总结全身图。" }
       }
     },
     "profile": {
       "type": "object",
-      "description": "大厅角色档案。",
+      "description": "古堡大厅中的与会者档案，应说明其执念、回应策展人邀请的理由及指定服装背景。",
       "additionalProperties": false,
       "required": ["description"],
-      "properties": { "description": { "type": "string", "minLength": 1, "description": "角色档案正文。" } }
+      "properties": { "description": { "type": "string", "minLength": 1, "description": "与会者档案正文；不得让与会者知晓策展人的时间回溯能力。" } }
     },
     "matchSummary": {
       "type": "object",
-      "description": "整局结束后的角色专属文案。",
+      "description": "整局结束后的与会者专属结局文案；字段名继续按内部 player 视角解释。",
       "additionalProperties": false,
       "required": ["playerVictory", "playerDefeat", "escaped"],
       "properties": {
-        "playerVictory": { "type": "string", "minLength": 1, "description": "玩家击败该角色。" },
-        "playerDefeat": { "type": "string", "minLength": 1, "description": "玩家败给该角色。" },
-        "escaped": { "type": "string", "minLength": 1, "description": "玩家中途离席。" }
+        "playerVictory": { "type": "string", "minLength": 1, "description": "策展人获胜，发牌员射杀与会者，最终保留该时间线。" },
+        "playerDefeat": { "type": "string", "minLength": 1, "description": "与会者在公开规则下获胜并可许下任意一个愿望；策展人不会死亡，隐藏时间线将被回溯。" },
+        "escaped": { "type": "string", "minLength": 1, "description": "策展人中途终止本次古堡牌局。" }
       }
     },
     "trophyGallery": {
       "type": "object",
-      "description": "博士胜利后在历史详情中显示的可选角色鉴赏资源；未配置的角色只显示统计。",
+      "description": "策展人获胜且与会者死亡后，在历史详情中显示的可选收藏记录；未配置的与会者只显示统计。",
       "additionalProperties": false,
       "required": ["headshot", "fullBody", "closeups"],
       "properties": {
-        "headshot": { "$ref": "#/$defs/assetPath", "description": "5:7 的档案式昏迷头肩头像。" },
-        "fullBody": { "$ref": "#/$defs/assetPath", "description": "2:3 竖屏全身昏迷鉴赏图，作为特写点坐标底图。" },
+        "headshot": { "$ref": "#/$defs/assetPath", "description": "5:7 的与会者遗体档案头肩像。" },
+        "fullBody": { "$ref": "#/$defs/assetPath", "description": "2:3 竖屏全身遗体收藏图，作为记录点坐标底图。" },
         "closeups": {
           "type": "array",
-          "description": "可添加任意数量的方形局部特写；x/y 为相对 fullBody 的百分比坐标。",
+          "description": "可添加任意数量的方形局部收藏记录；x/y 为相对 fullBody 的百分比坐标。",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["id", "name", "x", "y", "image", "description"],
             "properties": {
-              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "角色内唯一的稳定特写点 ID。" },
-              "name": { "type": "string", "minLength": 1, "description": "面向玩家的特写名称。" },
-              "x": { "type": "number", "minimum": 0, "maximum": 100, "description": "热点中心相对底图左侧的百分比。" },
-              "y": { "type": "number", "minimum": 0, "maximum": 100, "description": "热点中心相对底图顶部的百分比。" },
-              "image": { "$ref": "#/$defs/assetPath", "description": "1:1 方形局部特写图。" },
-              "description": { "type": "string", "minLength": 1, "description": "该观察点的角色化说明。" }
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "与会者内唯一的稳定记录点 ID。" },
+              "name": { "type": "string", "minLength": 1, "description": "面向策展人的记录点名称。" },
+              "x": { "type": "number", "minimum": 0, "maximum": 100, "description": "记录点中心相对底图左侧的百分比。" },
+              "y": { "type": "number", "minimum": 0, "maximum": 100, "description": "记录点中心相对底图顶部的百分比。" },
+              "image": { "$ref": "#/$defs/assetPath", "description": "1:1 方形局部收藏图。" },
+              "description": { "type": "string", "minLength": 1, "description": "该记录点的与会者专属说明。" }
             }
           }
         }
@@ -74,7 +74,7 @@
     },
     "revolverPlacement": {
       "type": "object",
-      "description": "工作人员左轮相对角色立绘的位置，单位为 CSS 像素。",
+      "description": "发牌员左轮相对受罚与会者立绘的位置，单位为 CSS 像素；策展人朝天花板的枪击不使用这组坐标。",
       "additionalProperties": false,
       "required": ["top", "left", "mobileTop", "mobileLeft"],
       "properties": {
@@ -86,17 +86,17 @@
     },
     "ai": {
       "type": "object",
-      "description": "角色 AI 决策参数，范围均为 0 到 1。",
+      "description": "与会者 AI 决策参数，范围均为 0 到 1。",
       "additionalProperties": false,
       "required": ["rationality", "personalityHitProbability"],
       "properties": {
-        "rationality": { "type": "number", "minimum": 0, "maximum": 1, "description": "采用概率最优动作的倾向。" },
-        "personalityHitProbability": { "type": "number", "minimum": 0, "maximum": 1, "description": "性格层面的 Hit 倾向。" }
+        "rationality": { "type": "number", "minimum": 0, "maximum": 1, "description": "与会者面对牌面与死亡风险时采用概率最优动作的倾向。" },
+        "personalityHitProbability": { "type": "number", "minimum": 0, "maximum": 1, "description": "与会者受自身性格与执念驱动的 Hit 倾向。" }
       }
     },
     "dialogue": {
       "type": "object",
-      "description": "有限状态对话池。每个字段都必填；解析器每次只选择其中一个字段。",
+      "description": "与会者的有限状态对话池。每个字段都必填；解析器每次只选择其中一个字段。与会者可以理解公开的许愿回报，但绝不能知晓失败时间线会被策展人回溯。",
       "additionalProperties": false,
       "required": [
         "MATCH_START", "PLAYER_HIT", "PLAYER_STAND",
@@ -108,25 +108,25 @@
         "SPECIAL_TWENTY_ONE_PUSH", "SPECIAL_ONE_POINT_FINISH", "SPECIAL_SMALL_HAND_TWENTY_ONE", "SPECIAL_LOW_PUSH"
       ],
       "properties": {
-        "MATCH_START": { "$ref": "#/$defs/dialoguePool", "description": "本轮尚无行动时。" },
-        "PLAYER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "当前轮最新有效行动是玩家 Hit。" },
-        "PLAYER_STAND": { "$ref": "#/$defs/dialoguePool", "description": "玩家刚刚 Stand，且本轮尚未结算。" },
-        "OPPONENT_FIRST_HIT": { "$ref": "#/$defs/dialoguePool", "description": "AI 在当前轮第一次行动选择 Hit。" },
-        "OPPONENT_FIRST_STAND": { "$ref": "#/$defs/dialoguePool", "description": "AI 在当前轮第一次行动选择 Stand，且没有立即结算。" },
-        "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": { "$ref": "#/$defs/dialoguePool", "description": "玩家已 Stand，AI 在当前轮完成第一次 Hit 后进行第二次或更多次 Hit。" },
-        "PLAYER_BLACKJACK": { "$ref": "#/$defs/dialoguePool", "description": "仅 reason=blackjack 且玩家独有 Blackjack；不会落入 PLAYER_WIN_ROUND。" },
-        "OPPONENT_BLACKJACK": { "$ref": "#/$defs/dialoguePool", "description": "仅 reason=blackjack 且 AI 独有 Blackjack；不会落入 OPPONENT_WIN_ROUND。" },
-        "PLAYER_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅玩家爆牌。" },
-        "OPPONENT_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅 AI 爆牌。" },
-        "PLAYER_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "玩家扣下扳机但未击发。" },
-        "OPPONENT_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "AI 扣下扳机但未击发。" },
-        "PLAYER_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由玩家获胜；不含 Blackjack、爆牌和特殊牌型。" },
-        "OPPONENT_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由 AI 获胜；不含 Blackjack、爆牌和特殊牌型。" },
+        "MATCH_START": { "$ref": "#/$defs/dialoguePool", "description": "本轮尚无行动时；可体现与会者的执念和古堡牌局氛围。" },
+        "PLAYER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "当前轮最新有效行动是策展人 Hit。" },
+        "PLAYER_STAND": { "$ref": "#/$defs/dialoguePool", "description": "策展人刚刚 Stand，且本轮尚未结算。" },
+        "OPPONENT_FIRST_HIT": { "$ref": "#/$defs/dialoguePool", "description": "与会者在当前轮第一次行动选择 Hit。" },
+        "OPPONENT_FIRST_STAND": { "$ref": "#/$defs/dialoguePool", "description": "与会者在当前轮第一次行动选择 Stand，且没有立即结算。" },
+        "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": { "$ref": "#/$defs/dialoguePool", "description": "策展人已 Stand，与会者在当前轮完成第一次 Hit 后进行第二次或更多次 Hit。" },
+        "PLAYER_BLACKJACK": { "$ref": "#/$defs/dialoguePool", "description": "仅 reason=blackjack 且策展人独有 Blackjack；不会落入 PLAYER_WIN_ROUND。" },
+        "OPPONENT_BLACKJACK": { "$ref": "#/$defs/dialoguePool", "description": "仅 reason=blackjack 且与会者独有 Blackjack；不会落入 OPPONENT_WIN_ROUND。" },
+        "PLAYER_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅策展人爆牌。" },
+        "OPPONENT_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅与会者爆牌。" },
+        "PLAYER_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "策展人朝天花板扣下扳机但未击发。" },
+        "OPPONENT_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "发牌员对准与会者头部扣下扳机但未击发。" },
+        "PLAYER_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由策展人获胜；不含 Blackjack、爆牌和特殊牌型。" },
+        "OPPONENT_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由与会者获胜；不含 Blackjack、爆牌和特殊牌型。" },
         "PUSH_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "不属于特殊 21 对 21 或低点数平局的普通平局。" },
-        "PLAYER_TRIGGER_READY": { "$ref": "#/$defs/dialoguePool", "description": "玩家受罚，确认结果后等待点击“扣下扳机”。" },
-        "OPPONENT_TRIGGER_READY": { "$ref": "#/$defs/dialoguePool", "description": "AI 受罚，确认结果后等待点击“静观好戏”。" },
-        "PLAYER_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "玩家扣下扳机并击发。" },
-        "OPPONENT_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "AI 扣下扳机并击发。" },
+        "PLAYER_TRIGGER_READY": { "$ref": "#/$defs/dialoguePool", "description": "策展人受罚，确认结果后等待执行朝向天花板的轮盘扳机。" },
+        "OPPONENT_TRIGGER_READY": { "$ref": "#/$defs/dialoguePool", "description": "与会者受罚，确认结果后等待发牌员对其执行轮盘扳机。" },
+        "PLAYER_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "策展人的左轮朝天花板击发；策展人不死，公开结果为与会者赢得愿望，隐藏时间线随后回溯。" },
+        "OPPONENT_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "发牌员对准与会者头部击发实弹，与会者当场死亡。" },
         "SPECIAL_TWENTY_ONE_PUSH": { "$ref": "#/$defs/dialoguePool", "description": "双方都是 21；优先于其他 21 类特殊牌型。" },
         "SPECIAL_ONE_POINT_FINISH": { "$ref": "#/$defs/dialoguePool", "description": "普通比较中 21:20 或 20:19 的一分胜负；多张牌 21 优先。" },
         "SPECIAL_SMALL_HAND_TWENTY_ONE": { "$ref": "#/$defs/dialoguePool", "description": "任一方用 4 至 5 张牌凑到 21；仅双方 21 的优先级更高。" },
