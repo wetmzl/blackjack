@@ -41,6 +41,25 @@ export interface CharacterMatchSummary {
   readonly escaped: string;
 }
 
+/** Percentage coordinates are relative to the portrait trophy-gallery artwork. */
+export interface TrophyCloseupPoint {
+  readonly id: string;
+  readonly name: string;
+  readonly x: number;
+  readonly y: number;
+  readonly image: string;
+  readonly description: string;
+}
+
+export interface CharacterTrophyGallery {
+  /** 5:7 one-inch-photo composition shown in the history detail modal. */
+  readonly headshot: string;
+  /** 2:3 portrait artwork used as the full-screen inspection stage. */
+  readonly fullBody: string;
+  /** No upper limit: characters can define as many interactive details as needed. */
+  readonly closeups: readonly TrophyCloseupPoint[];
+}
+
 /** Fixed W art reference: 1536×1024 source canvas and scale 1 normal sitting composition. */
 export const TABLE_ART_BASELINE = Object.freeze({
   referenceCharacterId: "w",
@@ -55,6 +74,7 @@ export interface CharacterData {
   readonly assets: CharacterAssets;
   readonly profile: CharacterProfile;
   readonly matchSummary: CharacterMatchSummary;
+  readonly trophyGallery?: CharacterTrophyGallery;
   /** All normal table portraits use TABLE_ART_BASELINE; definitions cannot override its scale. */
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;

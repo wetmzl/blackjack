@@ -13,6 +13,8 @@ export interface SkillDefinition {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  /** Full in-game rules shown from the compact table card. */
+  readonly usage: string;
   readonly category: SkillCategory;
   readonly timing: readonly SkillTiming[];
   readonly effect: SkillEffect;

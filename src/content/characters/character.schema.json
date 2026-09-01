@@ -45,6 +45,33 @@
         "escaped": { "type": "string", "minLength": 1, "description": "玩家中途离席。" }
       }
     },
+    "trophyGallery": {
+      "type": "object",
+      "description": "博士胜利后在历史详情中显示的可选角色鉴赏资源；未配置的角色只显示统计。",
+      "additionalProperties": false,
+      "required": ["headshot", "fullBody", "closeups"],
+      "properties": {
+        "headshot": { "$ref": "#/$defs/assetPath", "description": "5:7 的档案式昏迷头肩头像。" },
+        "fullBody": { "$ref": "#/$defs/assetPath", "description": "2:3 竖屏全身昏迷鉴赏图，作为特写点坐标底图。" },
+        "closeups": {
+          "type": "array",
+          "description": "可添加任意数量的方形局部特写；x/y 为相对 fullBody 的百分比坐标。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "x", "y", "image", "description"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "角色内唯一的稳定特写点 ID。" },
+              "name": { "type": "string", "minLength": 1, "description": "面向玩家的特写名称。" },
+              "x": { "type": "number", "minimum": 0, "maximum": 100, "description": "热点中心相对底图左侧的百分比。" },
+              "y": { "type": "number", "minimum": 0, "maximum": 100, "description": "热点中心相对底图顶部的百分比。" },
+              "image": { "$ref": "#/$defs/assetPath", "description": "1:1 方形局部特写图。" },
+              "description": { "type": "string", "minLength": 1, "description": "该观察点的角色化说明。" }
+            }
+          }
+        }
+      }
+    },
     "revolverPlacement": {
       "type": "object",
       "description": "工作人员左轮相对角色立绘的位置，单位为 CSS 像素。",

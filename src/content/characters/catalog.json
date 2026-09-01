@@ -18,6 +18,24 @@
       "previewImage": "/assets/characters/texas-relaxed.png",
       "trophyImage": "/assets/characters/texas-trophy-defeated.png",
       "dataFile": "texas.json"
+    },
+    {
+      "id": "irene",
+      "name": "艾丽妮",
+      "subtitle": "假面余兴中的审判官",
+      "tier": "A",
+      "previewImage": "/assets/characters/irene-relaxed.png",
+      "trophyImage": "/assets/characters/irene-trophy-defeated.png",
+      "dataFile": "irene.json"
+    },
+    {
+      "id": "nian",
+      "name": "年",
+      "subtitle": "把赌命当烂片看的造物者",
+      "tier": "S",
+      "previewImage": "/assets/characters/nian-relaxed.png",
+      "trophyImage": "/assets/characters/nian-trophy-defeated.png",
+      "dataFile": "nian.json"
     }
   ]
 }
