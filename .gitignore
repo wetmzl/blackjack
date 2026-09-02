@@ -4,3 +4,7 @@ output/
 .DS_Store
 *.log
 
+# Local environment variables and credentials
+.env.local
+.env.*.local
+.dev.vars

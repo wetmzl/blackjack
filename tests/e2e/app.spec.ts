@@ -56,8 +56,8 @@ async function enterCharacterSelection(page: Page): Promise<void> {
 }
 
 async function openLobbySettings(page: Page): Promise<void> {
-  await enterCharacterSelection(page);
-  await page.locator("button.quiet-button[data-open='settings']").click();
+  await expect(page.locator("main.lobby-menu-shell")).toBeVisible();
+  await page.locator("button.lobby-settings-button").click();
 }
 
 async function returnToLobbyMenu(page: Page): Promise<void> {
@@ -72,6 +72,8 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(page.locator(".menu-subtitle")).toContainText("终焉赌局");
   await expect(page.locator(".lobby-menu-button")).toHaveCount(4);
   await expect(page.locator(".button-number")).toHaveCount(0);
+  await expect(page.locator("button.lobby-settings-button")).toBeVisible();
+  await expect(page.locator(".lobby-title-block")).not.toContainText("今夜，古堡只接待有求之人");
   await expect(page.locator(".character-card")).toHaveCount(0);
   await expect(page.locator(".lobby-title-block")).toContainText("奉上自己的一切，包括自己的身体");
   await expect(page.locator(".lobby-title-block")).toContainText("祂终将有求必应");
@@ -82,9 +84,14 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   const shellBox = await page.locator(".lobby-menu-shell").boundingBox();
   const titleBox = await page.locator(".lobby-title-block").boundingBox();
   const menuBox = await page.locator(".lobby-menu").boundingBox();
+  const primaryBox = await page.locator(".lobby-primary-action").boundingBox();
+  const secondaryBox = await page.locator(".lobby-secondary-menu").boundingBox();
   expect(shellBox).not.toBeNull();
   expect(titleBox).not.toBeNull();
   expect(menuBox).not.toBeNull();
+  expect(primaryBox).not.toBeNull();
+  expect(secondaryBox).not.toBeNull();
+  expect(Math.abs(primaryBox!.width - secondaryBox!.width)).toBeLessThanOrEqual(1);
   expect(menuBox!.y - (titleBox!.y + titleBox!.height)).toBeGreaterThan(60);
   expect(menuBox!.height).toBeLessThan(shellBox!.height * .3);
   await page.screenshot({ path: testInfo.outputPath("lobby-menu-390.png"), fullPage: true });
@@ -100,6 +107,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(page.locator("#rules")).toContainText("黑杰克");
   await page.locator("#rules [data-close]").click();
   await enterCharacterSelection(page);
+  await expect(page.locator("button.lobby-settings-button")).toHaveCount(0);
   await expect(page.locator(".character-card")).toHaveCount(4);
   await page.getByRole("button", { name: "查看档案" }).first().click();
   const profile = page.locator("#profile");
@@ -255,7 +263,36 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.profile.matchesPlayed = 7;
   await settings.locator("#save-file").setInputFiles({ name: "存档.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 7");
+});
+
+test("设置可下载离线资源包并显示真实进度", async ({ page }) => {
+  const assets = [
+    { url: "/assets/test-pack/portrait.bin", bytes: 8 },
+    { url: "/assets/test-pack/audio.bin", bytes: 4 }
+  ];
+  await page.route("**/resource-pack.json", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ version: "e2e-pack-v1", totalBytes: 12, assets })
+  }));
+  await page.route("**/assets/test-pack/*.bin", (route) => route.fulfill({
+    contentType: "application/octet-stream",
+    body: route.request().url().includes("portrait") ? "12345678" : "1234"
+  }));
+  await page.goto("/");
+  await openLobbySettings(page);
+  const settings = page.locator("#settings");
+  const progress = settings.getByRole("progressbar", { name: "资源包下载进度" });
+  await expect(progress).toHaveAttribute("value", "0");
+  await settings.getByRole("button", { name: "下载资源包" }).click();
+  await expect(settings.locator("[data-resource-progress-label]")).toContainText("下载完成");
+  await expect(progress).toHaveAttribute("value", "100");
+  await expect(settings.getByRole("button", { name: "重新下载" })).toBeEnabled();
+  expect(await page.evaluate(async (urls) => {
+    const cache = await caches.open("blackjack-resource-pack-v1");
+    return Promise.all(urls.map(async (url) => Boolean(await cache.match(url))));
+  }, assets.map((asset) => asset.url))).toEqual([true, true]);
 });
 
 test("技能管理展示严格装备状态，清档确认可取消或重置", async ({ page }) => {
@@ -270,6 +307,7 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "skills.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 5");
   await returnToLobbyMenu(page);
   await page.getByRole("button", { name: "技能管理" }).click();
@@ -281,9 +319,15 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await openLobbySettings(page);
   page.once("dialog", (dialog) => void dialog.dismiss());
   await page.locator("[data-reset]").click();
+  await expect(page.locator("#settings")).toBeVisible();
+  await page.locator("#settings [data-close]").click();
+  await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 5");
+  await returnToLobbyMenu(page);
+  await openLobbySettings(page);
   page.once("dialog", (dialog) => void dialog.accept());
   await page.locator("[data-reset]").click();
+  await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 0");
   await returnToLobbyMenu(page);
   await expect(page.locator("[data-open-trophies]")).toContainText("0 局");

@@ -21,6 +21,7 @@ import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { presentMatchHaptics } from "./presentation/haptics";
 import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
+import { downloadResourcePack, ResourcePackDownloadError, type ResourcePackProgress } from "./resources/resource-pack";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) throw new Error("App root is missing");
@@ -331,8 +332,88 @@ function presentDelta(before: MatchState, after: MatchState): void {
 function wireActions(container: ParentNode, handler: (action: Action) => void): void { container.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => element.addEventListener("click", () => handler(JSON.parse(element.dataset.action ?? "{}") as Action))); }
 function requestDispatch(action: Action): void { dispatch(action); }
 
+const RESOURCE_PACK_STATUS_KEY = "blackjack-resource-pack-status";
+
+interface StoredResourcePackStatus {
+  readonly version: string;
+  readonly totalBytes: number;
+  readonly completedAt: string;
+}
+
+function formatResourceBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+function storedResourcePackStatus(): StoredResourcePackStatus | null {
+  try {
+    const raw = localStorage.getItem(RESOURCE_PACK_STATUS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredResourcePackStatus>;
+    return typeof parsed.version === "string" && typeof parsed.totalBytes === "number" && typeof parsed.completedAt === "string"
+      ? parsed as StoredResourcePackStatus
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resourcePackSupportIssue(): string | null {
+  if (typeof window !== "undefined" && window.isSecureContext === false) return "离线缓存需要 HTTPS 或 localhost";
+  if (!("caches" in globalThis) || typeof globalThis.caches?.open !== "function") return "当前浏览器或内嵌环境未提供 Cache Storage";
+  return null;
+}
+
+function resourcePackControlsMarkup(): string {
+  const previous = storedResourcePackStatus();
+  const supportIssue = resourcePackSupportIssue();
+  const supported = !supportIssue;
+  const progress = previous ? 100 : 0;
+  const status = !supported
+    ? supportIssue
+    : previous
+      ? `上次下载完成 · ${formatResourceBytes(previous.totalBytes)}`
+      : "尚未下载";
+  return `<section class="resource-pack-control" data-state="${!supported ? "error" : previous ? "complete" : "idle"}"><div class="resource-pack-heading"><strong>离线资源包</strong><small>预先保存角色图片、背景与音效</small></div><button type="button" class="secondary-button resource-pack-button" data-download-resources ${supported ? "" : "disabled"}>${previous ? "更新资源包" : "下载资源包"}</button><div class="resource-pack-progress"><progress max="100" value="${progress}" data-resource-progress aria-label="资源包下载进度"></progress><span data-resource-progress-label aria-live="polite">${status}</span></div></section>`;
+}
+
+async function startResourcePackDownload(button: HTMLButtonElement): Promise<void> {
+  const control = button.closest<HTMLElement>(".resource-pack-control");
+  const progress = control?.querySelector<HTMLProgressElement>("[data-resource-progress]");
+  const label = control?.querySelector<HTMLElement>("[data-resource-progress-label]");
+  if (!control || !progress || !label) return;
+  button.disabled = true;
+  button.textContent = "下载中…";
+  control.dataset.state = "downloading";
+  progress.value = 0;
+  label.textContent = "正在读取资源清单…";
+  const update = (state: ResourcePackProgress): void => {
+    progress.value = state.percent;
+    label.textContent = `已下载 ${formatResourceBytes(state.processedBytes)} · ${state.completed}/${state.total}`;
+  };
+  try {
+    const manifest = await downloadResourcePack(update);
+    progress.value = 100;
+    control.dataset.state = "complete";
+    label.textContent = `下载完成 · ${formatResourceBytes(manifest.totalBytes)} · ${manifest.assets.length} 项`;
+    button.textContent = "重新下载";
+    try {
+      localStorage.setItem(RESOURCE_PACK_STATUS_KEY, JSON.stringify({ version: manifest.version, totalBytes: manifest.totalBytes, completedAt: new Date().toISOString() }));
+    } catch { /* Cache contents remain usable when persistent status is unavailable. */ }
+  } catch (error) {
+    control.dataset.state = "error";
+    label.textContent = error instanceof ResourcePackDownloadError
+      ? `下载未完成 · ${error.failures.length} 项失败，可重试`
+      : uiError(error, "资源包下载失败，请重试。");
+    button.textContent = "重试下载";
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>两张牌正好 21 点是黑杰克；入场会获得技能牌，普通胜利获得 1 张，黑杰克获得 2 张。技能牌只来自本轮携带的主动技能。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的牌组</p><h2>技能管理</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label><div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>清理当前数据</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>两张牌正好 21 点是黑杰克；入场会获得技能牌，普通胜利获得 1 张，黑杰克获得 2 张。技能牌只来自本轮携带的主动技能。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的牌组</p><h2>技能管理</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>清理当前数据</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
 }
 
 function renderLobby(layer: LobbyLayer = "menu"): void {
@@ -345,8 +426,8 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   lobbyLayer = layer;
   const characterCards = CHARACTER_CATALOG.map((character) => `<article class="character-card"><div class="portrait"><img src="${character.previewImage}" alt="${character.name}" loading="lazy" decoding="async" /></div><div class="character-copy"><p class="eyebrow">与会者 // ${character.tier}级</p><h2>${character.name}</h2><p>${character.subtitle}</p><button class="text-button" data-profile-id="${character.id}">查看档案 <span>→</span></button></div><button class="card-start" data-start-character="${character.id}">开始对局</button></article>`).join("");
   root.innerHTML = layer === "menu"
-    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation">策展人的邀请</header><section class="lobby-title-block" aria-labelledby="lobby-title"><p class="menu-overline">今夜，古堡只接待有求之人</p><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.history.length} 局</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
-    : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><button class="icon-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">他们带着未竟的执念走进古堡，<br>换上指定的服装，等待终焉赌局开场。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="character-list">${characterCards}</section><div class="lobby-tools"><button class="quiet-button" data-open="settings">设置与存档</button><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${CHARACTER_CATALOG.length} 名与会者</span></footer>${lobbyDialogsMarkup()}</main>`;
+    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>策展人的邀请</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.history.length} 局</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
+    : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">他们带着未竟的执念走进古堡，<br>换上指定的服装，等待终焉赌局开场。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="character-list">${characterCards}</section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${CHARACTER_CATALOG.length} 名与会者</span></footer>${lobbyDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-enter-duel]")?.addEventListener("click", () => renderLobby("characters"));
   root.querySelector<HTMLButtonElement>("[data-lobby-home]")?.addEventListener("click", () => renderLobby("menu"));
   root.querySelectorAll<HTMLButtonElement>("[data-open]:not([data-open=skills])").forEach((button) => button.addEventListener("click", () => document.querySelector<HTMLDialogElement>(`#${button.dataset.open}`)?.showModal()));
@@ -360,6 +441,7 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   root.querySelector<HTMLButtonElement>("[data-import]")?.addEventListener("click", () => void requestImport());
   root.querySelector<HTMLInputElement>("#save-file")?.addEventListener("change", importFile);
   root.querySelector<HTMLButtonElement>("[data-reset]")?.addEventListener("click", () => { if (!confirmResetCurrentData()) return; void resetCurrentData(); });
+  root.querySelector<HTMLButtonElement>("[data-download-resources]")?.addEventListener("click", (event) => void startResourcePackDownload(event.currentTarget as HTMLButtonElement));
 }
 
 async function resetCurrentData(): Promise<void> {
