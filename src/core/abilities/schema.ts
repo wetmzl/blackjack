@@ -2,9 +2,9 @@ import { z } from "zod";
 import type { AbilityBinding, AbilityDefinition, Condition, ScalarValue } from "./types";
 
 const actorSelector = z.enum(["owner", "rival", "event-actor", "penalty-target"]);
-const scalar: z.ZodType<ScalarValue> = z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.literal("gun-bullets"), target: actorSelector }).strict(), z.object({ type: z.literal("hand-total"), target: actorSelector }).strict()]) as z.ZodType<ScalarValue>;
+const scalar: z.ZodType<ScalarValue> = z.lazy(() => z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.enum(["gun-bullets", "hand-total", "hand-card-count", "round-hit-count"]), target: actorSelector }).strict(), z.object({ type: z.enum(["add", "subtract", "multiply"]), left: scalar, right: scalar }).strict()])) as z.ZodType<ScalarValue>;
 const compare = z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]);
-const trigger = z.enum(["on-match-created", "on-ability-played", "before-card-draw", "after-card-draw", "after-hand-changed", "after-stand", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
+const trigger = z.enum(["on-match-created", "on-ability-played", "after-ability-played", "before-card-draw", "after-card-draw", "after-hand-changed", "after-stand", "before-bust-check", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
 const candidate = z.union([
   z.object({ type: z.literal("resulting-hand-total-at-most"), value: scalar }).strict(),
   z.object({ type: z.literal("resulting-hand-total-exactly"), value: scalar }).strict()
@@ -14,7 +14,12 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("owner-has-card"), abilityId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("hand-card-count"), target: actorSelector, operator: compare, value: scalar }).strict(),
   z.object({ type: z.literal("hand-total"), target: actorSelector, operator: compare, value: scalar }).strict(),
+  z.object({ type: z.literal("round-hit-count"), target: actorSelector, operator: compare, value: scalar }).strict(),
   z.object({ type: z.literal("hand-all-same-suit"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("hand-all-color"), target: actorSelector, color: z.enum(["red", "black"]) }).strict(),
+  z.object({ type: z.literal("hand-rank-has-suit-partner"), target: actorSelector, rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]) }).strict(),
+  z.object({ type: z.literal("draw-pile-card-exists") }).strict(),
+  z.object({ type: z.literal("hand-last-card-splittable"), target: actorSelector }).strict(),
   z.object({ type: z.literal("hand-card-origin-is"), target: actorSelector, card: z.literal("last-card"), origin: z.enum(["shoe", "derived"]) }).strict(),
   z.object({ type: z.literal("card-candidate-exists"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate }).strict(),
   z.object({ type: z.literal("hand-is-twenty-one"), target: actorSelector }).strict(),
@@ -22,6 +27,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("gun-is-full"), target: actorSelector, expected: z.boolean() }).strict(),
   z.object({ type: z.literal("round-reason-is"), value: z.enum(["blackjack", "bust", "comparison", "push"]) }).strict(),
   z.object({ type: z.literal("round-penalty-target-is"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("event-ability-kind-is"), kind: z.enum(["player-skill", "character-mechanic"]) }).strict(),
   z.object({ type: z.literal("status-present"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("any"), conditions: z.array(condition) }).strict(),
   z.object({ type: z.literal("not"), condition }).strict()
@@ -30,9 +36,15 @@ const effect = z.union([
   z.object({ type: z.literal("draw-skill-cards"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("publish-action-advice"), target: actorSelector, policy: z.literal("current-optimal-hit-stand") }).strict(),
   z.object({ type: z.literal("replace-hand-card"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate, pick: z.literal("uniform-ability-rng") }).strict(),
+  z.object({ type: z.literal("swap-last-hand-card-with-draw-pile-top"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("reveal-hand-card-suit"), target: actorSelector, card: z.literal("first-private-card"), viewer: actorSelector }).strict(),
+  z.object({ type: z.literal("split-last-card-into-derived"), target: actorSelector }).strict(),
   z.object({ type: z.literal("add-status"), target: actorSelector, statusDefinitionId: z.string().min(1), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).optional() }).strict(),
   z.object({ type: z.literal("remove-status"), target: actorSelector, statusDefinitionId: z.string().min(1), amount: scalar.optional() }).strict(),
   z.object({ type: z.literal("replace-pending-draw"), target: actorSelector, policy: z.object({ type: z.literal("exact-resulting-total"), total: scalar, fallback: z.literal("create-derived-card") }).strict() }).strict(),
+  z.object({ type: z.literal("add-derived-card-for-exact-total"), target: actorSelector, total: scalar }).strict(),
+  z.object({ type: z.literal("add-to-pending-bust-limit"), target: actorSelector, amount: scalar }).strict(),
+  z.object({ type: z.literal("add-to-pending-trigger-misfire-chance"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("add-to-pending-load"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("multiply-pending-load"), target: actorSelector, factor: scalar }).strict(),
   z.object({ type: z.literal("cancel-pending-trigger"), target: actorSelector }).strict()
@@ -48,10 +60,11 @@ const activation = z.union([
   z.object({ type: z.literal("action"), windows: z.array(z.enum(["owner-turn", "owner-roulette-reaction"])).min(1), consume: z.enum(["card", "none"]), availability: z.array(condition).optional() }).strict(),
   z.object({ type: z.literal("automatic") }).strict(), z.object({ type: z.literal("passive") }).strict()
 ]);
-export const AbilityDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), description: z.string().min(1), usage: z.string().min(1).optional(), sourceKind: z.enum(["player-skill", "character-mechanic"]), parameters: z.record(parameterSpec).optional(), activation, rules: z.array(AbilityRuleSchema), tags: z.array(z.string().min(1)), unlock: z.object({ opponentId: z.string().min(1), label: z.string().min(1) }).strict().optional() }).strict().superRefine((definition, ctx) => {
+export const AbilityDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), description: z.string().min(1), usage: z.string().min(1).optional(), triggerNotice: z.string().min(1).optional(), profileLore: z.string().min(1).optional(), hidden: z.boolean().default(false), sourceKind: z.enum(["player-skill", "character-mechanic", "shared"]), parameters: z.record(parameterSpec).optional(), activation, rules: z.array(AbilityRuleSchema), tags: z.array(z.string().min(1)), unlock: z.object({ opponentId: z.string().min(1), label: z.string().min(1) }).strict().optional() }).strict().superRefine((definition, ctx) => {
   if (definition.activation.type !== "action") return;
   if (definition.sourceKind === "player-skill" && definition.activation.consume !== "card") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: "player-skill actions must consume a card" });
   if (definition.sourceKind === "character-mechanic" && definition.activation.consume !== "none") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: "character-mechanic actions cannot consume a player card" });
+  if (definition.sourceKind === "shared" && definition.activation.type === "action") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation"], message: "shared definitions cannot be action abilities" });
 });
 export const StatusDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), rules: z.array(AbilityRuleSchema), defaultDuration: z.enum(["turn", "round", "match", "until-owner-action", "until-consumed"]), blocksAbilityTags: z.array(z.string().min(1)).optional() }).strict();
 export const AbilityBindingSchema = z.object({ definitionId: z.string().min(1), enabled: z.boolean(), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])) }).strict();

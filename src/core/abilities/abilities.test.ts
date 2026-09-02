@@ -3,7 +3,7 @@ import { createHand } from "../blackjack/hand";
 import { createCard, createDerivedCard } from "../blackjack/card";
 import { createRng } from "../rng/seeded";
 import { AbilityDefinitionSchema, StatusDefinitionSchema } from "./schema";
-import { ABILITY_DEFINITIONS, createAbilityRegistry, getAbilityDefinition, validateAbilityBinding } from "./registry";
+import { ABILITY_DEFINITIONS, createAbilityRegistry, getAbilityDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "./registry";
 import { canConsumeRule, clearCounters, clearEventCounters, consumeRule, createAbilityRuntime, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "./runtime";
 import { AbilityResolutionError, MAX_ABILITY_DEPTH, canPlayAbility, playAbility, resolveAbilityEvent } from "./engine";
 import { drawExactResultingTotal, replaceLastHandCard } from "./card-zone-adapter";
@@ -47,10 +47,11 @@ describe("ability schemas and immutable registry", () => {
     expect(() => validateAbilityBinding({ definitionId: "parameter-fixture", enabled: true, parameters: { required: true, extra: 1 } }, registry)).toThrow(/Unknown parameter/);
   });
 
-  it("registers six player skills, reusable character fixtures, and Texas's mechanic as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(11);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(6);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(5);
+  it("registers player skills, reusable character fixtures, and shared mechanics as deeply frozen data", () => {
+    expect(ABILITY_DEFINITIONS).toHaveLength(17);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(7);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(8);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "shared")).toHaveLength(2);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
     expect(ABILITY_DEFINITIONS.every((definition) => definition.rules.length > 0)).toBe(true);
     expect(Object.isFrozen(ABILITY_DEFINITIONS[0]?.rules[0]?.effects[0])).toBe(true);
@@ -62,6 +63,11 @@ describe("ability schemas and immutable registry", () => {
       activation: { type: "passive" }, tags: [], rules: [{ id: "rule", trigger: "on-match-created", effects: [{ type: "draw-skill-cards", target: "owner", amount: 1 }] }]
     };
     expect(AbilityDefinitionSchema.safeParse(base).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案中的文学化技能描写。" }).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案", profileLoreExtra: true }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "Q" }] }] }).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "Q", extra: true }] }] }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "joker" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "unknown-trigger" }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "unknown-condition" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "unknown-effect", target: "owner" }] }] }).success).toBe(false);
@@ -82,6 +88,22 @@ describe("ability schemas and immutable registry", () => {
     expect(() => createAbilityRegistry([definition("reference-parameter", { type: "draw-skill-cards", target: "owner", amount: { type: "parameter", key: "missing" } })])).toThrow(/Unknown parameter/);
     expect(() => createAbilityRegistry([definition("reference-status", { type: "add-status", target: "owner", statusDefinitionId: "missing-status" })])).toThrow(/Unknown status/);
     expect(() => createAbilityRegistry([definition("reference-ability", { type: "draw-skill-cards", target: "owner", amount: 1 }, [{ type: "owner-has-card", abilityId: "missing-ability" }])])).toThrow(/Unknown ability/);
+  });
+
+  it("enforces concrete instance source kinds during event collection", () => {
+    const shared = getAbilityDefinition("sword-and-handcannon")!;
+    expect(supportsAbilitySourceKind(shared, "player-skill")).toBe(true);
+    expect(supportsAbilitySourceKind(shared, "character-mechanic")).toBe(true);
+    for (const [definitionId, kind] of [["sword-and-handcannon", "character-mechanic"], ["forge-heralds-the-year", "player-skill"]] as const) {
+      const owner = "opponent" as const;
+      const instance = { kind, definitionId, owner, instanceId: `${definitionId}-${kind}`, createdAtSequence: 1, parameters: {} } as AbilityInstance;
+      const runtime = { ...createAbilityRuntime(createRng(`${definitionId}-${kind}`).snapshot()), instances: [instance] };
+      expect(() => resolveAbilityEvent({ world: world(), runtime, event: { trigger: "on-match-created", sourceEventId: `${definitionId}-${kind}` } })).not.toThrow();
+    }
+    const invalid = { kind: "player-skill" as const, definitionId: "silent-drizzle", owner: "opponent" as const, instanceId: "wrong-kind", createdAtSequence: 1, parameters: {} };
+    const runtime = { ...createAbilityRuntime(createRng("wrong-kind").snapshot()), instances: [invalid] };
+    expect(() => resolveAbilityEvent({ world: world(), runtime, event: { trigger: "on-match-created", sourceEventId: "wrong-kind" } })).toThrow(AbilityResolutionError);
+    expect(runtime.rng).toEqual(createRng("wrong-kind").snapshot());
   });
 });
 
@@ -167,7 +189,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("expires only the requested duration and garbage-collects unreferenced consumed actions and counters", () => {
     const source: AbilityInstance = { kind: "player-skill", definitionId: "hunter-instinct", owner: "player", instanceId: "consumed", createdAtSequence: 1, parameters: {} };
-    const statuses: AbilityStatus[] = (["turn", "round", "match", "until-owner-action", "until-consumed"] as const).map((duration, index) => ({ statusDefinitionId: "night-queen-armed", owner: "player", sourceInstanceId: source.instanceId, stacks: 1, duration, parameters: {}, createdAtSequence: index + 1 }));
+    const statuses: AbilityStatus[] = (["turn", "round", "match", "until-owner-action", "until-consumed"] as const).map((duration, index) => ({ statusDefinitionId: "copper-seal-sealed", owner: "player", sourceInstanceId: source.instanceId, stacks: 1, duration, parameters: {}, createdAtSequence: index + 1 }));
     let runtime: AbilityRuntimeState = { ...createAbilityRuntime(createRng("lifecycle").snapshot()), instances: [source], statuses, counters: { "consumed:rule:match": 1 } };
     expect(expireStatuses(runtime, "turn").statuses.map((status) => status.duration)).toEqual(["round", "match", "until-owner-action", "until-consumed"]);
     runtime = expireOwnerActionStatuses(runtime, "opponent");
@@ -205,16 +227,30 @@ describe("generic resolution and lifecycle", () => {
     expect(played.events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "ABILITY_PLAYED", instanceId: hunterCard.instanceId }), expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "publish-advice" })]));
   });
 
-  it("keeps the original draw, consumes Night Queen status, and records the exact failing rule when 21 is impossible", () => {
-    const instance: AbilityInstance = { kind: "player-skill", definitionId: "night-queen", owner: "player", instanceId: "night-queen-test", createdAtSequence: 1, parameters: {} };
-    const runtime = { ...createAbilityRuntime(createRng("fallback").snapshot()), instances: [instance], statuses: [{ statusDefinitionId: "night-queen-armed", owner: "player" as const, sourceInstanceId: instance.instanceId, stacks: 1, duration: "until-consumed" as const, parameters: {}, createdAtSequence: 1 }] };
-    const impossible = { ...world(), hands: { ...world().hands, player: createHand([createCard("spades", "K"), createCard("hearts", "K"), createCard("clubs", "K")]) } };
-    const original = createCard("diamonds", "2");
-    const result = resolveAbilityEvent({ world: impossible, runtime, event: { trigger: "before-card-draw", sourceEventId: "draw", eventActor: "player" }, pendingDraw: { id: "draw", actor: "player", card: original } });
-    expect(result.pendingDraw).toEqual({ id: "draw", actor: "player", card: original });
-    expect(result.events).toContainEqual(expect.objectContaining({ type: "ABILITY_RESOLUTION_FAILED", definitionId: "night-queen", ruleId: "guarantee-twenty-one" }));
-    expect(result.events).toContainEqual(expect.objectContaining({ type: "STATUS_REMOVED", reason: "consumed" }));
-    expect(result.runtime.statuses).toHaveLength(0);
+  it("resolves Night Queen as an immediate derived-card action", () => {
+    const card: SkillCardInstance = { kind: "player-skill", definitionId: "night-queen", owner: "player", instanceId: "night-queen-test" };
+    const instance: AbilityInstance = { ...card, createdAtSequence: 1, parameters: {} };
+    const runtime = { ...createAbilityRuntime(createRng("fallback").snapshot()), instances: [instance] };
+    const input = { world: { ...world([card]), hands: { ...world().hands, player: createHand([createCard("hearts", "Q"), createCard("hearts", "6")]) } }, runtime, instanceId: card.instanceId, owner: "player" as const, window: "owner-turn" as const };
+    const result = playAbility(input);
+    expect(result.world.hands.player.cards).toHaveLength(3);
+    expect(result.world.hands.player.cards.at(-1)?.origin).toBe("derived");
+    expect(result.world.hands.player.cards.reduce((total, entry) => total + (entry.rank === "A" ? 11 : entry.rank === "K" || entry.rank === "Q" || entry.rank === "J" ? 10 : Number(entry.rank)), 0)).toBe(21);
+  });
+
+  it("reveals only the rival private-card suit without changing world or RNG", () => {
+    const card: SkillCardInstance = { kind: "player-skill", definitionId: "scent-of-a-woman", owner: "player", instanceId: "scent-test" };
+    const instance: AbilityInstance = { ...card, createdAtSequence: 1, parameters: {} };
+    const initial = world([card]);
+    const inputWorld = { ...initial, hands: { player: createHand([createCard("spades", "10")]), opponent: createHand([createCard("clubs", "9"), createCard("hearts", "7")]) }, shoe: { cards: [createCard("diamonds", "A")], cursor: 0, shuffleIndex: 1 } };
+    const runtime = { ...createAbilityRuntime(createRng("scent").snapshot()), instances: [instance] };
+    const result = playAbility({ world: inputWorld, runtime, instanceId: card.instanceId, owner: "player", window: "owner-turn" });
+    const revealed = result.events.find((event) => event.type === "CARD_SUIT_REVEALED");
+    expect(revealed).toEqual({ type: "CARD_SUIT_REVEALED", viewer: "player", target: "opponent", cardIndex: 1, suit: "hearts" });
+    expect(revealed && "rank" in revealed).toBe(false);
+    expect(result.world.hands).toEqual(inputWorld.hands);
+    expect(result.world.shoe).toEqual(inputWorld.shoe);
+    expect(result.runtime.rng).toEqual(runtime.rng);
   });
 
   it("rejects catalog mismatches and reports the supplied chain beyond the nesting boundary", () => {

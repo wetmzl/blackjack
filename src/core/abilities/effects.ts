@@ -1,6 +1,6 @@
 import type { SeededRng } from "../rng/seeded";
 import { addToPendingLoad, multiplyPendingLoad } from "./roulette-adapter";
-import { drawExactResultingTotal, replaceLastHandCard } from "./card-zone-adapter";
+import { createDerivedCardForExactTotal, drawExactResultingTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
 import { getStatusDefinition, type AbilityRegistry } from "./registry";
 import { resolveActor, resolveScalar, type ConditionContext } from "./conditions";
 import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, Effect, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "./types";
@@ -17,16 +17,17 @@ export interface EffectContext extends ConditionContext {
 function withHands(world: AbilityWorld, actor: "player" | "opponent", hand: AbilityWorld["hands"]["player"]): AbilityWorld { return { ...world, hands: { ...world.hands, [actor]: hand } }; }
 function statusFor(world: AbilityWorld, actor: "player" | "opponent", id: string) { return world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === id); }
 
-export function applyEffect(effect: Effect, context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; trigger?: PendingTrigger } = {}): AbilityEffectResult {
+export function applyEffect(effect: Effect, context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger } = {}): AbilityEffectResult {
   let world = context.world;
   let draw = pending.draw;
   let load = pending.load;
+  let bust = pending.bust;
   let trigger = pending.trigger;
   let runtime = context.runtime;
   const events: AbilityDomainEvent[] = [];
   const actor = resolveActor(effect.target, context);
   if (!actor) throw new Error(`Cannot resolve actor selector: ${effect.target}`);
-  const changed = (effectType: string): void => { events.push({ type: "PENDING_EVENT_MODIFIED", eventId: draw?.id ?? load?.id ?? trigger?.id ?? context.event.sourceEventId, effectType, sourceInstanceId: context.ability.instanceId }); };
+  const changed = (effectType: string): void => { events.push({ type: "PENDING_EVENT_MODIFIED", eventId: draw?.id ?? load?.id ?? bust?.id ?? trigger?.id ?? context.event.sourceEventId, effectType, sourceInstanceId: context.ability.instanceId }); };
   switch (effect.type) {
     case "draw-skill-cards": {
       const amount = Math.max(0, Math.floor(resolveScalar(effect.amount, context)));
@@ -46,6 +47,26 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       if (!result) throw new Error("No legal card candidate");
       world = withHands({ ...world, shoe: result.shoe }, actor, result.hand);
       changed(effect.type);
+      break;
+    }
+    case "swap-last-hand-card-with-draw-pile-top": {
+      const result = swapLastHandCardWithDrawPileTop(world.shoe, world.hands[actor]);
+      if (!result) throw new Error("Cannot swap an empty hand or draw pile");
+      world = withHands({ ...world, shoe: result.shoe }, actor, result.hand);
+      changed(effect.type);
+      break;
+    }
+    case "reveal-hand-card-suit": {
+      const targetHand = world.hands[actor];
+      const viewer = resolveActor(effect.viewer, context);
+      if (!viewer || targetHand.cards.length <= 1) throw new Error("Private card is unavailable");
+      events.push({ type: "CARD_SUIT_REVEALED", viewer, target: actor, cardIndex: 1, suit: targetHand.cards[1]!.suit });
+      break;
+    }
+    case "split-last-card-into-derived": {
+      const result = splitLastCardIntoDerived(world.hands[actor], context.rng);
+      if (!result) throw new Error("Last card cannot be split");
+      world = withHands(world, actor, result.hand);
       break;
     }
     case "add-status": {
@@ -82,6 +103,27 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       changed(effect.type);
       break;
     }
+    case "add-derived-card-for-exact-total": {
+      const hand = world.hands[actor];
+      const card = createDerivedCardForExactTotal(hand, context.rng, resolveScalar(effect.total, context));
+      if (!card) throw new Error("No derived card can produce the requested total");
+      world = withHands(world, actor, { cards: [...hand.cards, card] });
+      break;
+    }
+    case "add-to-pending-bust-limit": {
+      if (!bust) throw new Error("add-to-pending-bust-limit outside bust check event");
+      if (bust.actor !== actor) throw new Error("Pending bust actor does not match effect target");
+      bust = { ...bust, limit: Math.max(bust.limit, bust.limit + resolveScalar(effect.amount, context)) };
+      changed(effect.type);
+      break;
+    }
+    case "add-to-pending-trigger-misfire-chance": {
+      if (!trigger) throw new Error("add-to-pending-trigger-misfire-chance outside trigger event");
+      if (trigger.actor !== actor) throw new Error("Pending trigger actor does not match effect target");
+      trigger = { ...trigger, misfireChance: Math.max(0, Math.min(1, (trigger.misfireChance ?? 0) + resolveScalar(effect.amount, context))) };
+      changed(effect.type);
+      break;
+    }
     case "add-to-pending-load": {
       if (!load) throw new Error("add-to-pending-load outside load event");
       if (load.actor !== actor) throw new Error("Pending load actor does not match effect target");
@@ -106,14 +148,14 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       break;
     }
   }
-  return { world, pendingDraw: draw, pendingLoad: load, pendingTrigger: trigger, runtime, events };
+  return { world, pendingDraw: draw, pendingLoad: load, pendingBust: bust, pendingTrigger: trigger, runtime, events };
 }
 
-export function applyEffects(effects: readonly Effect[], context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; trigger?: PendingTrigger } = {}): AbilityEffectResult {
-  let result: AbilityEffectResult = { world: context.world, pendingDraw: pending.draw, pendingLoad: pending.load, pendingTrigger: pending.trigger, runtime: context.runtime, events: [] };
+export function applyEffects(effects: readonly Effect[], context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger } = {}): AbilityEffectResult {
+  let result: AbilityEffectResult = { world: context.world, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, runtime: context.runtime, events: [] };
   for (const effect of effects) {
-    const next = applyEffect(effect, { ...context, world: result.world, runtime: result.runtime }, { draw: result.pendingDraw, load: result.pendingLoad, trigger: result.pendingTrigger });
-    result = { world: next.world, pendingDraw: next.pendingDraw, pendingLoad: next.pendingLoad, pendingTrigger: next.pendingTrigger, runtime: next.runtime, events: [...result.events, ...next.events] };
+    const next = applyEffect(effect, { ...context, world: result.world, runtime: result.runtime }, { draw: result.pendingDraw, load: result.pendingLoad, bust: result.pendingBust, trigger: result.pendingTrigger });
+    result = { world: next.world, pendingDraw: next.pendingDraw, pendingLoad: next.pendingLoad, pendingBust: next.pendingBust, pendingTrigger: next.pendingTrigger, runtime: next.runtime, events: [...result.events, ...next.events] };
   }
   return result;
 }

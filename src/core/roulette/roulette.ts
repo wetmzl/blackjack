@@ -22,8 +22,8 @@ export function deathProbability(gun: GunState): number {
   return gun.capacity === 0 ? 0 : gun.bullets / gun.capacity;
 }
 
-export function pullTrigger(gun: GunState, rng: SeededRng): { result: TriggerResult; rng: RngSnapshot } {
-  const probability = deathProbability(gun);
+export function pullTrigger(gun: GunState, rng: SeededRng, misfireChance = 0): { result: TriggerResult; rng: RngSnapshot } {
+  const probability = Math.max(0, Math.min(1, deathProbability(gun) - Math.max(0, misfireChance)));
   const roll = rng.next();
   return {
     result: { fired: roll < probability, probability, gun },

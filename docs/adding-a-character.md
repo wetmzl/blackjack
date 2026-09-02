@@ -29,7 +29,7 @@
 | 竖屏收藏记录 | `<id>-trophy-gallery-full.png` | 2:3（建议 1024×1536） | 竖屏完整遗体，作为百分比记录点坐标底图 |
 | 局部记录 | `<id>-trophy-detail-<point>.png` | 1:1 | 每个观察角度一张，可与竖屏底图采用不同视角 |
 
-牌桌基线以 `TABLE_ART_BASELINE` 为准：W、1536×1024、`horizontal-seated`、`normalSittingScale = 1`。不能因为某张旧资源尺寸异常而偏离这个契约。
+牌桌基线以 `TABLE_ART_BASELINE` 为准：W、1536×1024、`horizontal-seated`、`normalSittingScale = 1`。`tablePortraitScale` 是仅供已明确验收的角色做手机实机展示校准的可选倍率，默认值为 1、允许范围为 0.75–1.5；不能用它补救错误画布或构图。
 
 ## 3. 生成顺序
 
@@ -81,10 +81,12 @@
 
 1. 新建 `src/content/characters/data/<id>.json`，满足 `character.schema.json` 的全部字段和全部有限状态对白池。
 2. 在 `catalog.json` 添加唯一的 `id`、名称、副标题、等级、预览图、收藏横幅和数据文件名。
-3. 为角色单独配置 AI 阈值参数 `P/A/B/C`、结算文案和 `revolverPlacement`；参数默认值为 `0/1/1/1`，含义与公式见 [玩法与叙事设计](game-design.md#ai-与信息权限)。不要复制 W 的人物对白充数。
+3. 为角色单独配置 AI 阈值参数 `P/A/B/C`、结算文案和 `revolverPlacement`；参数默认值为 `0/1/1/1`，含义与公式见 [玩法与叙事设计](game-design.md#ai-与信息权限)。牌局内立绘只有在实机验收明确要求时才设置 `tablePortraitScale`。不要复制 W 的人物对白充数。
 4. `staffRevolver` 指向共享发牌员资源；根据紧张态头部位置分别校准桌面端和移动端坐标。
 5. 只有在任务明确要求时才实现策展人胜利奖励技能；单纯的技能建议不写入 `definitions.ts`。
 6. 深度收藏资源写入可选的 `trophyGallery`：`headshot`、`fullBody` 和 `closeups`。每个 `closeups` 对象必须包含与会者内唯一 `id`、名称、0–100 的 `x/y` 百分比坐标、方形图片和描述；数组没有数量上限。
+
+角色档案中的技能栏由 `mechanics` 自动生成：角色 JSON 只绑定 `{ definitionId, enabled, parameters }`，不重复技能名称、规则或文案。技能名称与规则说明来自能力注册表；文学化的档案描写写在能力定义的可选 `profileLore` 字段中。只有 `enabled: true` 且能在注册表中找到的绑定会显示，未配置技能的角色不显示空栏。
 
 ## 7. 验收清单
 

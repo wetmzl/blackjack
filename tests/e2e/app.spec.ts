@@ -6,7 +6,8 @@ import { createMatch } from "../../src/core/match/reducer";
 import type { MatchHistoryRecord } from "../../src/core/match/history";
 import type { MatchState } from "../../src/core/match/types";
 import { getAiTurnDelayMs } from "../../src/presentation/ai-timing";
-import { createDerivedCard } from "../../src/core/blackjack/card";
+import { createCard, createDerivedCard } from "../../src/core/blackjack/card";
+import { createHand } from "../../src/core/blackjack/hand";
 
 const wDialogue = (JSON.parse(readFileSync(new URL("../../src/content/characters/data/w.json", import.meta.url), "utf8")) as {
   dialogue: { PLAYER_BLACKJACK: string[]; PLAYER_WIN_ROUND: string[] };
@@ -109,12 +110,30 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await page.locator("#rules [data-close]").click();
   await enterCharacterSelection(page);
   await expect(page.locator("button.lobby-settings-button")).toHaveCount(0);
-  await expect(page.locator(".character-card")).toHaveCount(4);
+  await expect(page.locator(".character-card")).toHaveCount(5);
   await page.getByRole("button", { name: "查看档案" }).first().click();
   const profile = page.locator("#profile");
   await expect(profile).toContainText("W");
+  await expect(profile.locator(".profile-ability")).toHaveCount(2);
+  await expect(profile.locator(".profile-ability summary").first()).toContainText("炸弹狂人");
+  await expect(profile.locator(".profile-ability summary").first()).toContainText("当W的手牌张数领先玩家N张时");
+  await expect(profile.locator(".profile-ability[open]")).toHaveCount(0);
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  expect(await profile.evaluate((element) => element.getBoundingClientRect().right <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await profile.locator(".profile-ability").first().locator("summary").click();
+  await expect(profile.locator(".profile-ability").first().locator("p")).toBeVisible();
+  const skillTypography = await profile.locator(".profile-ability").first().evaluate((ability) => ({ name: getComputedStyle(ability.querySelector("summary strong")!).fontWeight, description: getComputedStyle(ability.querySelector("summary span")!).fontWeight, lore: getComputedStyle(ability.querySelector("p")!).fontWeight, summarySize: parseFloat(getComputedStyle(ability.querySelector("summary")!).fontSize), loreSize: parseFloat(getComputedStyle(ability.querySelector("p")!).fontSize) }));
+  expect(skillTypography.name).toBe("700");
+  expect(skillTypography.description).toBe("400");
+  expect(skillTypography.lore).toBe("300");
+  expect(skillTypography.loreSize).toBeLessThan(skillTypography.summarySize);
+  const profileFonts = await page.evaluate(() => ({ body: getComputedStyle(document.body).fontFamily, title: getComputedStyle(document.querySelector(".lobby-title-block h1") ?? document.body).fontFamily, skill: getComputedStyle(document.querySelector(".profile-ability summary") ?? document.body).fontFamily }));
+  expect(Object.values(profileFonts).every((font) => !/(songti|stsong|simsun|noto serif)/i.test(font))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator("#presentation")).toContainText("策展人发动了技能「早有准备」");
   await expect(page.locator("#skill-gain-announcement")).toContainText("获得技能牌：", { timeout: 5_000 });
   await expect(page.locator(".player-zone .card")).toHaveCount(2);
   await expect(page.locator(".table-shell .gun-row")).toHaveCount(0);
@@ -136,9 +155,6 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   expect(playerFirstCard!.x).toBeGreaterThanOrEqual(68);
   expect(playerFirstCard!.x).toBeLessThanOrEqual(72);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  if (await page.locator("main.table-shell").getAttribute("data-phase") === "turns") {
-    await expect(page.locator("#presentation")).toHaveText("");
-  }
   const playerLayout = await page.locator(".player-layout").boundingBox();
   const actionDock = await page.locator(".action-dock").boundingBox();
   const playerZone = await page.locator(".player-zone").boundingBox();
@@ -196,10 +212,11 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   await page.goto("/");
   await expect(page.locator(".character-card")).toHaveCount(0);
   await enterCharacterSelection(page);
-  await expect(page.locator(".character-card")).toHaveCount(4);
+  await expect(page.locator(".character-card")).toHaveCount(5);
   expect(requestedPaths.some((path) => path.includes("/content/characters/data/"))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /texas-(conflicted|mocking|threatened|unconscious|defeated-summary)/.test(path))).toBe(false);
   await page.locator("[data-start-character='texas']").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
@@ -207,12 +224,13 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/w\.json|\/assets\/w-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
 
   await page.locator("button[data-action*='ESCAPE_MATCH']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
   await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
   await enterCharacterSelection(page);
-  await expect(page.locator(".character-card")).toHaveCount(4);
+  await expect(page.locator(".character-card")).toHaveCount(5);
   const ireneRequestedPaths: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -221,21 +239,53 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   await page.locator("[data-start-character='irene']").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(true);
-  expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|nian)\.json|\/assets\/(?:w|texas|nian)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|nian|plume)\.json|\/assets\/(?:w|texas|nian|plume)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
 });
 
 test("年作为第四角色显示解离式档案并按需载入", async ({ page }) => {
   await page.goto("/");
   await enterCharacterSelection(page);
-  await expect(page.locator(".character-card")).toHaveCount(4);
+  await expect(page.locator(".character-card")).toHaveCount(5);
   await page.locator("[data-profile-id='nian']").click();
   const profile = page.locator("#profile");
   await expect(profile).toContainText("年");
+  await expect(profile.locator(".profile-ability")).toHaveCount(2);
+  await expect(profile.locator(".profile-ability summary")).toContainText(["洪炉示岁", "铜印"]);
   await expect(profile.locator("#profile-content")).toHaveText(/\S+/);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-strip .eyebrow")).toContainText("年 // S级");
   await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted|mocking)\.png/);
+});
+
+test("正式角色档案显示各自已启用技能", async ({ page }) => {
+  await page.goto("/");
+  await enterCharacterSelection(page);
+  for (const [id, names] of [["texas", ["细雨无声"]], ["irene", ["剑与手炮"]]] as const) {
+    await page.locator(`[data-profile-id='${id}']`).click();
+    const profile = page.locator("#profile");
+    await expect(profile.locator(".profile-ability")).toHaveCount(1);
+    await expect(profile.locator(".profile-ability summary")).toContainText(names[0]);
+    await profile.locator("[data-close]").click();
+  }
+});
+
+test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ page }) => {
+  const requestedPaths: string[] = [];
+  page.on("request", (request) => requestedPaths.push(decodeURIComponent(new URL(request.url()).pathname)));
+  await page.goto("/");
+  await enterCharacterSelection(page);
+  await page.locator("[data-profile-id='plume']").click();
+  const profile = page.locator("#profile");
+  await expect(profile).toContainText("翎羽");
+  await expect(profile).toContainText("B级");
+  await expect(profile.locator(".profile-ability")).toHaveCount(0);
+  await expect(profile).toContainText("安全归途");
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)$/.test(path))).toBe(true);
+  await profile.getByRole("button", { name: "开始对局" }).click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator(".character-strip .eyebrow")).toContainText("翎羽 // B级");
+  await expect(page.locator("#dialogue-text")).toContainText("台词占位", { timeout: 3_000 });
 });
 
 test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => {
@@ -318,9 +368,23 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await returnToLobbyMenu(page);
   await page.getByRole("button", { name: "技能管理" }).click();
   const skills = page.locator("#skills");
-  await expect(skills.locator(".loadout-skill")).toHaveCount(6);
+  await expect(skills.locator(".loadout-skill")).toHaveCount(8);
+  await expect(skills.getByRole("checkbox", { name: "装备早有准备" })).toBeVisible();
+  await expect(skills).not.toContainText("罗德岛万人迷");
+  await expect(skills.locator(".profile-ability[open]")).toHaveCount(0);
+  await skills.locator(".profile-ability").first().locator("summary").click();
+  await expect(skills.locator(".profile-ability").first().locator("p")).toBeVisible();
+  await skills.locator(".profile-ability").first().locator("summary").click();
+  await skills.locator(".profile-ability").nth(1).locator("summary").click();
+  await expect(skills.locator(".profile-ability[open]")).toHaveCount(1);
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.setViewportSize({ width: 390, height: 844 });
   await expect(skills.locator("input[data-equip-skill]:checked")).toHaveCount(4);
   await expect(skills.locator("input[data-equip-skill='night-queen']")).toBeDisabled();
+  const lockedNightQueen = skills.locator(".loadout-skill").filter({ hasText: "暗夜女王" });
+  await lockedNightQueen.locator(".profile-ability summary").click();
+  await expect(lockedNightQueen.locator(".profile-ability p")).toBeVisible();
   await skills.locator("[data-close]").click();
   await openLobbySettings(page);
   page.once("dialog", (dialog) => void dialog.dismiss());
@@ -512,7 +576,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   expect(openSidebar!.y + openSidebar!.height).toBeLessThanOrEqual(openDock!.y);
   const activeSkill = page.locator(".skill-sidebar button.skill-card[data-action*='hunter-instinct']");
   const activeCardsBefore = await activeSkill.allTextContents();
-  expect(activeCardsBefore).toEqual(["猎手直觉"]);
+  expect(activeCardsBefore).toEqual(["猎手直觉×1"]);
   await expect(page.locator(".player-zone .card").first()).toHaveCSS("width", "46px");
   await expect(activeSkill).toHaveCSS("width", "46px");
   await expect(page.locator(".player-zone .card").first()).toHaveCSS("height", "66px");
@@ -526,6 +590,10 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   expect(Math.abs(skillCard!.height - playingCard!.height)).toBeLessThanOrEqual(1);
   await page.locator("[data-skill-info='hunter-instinct']").click();
   await expect(page.locator("#skill-info-dialog")).toBeVisible();
+  await expect(page.locator("#skill-info-dialog .profile-ability summary")).toContainText("猎手直觉：");
+  await expect(page.locator("#skill-info-dialog .profile-ability[open]")).toHaveCount(0);
+  await page.locator("#skill-info-dialog .profile-ability summary").click();
+  await expect(page.locator("#skill-info-dialog #skill-info-lore")).toBeVisible();
   await expect(page.locator("#skill-info-dialog")).toContainText("数学最优 Hit / Stand");
   expect(await activeSkill.allTextContents()).toEqual(activeCardsBefore);
   const debugAfter = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
@@ -542,6 +610,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(activeSkill).toBeVisible();
   await page.locator(".skill-sidebar button.skill-card:not(:disabled)").first().click();
   await expect(page.locator(".skill-advice")).toBeVisible();
+  await expect(page.locator("#presentation")).toContainText("策展人发动了技能「猎手直觉」");
   await page.setViewportSize({ width: 390, height: 700 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
   const shortViewportToggle = await drawerToggle.boundingBox();
@@ -565,6 +634,75 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await page.screenshot({ path: testInfo.outputPath("skill-drawer-short-closed.png") });
   await page.setViewportSize({ width: 360, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+});
+
+test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  const source = findTurnsMatch("scent-ui");
+  const player = { ...source.player, hand: createHand([createCard("spades", "10"), createCard("clubs", "6")]) };
+  const opponent = { ...source.opponent, hand: createHand([createCard("clubs", "10"), createCard("hearts", "6")]), stood: true, busted: false };
+  const scentCard = { kind: "player-skill" as const, definitionId: "scent-of-a-woman", owner: "player" as const, instanceId: "scent-ui-card" };
+  const sequence = source.abilities.sequence + 1;
+  imported.activeMatch = {
+    ...source, player, opponent,
+    round: { ...source.round, phase: "turns", currentActor: "player", player, opponent },
+    skills: { ...source.skills, equippedSkillIds: ["scent-of-a-woman"], cards: [scentCard] },
+    abilities: { ...source.abilities, instances: [...source.abilities.instances.filter((instance) => instance.kind === "character-mechanic"), { ...scentCard, createdAtSequence: sequence, parameters: {} }], sequence }
+  };
+  await page.goto("/?debug=1");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "scent.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator("main.table-shell")).toBeVisible();
+  await page.locator(".skill-drawer-toggle").click();
+  const scentButton = page.locator(".skill-sidebar button.skill-card").filter({ hasText: "闻香识女人" });
+  await expect(scentButton).toBeVisible();
+  await scentButton.click();
+  const hidden = page.locator(".opponent-zone .card-back").first();
+  await expect(hidden).toHaveAttribute("aria-label", /花色红桃/);
+  await expect(hidden).not.toContainText("6");
+  await expect(page.locator("#presentation")).toContainText("闻香识女人");
+  await page.getByRole("button", { name: /Stand 停牌/ }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
+  await page.getByRole("button", { name: "确认结果" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "turns");
+  await expect(page.locator(".opponent-zone .card-back").first()).not.toHaveClass(/revealed-suit/);
+});
+
+test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给出短暂警告", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  const base = createMatch("e2e-silent-drizzle", {
+    opponentId: "texas",
+    equippedSkillIds: ["hunter-instinct"],
+    opponentMechanics: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
+  });
+  const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
+  const opponent = { ...base.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
+  imported.settings.reducedMotion = true;
+  imported.activeMatch = {
+    ...base,
+    player,
+    opponent,
+    shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 },
+    round: { ...base.round, phase: "turns", currentActor: "opponent", player, opponent, outcome: null },
+    aiProfile: { P: -100, A: 0, B: 0, C: 0 },
+    lastAiDecision: null
+  };
+
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "silent-drizzle.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator("#presentation")).toContainText("德克萨斯发动了技能「细雨无声」", { timeout: 8_000 });
+  await expect(page.locator("#presentation")).toContainText("玩家下一手牌期间无法使用主动技能");
+
+  await page.locator(".skill-drawer-toggle").click();
+  const blockedSkill = page.locator(".skill-card[data-skill-id='hunter-instinct']");
+  await expect(blockedSkill).toHaveAttribute("aria-disabled", "true");
+  await blockedSkill.click({ force: true });
+  await expect(page.locator("#presentation")).toContainText("技能被禁用");
+
+  await page.getByRole("button", { name: "Hit 要牌" }).click();
+  await expect(blockedSkill).not.toHaveAttribute("aria-disabled", "true");
+  await expect(blockedSkill).toBeEnabled();
 });
 
 test("牌桌全屏按钮安全切换并同步状态", async ({ page }) => {
@@ -695,7 +833,7 @@ test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ p
     { id: "gallery-irene", timestamp: "2026-08-29T20:10:00.000Z", opponentId: "irene", winner: "player", escaped: false, finalRoulette: { player: { bullets: 4, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 2 }, blackjacks: { player: 0, opponent: 1 } }
   ];
   const cases = [
-    { id: "gallery-w", slug: "w", name: "W", tier: "B", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
+    { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
     { id: "gallery-texas", slug: "texas", name: "德克萨斯", tier: "A", closeupCount: 3, closeupId: "boots-removed", closeupName: "卸下的短靴", closeupAsset: "texas-trophy-detail-boots-removed.png" },
     { id: "gallery-irene", slug: "irene", name: "艾丽妮", tier: "A", closeupCount: 4, closeupId: "hand", closeupName: "松开的手", closeupAsset: "irene-trophy-detail-hand.png" }
   ] as const;
@@ -927,4 +1065,28 @@ test("年受罚时只切换紧张立绘并叠加共享左轮", async ({ page }, 
   await strip.screenshot({ path: testInfo.outputPath("nian-trigger.png") });
   await page.setViewportSize({ width: 320, height: 720 });
   await strip.screenshot({ path: testInfo.outputPath("nian-trigger-320.png") });
+});
+
+test("翎羽受罚时保持严肃紧张立绘并校准共享左轮", async ({ page }, testInfo) => {
+  const imported = createDefaultSave("2026-09-02T00:00:00.000Z");
+  imported.settings.reducedMotion = true;
+  imported.activeMatch = { ...opponentPenaltyReveal(), opponentId: "plume" };
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "plume-trigger.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
+
+  await page.getByRole("button", { name: "确认结果" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "roulette-trigger");
+  const strip = page.locator(".character-strip");
+  const portrait = strip.locator("img.character-portrait");
+  const revolver = strip.locator("img.trigger-prop");
+  await expect(portrait).toHaveAttribute("src", /plume-threatened\.png/);
+  await expect(portrait).toHaveCSS("--table-portrait-scale", "1.3");
+  await expect(revolver).toBeVisible();
+  await expect(revolver).toHaveAttribute("src", /staff-revolver-7mm\.png/);
+  await expect(revolver).toHaveCSS("z-index", "6");
+  await strip.screenshot({ path: testInfo.outputPath("plume-trigger-390.png") });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await strip.screenshot({ path: testInfo.outputPath("plume-trigger-320.png") });
 });

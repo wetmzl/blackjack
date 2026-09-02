@@ -2,11 +2,11 @@ import { z } from "zod";
 import type { MatchHistoryRecord } from "../core/match/history";
 import type { MatchState } from "../core/match/types";
 import { getSkillDefinition } from "../core/skills/definitions";
-import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, validateAbilityBinding } from "../core/abilities/registry";
+import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "../core/abilities/registry";
 import characterCatalog from "../content/characters/catalog.json" with { type: "json" };
 
 export const SAVE_FORMAT = "house-of-chances-save" as const;
-export const CURRENT_SCHEMA_VERSION = 3 as const;
+export const CURRENT_SCHEMA_VERSION = 4 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -26,7 +26,7 @@ const GunSchema = z.object({ capacity: z.number().int().positive(), bullets: z.n
   .refine((gun) => gun.bullets <= gun.capacity, "bullets cannot exceed capacity");
 const RouletteSchema = z.object({ player: GunSchema, opponent: GunSchema }).strict();
 const ParticipantSchema = z.object({
-  id: z.enum(["player", "opponent"]), hand: HandSchema, stood: z.boolean(), busted: z.boolean()
+  id: z.enum(["player", "opponent"]), hand: HandSchema, stood: z.boolean(), busted: z.boolean(), bustLimit: z.number().finite().optional()
 }).strict();
 const RoundOutcomeSchema = z.object({
   winner: z.enum(["player", "opponent"]).nullable(),
@@ -63,7 +63,7 @@ const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema
     const definition = getAbilityDefinition(instance.definitionId);
     if (!definition) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "definitionId"], message: "unknown ability definition" });
     else {
-      if (instance.kind !== definition.sourceKind) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "kind"], message: "instance kind does not match definition source kind" });
+      if (!supportsAbilitySourceKind(definition, instance.kind)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "kind"], message: "instance kind does not match definition source kind" });
       try { validateAbilityBinding({ definitionId: instance.definitionId, enabled: true, parameters: instance.parameters }); } catch (error) { ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "parameters"], message: error instanceof Error ? error.message : "invalid ability parameters" }); }
     }
   });
@@ -82,6 +82,7 @@ const GameEventSchema = z.union([
   z.object({ type: z.literal("STATUS_REMOVED"), statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), reason: z.enum(["consumed", "expired", "dispelled"]) }).strict(),
   z.object({ type: z.literal("PENDING_EVENT_MODIFIED"), eventId: z.string().min(1), effectType: z.string().min(1), sourceInstanceId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("PENDING_EVENT_CANCELLED"), eventId: z.string().min(1), sourceInstanceId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("CARD_SUIT_REVEALED"), viewer: z.enum(["player", "opponent"]), target: z.enum(["player", "opponent"]), cardIndex: z.number().int().min(0), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
   z.object({ type: z.literal("ROUND_STARTED"), roundIndex: z.number().int().min(0) }).strict(),
   z.object({ type: z.literal("CARD_DEALT"), actor: z.enum(["player", "opponent"]), card: CardSchema, private: z.boolean() }).strict(),
   z.object({ type: z.literal("INITIAL_BLACKJACK_CHECK"), player: z.boolean(), opponent: z.boolean() }).strict(),

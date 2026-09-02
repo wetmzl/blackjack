@@ -10,9 +10,9 @@ import { buildObservation } from "../ai/observation";
 import { decideOptimalAction } from "../ai/policy";
 import { getRoundStarter } from "../blackjack/round";
 import { createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "../abilities/runtime";
-import { getAbilityDefinition, instantiateAbility, validateAbilityBinding } from "../abilities/registry";
+import { getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
-import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
+import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
 import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
@@ -61,15 +61,35 @@ function setPhase(state: MatchState, phase: RoundPhase, currentActor: Actor | nu
 
 export function abilityWorld(state: MatchState): AbilityWorld { return { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.skills.cards, statuses: state.abilities.statuses, advice: state.skills.advice }; }
 export function commitAbilityWorld(state: MatchState, world: AbilityWorld): MatchState {
-  return { ...state, player: { ...state.player, hand: world.hands.player }, opponent: { ...state.opponent, hand: world.hands.opponent }, shoe: world.shoe, roulette: world.guns, skills: skillState(state, { cards: [...world.cards], advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
+  const player = { ...state.player, hand: world.hands.player };
+  const opponent = { ...state.opponent, hand: world.hands.opponent };
+  return { ...state, player, opponent, round: { ...state.round, player, opponent }, shoe: world.shoe, roulette: world.guns, skills: skillState(state, { cards: [...world.cards], advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
 }
 
 function changedHandActors(before: AbilityWorld, after: AbilityWorld): Actor[] {
   return (["player", "opponent"] as const).filter((actor) => before.hands[actor].cards !== after.hands[actor].cards);
 }
+/** Bust limits depend on both hand sizes, so any real hand mutation invalidates
+ * both actors' cached checks. This is deliberately generic and ability-agnostic. */
+function invalidateBustLimits(state: MatchState, actors: readonly Actor[]): MatchState {
+  if (actors.length === 0) return state;
+  const player = state.player.bustLimit === undefined ? state.player : { ...state.player, bustLimit: undefined };
+  const opponent = state.opponent.bustLimit === undefined ? state.opponent : { ...state.opponent, bustLimit: undefined };
+  return withRound({ ...state, player, opponent }, { ...state.round, player, opponent });
+}
+function roundHitCounts(state: MatchState): Readonly<Record<Actor, number>> {
+  let start = -1;
+  state.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") start = index; });
+  const events = start >= 0 ? state.history.slice(start + 1) : state.history;
+  return { player: events.filter((event) => event.type === "PLAYER_HIT").length, opponent: events.filter((event) => event.type === "OPPONENT_HIT").length };
+}
 
 function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourceEventId: string): MatchState {
-  return actors.reduce((next, actor) => runAbilityEvent(next, { trigger: "after-hand-changed", sourceEventId: `${sourceEventId}:${actor}`, eventActor: actor }, {}).state, state);
+  return actors.reduce((next, actor) => {
+    const before = abilityWorld(next);
+    const resolved = runAbilityEvent(next, { trigger: "after-hand-changed", sourceEventId: `${sourceEventId}:${actor}`, eventActor: actor }, {}).state;
+    return invalidateBustLimits(resolved, changedHandActors(before, abilityWorld(resolved)));
+  }, state);
 }
 
 function drawSkillCards(state: MatchState, owner: Actor, amount: number, world: AbilityWorld, rng: SeededRng): readonly SkillCardInstance[] {
@@ -93,9 +113,9 @@ function abilityServices(state: MatchState) {
     publishAdvice: (owner: Actor) => owner === "player" ? decideOptimalAction(buildObservation(state, "player")) : "stand" as const
   };
 }
-function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { draw?: PendingDraw; load?: PendingLoad; trigger?: PendingTrigger } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingTrigger?: PendingTrigger; readonly failed: boolean } {
+function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly failed: boolean } {
   try {
-    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingTrigger: pending.trigger, directInstanceId, ...abilityServices(state) });
+    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, directInstanceId, ...abilityServices(state) });
     let next = commitAbilityWorld(state, result.world);
     const cards = result.world.cards.filter((card) => !state.skills.cards.some((old) => old.instanceId === card.instanceId));
     const firstSequence = Math.max(state.abilities.sequence, result.runtime.sequence);
@@ -103,7 +123,7 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
     next = { ...next, abilities: { ...next.abilities, ...result.runtime, instances: [...result.runtime.instances, ...instances], sequence: Math.max(result.runtime.sequence, firstSequence + instances.length) } };
     next = { ...next, abilities: clearEventCounters(next.abilities, event.sourceEventId) };
     next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.skills.cards) };
-    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingTrigger: result.pendingTrigger, failed: false };
+    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, failed: false };
   } catch (error) {
     // A failed ability event is atomic. The caller may continue with the
     // unmodified pending event so the base game action remains safe.
@@ -152,8 +172,9 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
   const shoe = replacement ? prepared.state.shoe : base.shoe;
   let next = commitAbilityWorld(prepared.state, { ...abilityWorld(prepared.state), shoe });
   const current = next[actor];
-  const updated = { ...current, hand: addCard(current.hand, card) };
+  const updated = { ...current, hand: addCard(current.hand, card), bustLimit: undefined };
   next = withRound(next, { ...next.round, [actor]: updated } as RoundState);
+  next = invalidateBustLimits(next, [actor]);
   next = append(next, { type: actor === "player" ? "PLAYER_HIT" : "OPPONENT_HIT", value: handValue(updated.hand) }, { type: "CARD_DEALT", actor, card, private: true });
   const beforeAfterDraw = abilityWorld(next);
   const afterDraw = runAbilityEvent(next, { trigger: "after-card-draw", sourceEventId: `after:${pending.id}`, eventActor: actor }, {}).state;
@@ -182,15 +203,36 @@ function startNextRound(state: MatchState): MatchState {
   const ai = SeededRng.fromSnapshot(next.rng.ai);
   const playNoise = sampleAiNoise(ai);
   next = withRound({ ...next, shoe: nextRound.shoe, abilities: runtime, skills: skillState(next, { advice: null }), rng: { ...next.rng, deck: nextRound.deckRng.snapshot(), ai: ai.snapshot() }, aiNoise: { ...next.aiNoise, play: playNoise } }, round);
-  return resolveInitialBlackjack(append(next, ...expired, ...nextRound.events));
+  const dealt = append(next, ...expired, ...nextRound.events);
+  const opened = broadcastHandChanges(dealt, ["player", "opponent"], `initial-hand:${index}`);
+  return resolveInitialBlackjack(opened);
 }
-function resolveInitialBlackjack(state: MatchState): MatchState { const p = isBlackjack(state.player.hand); const o = isBlackjack(state.opponent.hand); let next = append(state, { type: "INITIAL_BLACKJACK_CHECK", player: p, opponent: o }); if (!p && !o) return setPhase(next, "turns", state.round.starter); if (p) next = append(next, { type: "BLACKJACK", actor: "player" }); if (o) next = append(next, { type: "BLACKJACK", actor: "opponent" }); if (p && o) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 }); const winner: Actor = p ? "player" : "opponent"; return resolveRound(next, { winner, reason: "blackjack", penaltyTarget: winner === "player" ? "opponent" : "player", bulletsAdded: 2, playerSkillReward: winner === "player" ? 2 : 0 }); }
+function resolveInitialBlackjack(state: MatchState): MatchState {
+  const p = isBlackjack(state.player.hand); const o = isBlackjack(state.opponent.hand);
+  let next = append(state, { type: "INITIAL_BLACKJACK_CHECK", player: p, opponent: o });
+  if (p || o) {
+    if (p) next = append(next, { type: "BLACKJACK", actor: "player" });
+    if (o) next = append(next, { type: "BLACKJACK", actor: "opponent" });
+    if (p && o) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 });
+    const winner: Actor = p ? "player" : "opponent";
+    return resolveRound(next, { winner, reason: "blackjack", penaltyTarget: winner === "player" ? "opponent" : "player", bulletsAdded: 2, playerSkillReward: winner === "player" ? 2 : 0 });
+  }
+  // Initial ability-created 21s are not natural Blackjack. Enter the normal
+  // turn pipeline so the shared normalization marks them stood and hands the
+  // turn to the other actor when the starter was already stood.
+  next = setPhase(next, "turns", state.round.starter);
+  next = normalizeAbilityHands(next);
+  if (next.round.phase !== "turns") return next;
+  return next[next.round.starter].stood
+    ? setPhase(next, "turns", next.round.starter === "player" ? "opponent" : "player")
+    : next;
+}
 
 function triggerFor(state: MatchState, actor: Actor): MatchState {
   const pending: PendingTrigger = { id: `trigger:${state.roundIndex}:${state.history.length}`, actor };
-  const prepared = runAbilityEvent(state, { trigger: "before-trigger-pull", sourceEventId: pending.id, eventActor: actor, roundOutcome: state.round.outcome ?? undefined }, { trigger: pending });
+  const prepared = runAbilityEvent(state, { trigger: "before-trigger-pull", sourceEventId: pending.id, eventActor: actor, roundHitCounts: roundHitCounts(state), roundOutcome: state.round.outcome ?? undefined }, { trigger: pending });
   if (prepared.pendingTrigger?.cancelled) return startNextRound(prepared.state);
-  const trigger = pullTrigger(prepared.state.roulette[actor], SeededRng.fromSnapshot(prepared.state.rng.roulette));
+  const trigger = pullTrigger(prepared.state.roulette[actor], SeededRng.fromSnapshot(prepared.state.rng.roulette), prepared.pendingTrigger?.misfireChance ?? 0);
   let next = append(withRound({ ...prepared.state, rng: { ...prepared.state.rng, roulette: trigger.rng } }, { ...prepared.state.round, phase: "roulette-result", currentActor: null }), { type: "TRIGGER_PULLED", actor, probability: trigger.result.probability, fired: trigger.result.fired });
   next = runAbilityEvent(next, { trigger: "after-trigger-result", sourceEventId: `after:${pending.id}`, eventActor: actor, roundOutcome: state.round.outcome ?? undefined }, {}).state;
   if (!trigger.result.fired) return append(next, { type: "TRIGGER_SURVIVED", actor });
@@ -206,6 +248,18 @@ export function normalizeAbilityHands(state: MatchState): MatchState {
   const busts: Actor[] = [];
   for (const actor of ["player", "opponent"] as const) {
     if (isBust(next[actor].hand)) {
+      if (next[actor].bustLimit === undefined) {
+        const pendingBust: PendingBustCheck = { id: `bust:${next.roundIndex}:${next.history.length}:${actor}`, actor, limit: 21 };
+        const checked = runAbilityEvent(next, { trigger: "before-bust-check", sourceEventId: pendingBust.id, eventActor: actor, roundHitCounts: roundHitCounts(next) }, { bust: pendingBust });
+        next = checked.state;
+        const limit = checked.pendingBust?.limit ?? 21;
+        if (handValue(next[actor].hand) <= limit && !next[actor].busted) {
+          next = withRound(next, { ...next.round, [actor]: { ...next[actor], bustLimit: limit } } as RoundState);
+          continue;
+        }
+        next = withRound(next, { ...next.round, [actor]: { ...next[actor], bustLimit: limit } } as RoundState);
+      }
+      if (next[actor].bustLimit !== undefined && handValue(next[actor].hand) <= next[actor].bustLimit) continue;
       busts.push(actor);
       if (!next[actor].busted) {
         next = withRound(next, { ...next.round, [actor]: { ...next[actor], busted: true, stood: true } } as RoundState);
@@ -233,9 +287,13 @@ function play(state: MatchState, instanceId: string): MatchState {
     const result = playAbility(input);
     const handChanges = changedHandActors(input.world, result.world);
     let next = commitAbilityWorld(state, result.world);
+    next = invalidateBustLimits(next, handChanges);
     next = { ...next, abilities: clearEventCounters({ ...result.runtime, statuses: result.world.statuses }, `ability:${instanceId}`) };
     next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.skills.cards) };
     next = append(next, ...result.events as GameEvent[]);
+    // Broadcast only after the direct ability has successfully resolved so
+    // observers (for example Copper Seal) cannot block the first card.
+    next = runAbilityEvent(next, { trigger: "after-ability-played", sourceEventId: `after-ability:${instanceId}:${state.history.length}`, eventActor: instance.owner, playedAbilityKind: instance.kind }, {}).state;
     if (handChanges.length > 0) next = broadcastHandChanges(next, handChanges, `ability-hand:${instanceId}:${state.history.length}`);
     if (next.round.phase === "turns") {
       next = normalizeAbilityHands(next);
@@ -250,17 +308,19 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
   const root = deriveRng(seed, "root"); const deck = root.derive("deck"); const roulette = root.derive("roulette"); const ai = root.derive("ai"); const loot = root.derive("loot"); const dialogue = root.derive("dialogue"); const ability = root.derive("ability"); const initial = makeRound(0, createShoe(deck), deck); const equipped = normalizeEquipped(options.equippedSkillIds); const aiNoise = { match: sampleAiNoise(ai), play: sampleAiNoise(ai) };
   let runtime = createAbilityRuntime(ability.snapshot());
   let instanceSerial = 0;
-  for (const id of equipped) { const skill = getSkillDefinition(id); if (skill?.category === "passive") runtime = addAbilityInstance(runtime, instantiateAbility(validateAbilityBinding({ definitionId: id, enabled: true, parameters: {} }), "player", `ability-player-${id}`, ++instanceSerial)); }
+  for (const id of equipped) { const skill = getSkillDefinition(id); if (skill?.category === "passive") runtime = addAbilityInstance(runtime, instantiateAbility(validateAbilityBinding({ definitionId: id, enabled: true, parameters: {} }), "player", `ability-player-${id}`, ++instanceSerial, undefined, "player-skill")); }
   for (const [owner, bindings] of [["player", options.playerMechanics ?? []], ["opponent", options.opponentMechanics ?? []]] as const) {
     for (const binding of bindings) {
       const valid = validateAbilityBinding(binding);
-      if (getAbilityDefinition(valid.definitionId)?.sourceKind !== "character-mechanic") throw new RangeError(`Match mechanic must reference a character-mechanic definition: ${valid.definitionId}`);
-      if (valid.enabled) runtime = addAbilityInstance(runtime, instantiateAbility(valid, owner, `ability-${owner}-${valid.definitionId}-${++instanceSerial}`, instanceSerial));
+      const definition = getAbilityDefinition(valid.definitionId);
+      if (!definition || !supportsAbilitySourceKind(definition, "character-mechanic")) throw new RangeError(`Match mechanic must reference a character-mechanic definition: ${valid.definitionId}`);
+      if (valid.enabled) runtime = addAbilityInstance(runtime, instantiateAbility(valid, owner, `ability-${owner}-${valid.definitionId}-${++instanceSerial}`, instanceSerial, undefined, "character-mechanic"));
     }
   }
   const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player: initial.player, opponent: initial.opponent, shoe: initial.shoe, roulette: { player: createGun(), opponent: createGun() }, skills: { equippedSkillIds: equipped, cards: [], advice: null }, abilities: runtime, round: { index: 0, phase: "initial-blackjack-check", starter: initial.starter, currentActor: null, player: initial.player, opponent: initial.opponent, outcome: null }, history: initial.events, rng: { deck: initial.deckRng.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
   const opened = gainSkills(base, 1); const created = runAbilityEvent(opened, { trigger: "on-match-created", sourceEventId: `match-created:${opened.id}` }, {}).state;
-  return resolveInitialBlackjack(created);
+  const dealt = broadcastHandChanges(created, ["player", "opponent"], "initial-hand:0");
+  return resolveInitialBlackjack(dealt);
 }
 
 export function getLegalActions(state: MatchState): Action[] {
@@ -279,9 +339,9 @@ export function gameReducer(state: MatchState, action: Action): MatchState {
   if (state.status !== "active" || state.scene !== "match") return state;
   switch (action.type) {
     case "PLAYER_HIT": return state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood ? drawFor(state, "player") : state;
-    case "PLAYER_STAND": return state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood ? standFor(state, "player") : state;
+    case "PLAYER_STAND": { const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "player" && !checked.player.stood ? standFor(checked, "player") : checked; }
     case "AI_HIT": case "OPPONENT_HIT": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? drawFor(state, "opponent") : state;
-    case "AI_STAND": case "OPPONENT_STAND": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? standFor(state, "opponent") : state;
+    case "AI_STAND": case "OPPONENT_STAND": { const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "opponent" && !checked.opponent.stood ? standFor(checked, "opponent") : checked; }
     case "AI_TURN": { if (state.round.phase !== "turns" || state.round.currentActor !== "opponent") return state; const decision = decideAiAction(buildObservation(state, "opponent"), state.aiProfile, state.aiNoise); const next = append({ ...state, lastAiDecision: decision }, { type: "AI_DECISION", decision }); return decision.action === "hit" ? drawFor(next, "opponent") : standFor(next, "opponent"); }
     case "PLAY_ABILITY": return play(state, action.instanceId);
     case "TRIGGER_ROULETTE": return state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger" ? triggerFor(state, state.round.outcome?.penaltyTarget ?? "player") : state;

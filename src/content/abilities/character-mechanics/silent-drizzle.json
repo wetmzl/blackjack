@@ -2,6 +2,8 @@
   "id": "silent-drizzle",
   "name": "细雨无声",
   "description": "主动选择 Stand 后，使对手在完成下一次基础行动前无法使用主动技能牌。",
+  "triggerNotice": "玩家下一手牌期间无法使用主动技能。",
+  "profileLore": "叙拉古的雨总是很轻，洗不净街角的血，也惊不醒那些早已习惯枪声的人。",
   "sourceKind": "character-mechanic",
   "activation": {
     "type": "automatic"

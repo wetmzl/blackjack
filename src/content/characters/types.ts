@@ -61,7 +61,7 @@ export interface CharacterTrophyGallery {
   readonly closeups: readonly TrophyCloseupPoint[];
 }
 
-/** Fixed W art reference: 1536×1024 source canvas and scale 1 normal sitting composition. */
+/** W art reference: 1536×1024 source canvas and scale 1 normal sitting composition. */
 export const TABLE_ART_BASELINE = Object.freeze({
   referenceCharacterId: "w",
   referenceCanvas: Object.freeze({ width: 1536, height: 1024 }),
@@ -76,7 +76,8 @@ export interface CharacterData {
   readonly profile: CharacterProfile;
   readonly matchSummary: CharacterMatchSummary;
   readonly trophyGallery?: CharacterTrophyGallery;
-  /** All normal attendee portraits use TABLE_ART_BASELINE; definitions cannot override its scale. */
+  /** Presentation-only multiplier applied to every in-match portrait; defaults to the scale-1 baseline. */
+  readonly tablePortraitScale: number;
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;
   readonly mechanics: readonly AbilityBinding[];

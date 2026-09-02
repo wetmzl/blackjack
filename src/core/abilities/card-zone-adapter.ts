@@ -1,11 +1,38 @@
 import { addCard, createHand, handValue } from "../blackjack/hand";
-import { createCard, createDerivedCard, isDerivedCard } from "../blackjack/card";
+import { cardValue, createCard, createDerivedCard, isDerivedCard } from "../blackjack/card";
 import { RANKS, SUITS, type Card, type Hand, type PhysicalCard, type ShoeState } from "../blackjack/types";
 import type { SeededRng } from "../rng/seeded";
 
 export interface CardCandidateResult { readonly card: PhysicalCard; readonly index: number; }
 export function handCardCount(hand: Hand): number { return hand.cards.length; }
 export function handTotal(hand: Hand): number { return handValue(hand); }
+export function fixedCardValue(card: Card): number { return cardValue(card.rank); }
+
+export function swapLastHandCardWithDrawPileTop(shoe: ShoeState, hand: Hand): { readonly hand: Hand; readonly shoe: ShoeState } | undefined {
+  if (hand.cards.length === 0 || shoe.cursor >= shoe.cards.length) return undefined;
+  const outgoing = hand.cards.at(-1)!;
+  const top = shoe.cards[shoe.cursor]!;
+  const cards = [...hand.cards.slice(0, -1), top];
+  if (isDerivedCard(outgoing)) return { hand: createHand(cards), shoe: { ...shoe, cursor: shoe.cursor + 1 } };
+  const shoeCards = [...shoe.cards];
+  shoeCards[shoe.cursor] = outgoing;
+  return { hand: createHand(cards), shoe: { ...shoe, cards: shoeCards } };
+}
+
+const SPLIT_RANKS = RANKS.map((rank) => ({ rank, value: cardValue(rank) }));
+export function canSplitLastCard(hand: Hand): boolean {
+  const value = hand.cards.at(-1) ? fixedCardValue(hand.cards.at(-1)!) : 0;
+  return SPLIT_RANKS.some((left, index) => SPLIT_RANKS.some((right, rightIndex) => rightIndex >= index && left.value + right.value === value));
+}
+export function splitLastCardIntoDerived(hand: Hand, rng: SeededRng): { readonly hand: Hand; readonly cards: readonly Card[] } | undefined {
+  const outgoing = hand.cards.at(-1);
+  if (!outgoing) return undefined;
+  const pairs = SPLIT_RANKS.flatMap((left, index) => SPLIT_RANKS.slice(index).filter((right) => left.value + right.value === fixedCardValue(outgoing)).map((right) => [left.rank, right.rank] as const));
+  if (pairs.length === 0) return undefined;
+  const [left, right] = pairs[rng.nextInt(pairs.length)]!;
+  const cards = [createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, left), createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, right)];
+  return { hand: createHand([...hand.cards.slice(0, -1), ...cards]), cards };
+}
 
 export function findCardCandidates(shoe: ShoeState, hand: Hand, target: "at-most" | "exactly", total: number): readonly CardCandidateResult[] {
   return shoe.cards.slice(shoe.cursor).map((card, offset) => ({ card, index: shoe.cursor + offset })).filter(({ card }) => {
@@ -43,6 +70,14 @@ export function replaceLastHandCard(shoe: ShoeState, hand: Hand, rng: SeededRng,
 }
 
 export interface ExactDrawResult { readonly card: Card; readonly shoe: ShoeState; readonly derived: boolean; }
+
+/** Creates a temporary card that makes the hand's total exactly `total`.
+ * This deliberately never consults or mutates the physical shoe. */
+export function createDerivedCardForExactTotal(hand: Hand, rng: SeededRng, total: number): Card | undefined {
+  const ranks = RANKS.filter((rank) => handValue(addCard(hand, createCard("spades", rank))) === total);
+  if (ranks.length === 0) return undefined;
+  return createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, ranks[rng.nextInt(ranks.length)]!);
+}
 
 /** Resolve a guaranteed total without ever asking the RNG for an empty range. */
 export function drawExactResultingTotal(shoe: ShoeState, hand: Hand, rng: SeededRng, total: number): ExactDrawResult | undefined {

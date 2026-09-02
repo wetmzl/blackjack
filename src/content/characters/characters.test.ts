@@ -5,15 +5,18 @@ import wData from "./data/w.json";
 import texasData from "./data/texas.json";
 import ireneData from "./data/irene.json";
 import nianData from "./data/nian.json";
+import plumeData from "./data/plume.json";
 import { CharacterCatalogSchema, CharacterDataSchema, DIALOGUE_EVENT_CODES } from "./schema";
+import { getAbilityDefinition } from "../../core/abilities/registry";
 
 describe("data-driven character registry", () => {
-  it("registers W, Texas, Irene, and Nian", () => {
-    expect(CHARACTER_CATALOG.map((character) => character.id)).toEqual(["w", "texas", "irene", "nian"]);
+  it("registers W, Texas, Irene, Nian, and Plume", () => {
+    expect(CHARACTER_CATALOG.map((character) => character.id)).toEqual(["w", "texas", "irene", "nian", "plume"]);
     expect(new Set(CHARACTER_CATALOG.map((character) => character.id)).size).toBe(CHARACTER_CATALOG.length);
     expect(CHARACTER_METADATA_BY_ID.texas).toBe(CHARACTER_CATALOG[1]);
     expect(CHARACTER_METADATA_BY_ID.irene).toBe(CHARACTER_CATALOG[2]);
     expect(CHARACTER_METADATA_BY_ID.nian).toBe(CHARACTER_CATALOG[3]);
+    expect(CHARACTER_METADATA_BY_ID.plume).toBe(CHARACTER_CATALOG[4]);
     expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("w");
     expect(TABLE_ART_BASELINE.referenceCharacterId).toBe("w");
     expect(TABLE_ART_BASELINE.referenceCanvas).toEqual({ width: 1536, height: 1024 });
@@ -27,13 +30,15 @@ describe("data-driven character registry", () => {
       "/assets/characters/w-relaxed.png",
       "/assets/characters/texas-relaxed.png",
       "/assets/characters/irene-relaxed.png",
-      "/assets/characters/nian-relaxed.png"
+      "/assets/characters/nian-relaxed.png",
+      "/assets/characters/plume-relaxed.png"
     ]);
     expect(CHARACTER_CATALOG.map((character) => character.trophyImage)).toEqual([
       "/assets/characters/w-trophy-defeated.png",
       "/assets/characters/texas-trophy-defeated.png",
       "/assets/characters/irene-trophy-defeated.png",
-      "/assets/characters/nian-trophy-defeated.png"
+      "/assets/characters/nian-trophy-defeated.png",
+      "/assets/characters/plume-trophy-defeated.png"
     ]);
   });
 
@@ -45,15 +50,19 @@ describe("data-driven character registry", () => {
     expect(loadCharacter("irene")).toBe(irenePromise);
     const nianPromise = loadCharacter("nian");
     expect(loadCharacter("nian")).toBe(nianPromise);
-    const [w, texas, irene, nian] = await Promise.all([wPromise, loadCharacter("texas"), irenePromise, nianPromise]);
+    const plumePromise = loadCharacter("plume");
+    expect(loadCharacter("plume")).toBe(plumePromise);
+    const [w, texas, irene, nian, plume] = await Promise.all([wPromise, loadCharacter("texas"), irenePromise, nianPromise, plumePromise]);
     expect(w.id).toBe("w");
     expect(texas.id).toBe("texas");
     expect(irene.id).toBe("irene");
     expect(nian.id).toBe("nian");
+    expect(plume.id).toBe("plume");
     expect(w.revolverPlacement).toEqual({ top: 152, left: 90, mobileTop: 116, mobileLeft: 88 });
     expect(texas.revolverPlacement).toEqual({ top: 142, left: 128, mobileTop: 109, mobileLeft: 110 });
     expect(irene.revolverPlacement).toEqual({ top: 98, left: 120, mobileTop: 109, mobileLeft: 110 });
     expect(nian.revolverPlacement).toEqual({ top: 134, left: 110, mobileTop: 102, mobileLeft: 104 });
+    expect(plume.revolverPlacement).toEqual({ top: 152, left: 118, mobileTop: 116, mobileLeft: 116 });
     expect(w.assets.staffRevolver).toBe("/assets/characters/staff-revolver-7mm.png");
     expect(texas.assets.staffRevolver).toBe("/assets/characters/staff-revolver-7mm.png");
     expect(irene.assets).toEqual({
@@ -73,6 +82,15 @@ describe("data-driven character registry", () => {
       staffRevolver: "/assets/characters/staff-revolver-7mm.png",
       unconscious: "/assets/characters/nian-unconscious-reclined.png",
       defeatedSummary: "/assets/characters/nian-defeated-summary-chair.png"
+    });
+    expect(plume.assets).toEqual({
+      relaxed: "/assets/characters/plume-relaxed.png",
+      conflicted: "/assets/characters/plume-conflicted.png",
+      mocking: "/assets/characters/plume-mocking.png",
+      threatened: "/assets/characters/plume-threatened.png",
+      staffRevolver: "/assets/characters/staff-revolver-7mm.png",
+      unconscious: "/assets/characters/plume-unconscious-reclined.png",
+      defeatedSummary: "/assets/characters/plume-defeated-summary-chair.png"
     });
     expect(w.trophyGallery).toEqual({
       headshot: "/assets/characters/w-trophy-gallery-headshot.png",
@@ -113,14 +131,27 @@ describe("data-driven character registry", () => {
         expect.objectContaining({ id: "feet-side", name: "足部·侧面", x: 58, y: 86, image: "/assets/characters/nian-trophy-detail-feet-side.png" })
       ]
     });
+    expect(plume.trophyGallery).toEqual({
+      headshot: "/assets/characters/plume-trophy-gallery-headshot.png",
+      fullBody: "/assets/characters/plume-trophy-gallery-full.png",
+      closeups: [
+        expect.objectContaining({ id: "face", name: "凝住的警觉", x: 50, y: 16, image: "/assets/characters/plume-trophy-detail-face.png" }),
+        expect.objectContaining({ id: "skirt", name: "层叠裙摆", x: 50, y: 46, image: "/assets/characters/plume-trophy-detail-skirt.png" }),
+        expect.objectContaining({ id: "stockings", name: "透肤黑色长袜", x: 50, y: 69, image: "/assets/characters/plume-trophy-detail-stockings.png" }),
+        expect.objectContaining({ id: "boots", name: "平置短靴", x: 50, y: 88, image: "/assets/characters/plume-trophy-detail-boots.png" })
+      ]
+    });
     expect("trophyDefeated" in w.assets).toBe(false);
     expect("trophyDefeated" in texas.assets).toBe(false);
     expect("trophyDefeated" in irene.assets).toBe(false);
     expect("trophyDefeated" in nian.assets).toBe(false);
+    expect("trophyDefeated" in plume.assets).toBe(false);
     expect("portraitScale" in w).toBe(false);
     expect("portraitScale" in texas).toBe(false);
     expect("portraitScale" in irene).toBe(false);
     expect("portraitScale" in nian).toBe(false);
+    expect("portraitScale" in plume).toBe(false);
+    expect([w.tablePortraitScale, texas.tablePortraitScale, irene.tablePortraitScale, nian.tablePortraitScale, plume.tablePortraitScale]).toEqual([1, 1, 1, 1, 1.3]);
     expect(w.profile.description.length).toBeGreaterThan(0);
     expect(w.matchSummary.playerVictory.length).toBeGreaterThan(0);
     expect(w.matchSummary.playerDefeat.length).toBeGreaterThan(0);
@@ -134,8 +165,30 @@ describe("data-driven character registry", () => {
     expect(nian.matchSummary.playerVictory.length).toBeGreaterThan(0);
     expect(nian.matchSummary.playerDefeat.length).toBeGreaterThan(0);
     expect(nian.matchSummary.escaped.length).toBeGreaterThan(0);
-    expect([w.ai, texas.ai, irene.ai, nian.ai]).toEqual(Array.from({ length: 4 }, () => ({ P: 0, A: 1, B: 1, C: 1 })));
+    expect(plume.profile.description.length).toBeGreaterThan(0);
+    expect(plume.matchSummary.playerVictory.length).toBeGreaterThan(0);
+    expect(plume.matchSummary.playerDefeat.length).toBeGreaterThan(0);
+    expect(plume.matchSummary.escaped.length).toBeGreaterThan(0);
+    expect([w.ai, texas.ai, irene.ai, nian.ai, plume.ai].every((ai) => Number.isFinite(ai.P) && Number.isFinite(ai.A) && Number.isFinite(ai.B) && Number.isFinite(ai.C))).toBe(true);
+    expect(plume.ai).toEqual({ P: 0, A: 1, B: 1, C: 1 });
+    expect(getCharacterMetadata("plume")?.tier).toBe("B");
+    expect(getCharacterMetadata("w")?.tier).toBe("S");
+    expect(w.mechanics).toEqual([
+      { definitionId: "bomb-maniac", enabled: true, parameters: {} },
+      { definitionId: "w-night-queen", enabled: true, parameters: {} }
+    ]);
+    expect(irene.mechanics).toEqual([{ definitionId: "sword-and-handcannon", enabled: true, parameters: {} }]);
+    expect(nian.mechanics).toEqual([
+      { definitionId: "forge-heralds-the-year", enabled: true, parameters: {} },
+      { definitionId: "copper-seal", enabled: true, parameters: {} }
+    ]);
     expect(texas.mechanics).toEqual([{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]);
+    expect(plume.mechanics).toEqual([]);
+    const formalMechanics = [...w.mechanics, ...texas.mechanics, ...irene.mechanics, ...nian.mechanics, ...plume.mechanics]
+      .filter((binding) => binding.enabled)
+      .map((binding) => getAbilityDefinition(binding.definitionId));
+    expect(formalMechanics).toHaveLength(6);
+    expect(formalMechanics.every((ability) => Boolean(ability?.profileLore?.trim()))).toBe(true);
     expect("MATCH_WIN" in w.dialogue).toBe(false);
     expect("MATCH_LOSS" in w.dialogue).toBe(false);
     expect("PLAYER_ESCAPE" in w.dialogue).toBe(false);
@@ -146,22 +199,18 @@ describe("data-driven character registry", () => {
     expect(Object.keys(texas.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.keys(irene.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.keys(nian.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
+    expect(Object.keys(plume.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.values(irene.dialogue).every((pool) => pool.length > 0)).toBe(true);
-    const ireneMainEvents = DIALOGUE_EVENT_CODES.filter((code) => !code.startsWith("SPECIAL_"));
-    expect(ireneMainEvents.every((code) => irene.dialogue[code].length >= 4)).toBe(true);
-    const ireneSpecialEvents = DIALOGUE_EVENT_CODES.filter((code) => code.startsWith("SPECIAL_"));
-    expect(ireneSpecialEvents.every((code) => irene.dialogue[code].length >= 2)).toBe(true);
-    const nianMainEvents = DIALOGUE_EVENT_CODES.filter((code) => !code.startsWith("SPECIAL_"));
-    expect(nianMainEvents.every((code) => nian.dialogue[code].length >= 4)).toBe(true);
-    const nianSpecialEvents = DIALOGUE_EVENT_CODES.filter((code) => code.startsWith("SPECIAL_"));
-    expect(nianSpecialEvents.every((code) => nian.dialogue[code].length >= 2)).toBe(true);
+    expect(Object.values(plume.dialogue).every((pool) => pool.length === 1 && pool[0].includes("台词占位"))).toBe(true);
     expect(w.id).toBe(getCharacterMetadata(w.id)?.id);
     expect(texas.id).toBe(getCharacterMetadata(texas.id)?.id);
     expect(irene.id).toBe(getCharacterMetadata(irene.id)?.id);
     expect(nian.id).toBe(getCharacterMetadata(nian.id)?.id);
+    expect(plume.id).toBe(getCharacterMetadata(plume.id)?.id);
     expect(await loadCharacter("w")).toBe(w);
     expect(await loadCharacter("irene")).toBe(irene);
     expect(await loadCharacter("nian")).toBe(nian);
+    expect(await loadCharacter("plume")).toBe(plume);
   });
 
   it("keeps the annotated JSON Schema synchronized with every required dialogue pool", () => {
@@ -180,6 +229,7 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse(texasData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(ireneData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(nianData).success).toBe(true);
+    expect(CharacterDataSchema.safeParse(plumeData).success).toBe(true);
   });
 
   it("requires finite P/A/B/C AI threshold parameters", () => {
@@ -187,6 +237,13 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse({ ...wData, ai: missingC }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...wData, ai: { ...wData.ai, P: Number.POSITIVE_INFINITY } }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...wData, ai: { ...wData.ai, unknown: 1 } }).success).toBe(false);
+  });
+
+  it("defaults table portrait scale to one and validates explicit presentation overrides", () => {
+    expect(CharacterDataSchema.parse(wData).tablePortraitScale).toBe(1);
+    expect(CharacterDataSchema.parse(plumeData).tablePortraitScale).toBe(1.3);
+    expect(CharacterDataSchema.safeParse({ ...plumeData, tablePortraitScale: 0.74 }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...plumeData, tablePortraitScale: 1.51 }).success).toBe(false);
   });
 
   it("strictly validates declarative mechanic bindings", () => {

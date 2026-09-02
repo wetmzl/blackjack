@@ -6,12 +6,15 @@ export interface SkillDefinition {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  readonly triggerNotice: string;
+  readonly profileLore: string;
   /** Full in-game rules shown from the compact table card. */
   readonly usage: string;
   readonly category: SkillCategory;
   readonly timing: readonly SkillTiming[];
   /** Optional data-driven unlock source. Undefined means an initial skill. */
   readonly unlock?: { readonly opponentId: string; readonly label: string };
+  readonly hidden: boolean;
 }
 
 export interface SkillInventory {

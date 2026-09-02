@@ -3,19 +3,25 @@ import hunterInstinct from "../../content/abilities/player-skills/hunter-instinc
 import switcheroo from "../../content/abilities/player-skills/switcheroo.json" with { type: "json" };
 import rhodesHeartthrob from "../../content/abilities/player-skills/rhodes-heartthrob.json" with { type: "json" };
 import nightQueen from "../../content/abilities/player-skills/night-queen.json" with { type: "json" };
-import siracusanFury from "../../content/abilities/player-skills/siracusan-fury.json" with { type: "json" };
+import scentOfAWoman from "../../content/abilities/player-skills/scent-of-a-woman.json" with { type: "json" };
+import blueberryAndDarkChocolate from "../../content/abilities/player-skills/blueberry-and-dark-chocolate.json" with { type: "json" };
 import ownerLoadPenalty from "../../content/abilities/character-mechanics/owner-load-penalty.json" with { type: "json" };
 import rivalBustLoad from "../../content/abilities/character-mechanics/rival-bust-load.json" with { type: "json" };
 import actionAdviceMechanic from "../../content/abilities/character-mechanics/action-advice-mechanic.json" with { type: "json" };
 import handChangeObserver from "../../content/abilities/character-mechanics/hand-change-observer.json" with { type: "json" };
 import silentDrizzle from "../../content/abilities/character-mechanics/silent-drizzle.json" with { type: "json" };
+import bombManiac from "../../content/abilities/character-mechanics/bomb-maniac.json" with { type: "json" };
+import wNightQueen from "../../content/abilities/character-mechanics/w-night-queen.json" with { type: "json" };
+import swordAndHandcannon from "../../content/abilities/character-mechanics/sword-and-handcannon.json" with { type: "json" };
+import forgeHeraldsTheYear from "../../content/abilities/character-mechanics/forge-heralds-the-year.json" with { type: "json" };
+import copperSeal from "../../content/abilities/character-mechanics/copper-seal.json" with { type: "json" };
 import rhodesHeartthrobStatus from "../../content/abilities/statuses/rhodes-heartthrob-armed.json" with { type: "json" };
-import nightQueenStatus from "../../content/abilities/statuses/night-queen-armed.json" with { type: "json" };
 import silentDrizzleStatus from "../../content/abilities/statuses/silent-drizzle-silenced.json" with { type: "json" };
+import copperSealStatus from "../../content/abilities/statuses/copper-seal-sealed.json" with { type: "json" };
 import { AbilityDefinitionSchema, StatusDefinitionSchema, validateBinding } from "./schema";
 import type { AbilityBinding, AbilityDefinition, AbilityInstance, StatusDefinition } from "./types";
 
-export const ABILITY_CATALOG_VERSION = "abilities-v3" as const;
+export const ABILITY_CATALOG_VERSION = "abilities-v6" as const;
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
@@ -24,9 +30,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const definitions = [earlyPreparation, hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, siracusanFury, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle]
+const definitions = [earlyPreparation, hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle, bombManiac, wNightQueen, swordAndHandcannon, forgeHeraldsTheYear, copperSeal]
   .map((value) => deepFreeze(AbilityDefinitionSchema.parse(value) as AbilityDefinition));
-const statuses = [rhodesHeartthrobStatus, nightQueenStatus, silentDrizzleStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
+const statuses = [rhodesHeartthrobStatus, silentDrizzleStatus, copperSealStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
 export const ABILITY_DEFINITIONS: readonly AbilityDefinition[] = Object.freeze(definitions);
 export const STATUS_DEFINITIONS: readonly StatusDefinition[] = Object.freeze(statuses);
 export const ABILITY_DEFINITIONS_BY_ID: Readonly<Record<string, AbilityDefinition>> = Object.freeze(Object.fromEntries(definitions.map((definition) => [definition.id, definition])));
@@ -96,6 +102,10 @@ export function createAbilityRegistry(extraDefinitions: readonly unknown[] = [],
 export function getAbilityDefinition(id: string): AbilityDefinition | undefined { return ABILITY_DEFINITIONS_BY_ID[id]; }
 export function getStatusDefinition(id: string): StatusDefinition | undefined { return STATUS_DEFINITIONS_BY_ID[id]; }
 
+export function supportsAbilitySourceKind(definition: AbilityDefinition, kind: "player-skill" | "character-mechanic"): boolean {
+  return definition.sourceKind === kind || definition.sourceKind === "shared";
+}
+
 export function validateAbilityBinding(binding: unknown, registry?: AbilityRegistry): AbilityBinding {
   const candidate = binding as { definitionId?: unknown };
   if (typeof candidate.definitionId !== "string") throw new Error("Ability binding requires definitionId");
@@ -104,11 +114,12 @@ export function validateAbilityBinding(binding: unknown, registry?: AbilityRegis
   return validateBinding(binding, definition) as AbilityBinding;
 }
 
-export function instantiateAbility(binding: AbilityBinding, owner: "player" | "opponent", instanceId: string, createdAtSequence: number, registry?: AbilityRegistry): AbilityInstance {
+export function instantiateAbility(binding: AbilityBinding, owner: "player" | "opponent", instanceId: string, createdAtSequence: number, registry?: AbilityRegistry, sourceKind: "player-skill" | "character-mechanic" = "player-skill"): AbilityInstance {
   const valid = validateAbilityBinding(binding, registry);
   const definition = registry?.definitionsById[valid.definitionId] ?? getAbilityDefinition(valid.definitionId);
   if (!definition) throw new Error(`Unknown ability definition: ${valid.definitionId}`);
-  return Object.freeze({ kind: definition.sourceKind, definitionId: valid.definitionId, owner, instanceId, createdAtSequence, parameters: Object.freeze({ ...valid.parameters }) });
+  if (!supportsAbilitySourceKind(definition, sourceKind)) throw new Error(`Ability definition ${definition.id} does not support ${sourceKind}`);
+  return Object.freeze({ kind: sourceKind, definitionId: valid.definitionId, owner, instanceId, createdAtSequence, parameters: Object.freeze({ ...valid.parameters }) });
 }
 
 export function assertCatalogVersion(version: string): void {

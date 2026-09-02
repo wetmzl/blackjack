@@ -1,5 +1,5 @@
 import type { Hand } from "../blackjack/types";
-import { findCardCandidates, handCardCount, handTotal } from "./card-zone-adapter";
+import { canSplitLastCard, findCardCandidates, handCardCount, handTotal } from "./card-zone-adapter";
 import { gunBullets, gunIsFull } from "./roulette-adapter";
 import type { AbilityInstance, AbilityEventContext, AbilityWorld, ActorSelector, Compare, Condition, NumberValue, ScalarValue } from "./types";
 
@@ -21,9 +21,18 @@ export function resolveScalar(value: ScalarValue, context: ConditionContext): nu
     if (typeof parameter !== "number") throw new Error(`Ability parameter is not numeric: ${numeric.key}`);
     return parameter;
   }
+  if (numeric.type === "add" || numeric.type === "subtract" || numeric.type === "multiply") {
+    const left = resolveScalar(numeric.left, context);
+    const right = resolveScalar(numeric.right, context);
+    return numeric.type === "add" ? left + right : numeric.type === "subtract" ? left - right : left * right;
+  }
+  if (!("target" in numeric)) throw new Error("Invalid scalar expression");
   const actor = resolveActor(numeric.target, context);
   if (!actor) return 0;
-  return numeric.type === "gun-bullets" ? gunBullets(context.world.guns[actor]) : handTotal(context.world.hands[actor]);
+  if (numeric.type === "gun-bullets") return gunBullets(context.world.guns[actor]);
+  if (numeric.type === "hand-total") return handTotal(context.world.hands[actor]);
+  if (numeric.type === "hand-card-count") return handCardCount(context.world.hands[actor]);
+  return context.event.roundHitCounts?.[actor] ?? 0;
 }
 
 function compare(left: number, operator: Compare, right: number): boolean {
@@ -52,14 +61,20 @@ export function evaluateCondition(condition: Condition, context: ConditionContex
     case "owner-has-card": return context.world.cards.some((card) => card.owner === context.ability.owner && card.definitionId === condition.abilityId);
     case "hand-card-count": { const hand = handFor(condition.target, context); return Boolean(hand && compare(handCardCount(hand), condition.operator, resolveScalar(condition.value, context))); }
     case "hand-total": { const hand = handFor(condition.target, context); return Boolean(hand && compare(handTotal(hand), condition.operator, resolveScalar(condition.value, context))); }
+    case "round-hit-count": { const actor = resolveActor(condition.target, context); return Boolean(actor && compare(context.event.roundHitCounts?.[actor] ?? 0, condition.operator, resolveScalar(condition.value, context))); }
     case "hand-all-same-suit": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && new Set(hand.cards.map((card) => card.suit)).size === 1); }
+    case "hand-all-color": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && hand.cards.every((card) => (card.suit === "hearts" || card.suit === "diamonds") === (condition.color === "red"))); }
+    case "hand-rank-has-suit-partner": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.some((card, index) => card.rank === condition.rank && hand.cards.some((partner, partnerIndex) => partnerIndex !== index && partner.suit === card.suit))); }
     case "hand-card-origin-is": { const hand = handFor(condition.target, context); return hand?.cards.at(-1)?.origin === condition.origin; }
     case "card-candidate-exists": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && candidateExists(hand, context, condition.candidate)); }
+    case "draw-pile-card-exists": return context.world.shoe.cursor < context.world.shoe.cards.length;
+    case "hand-last-card-splittable": { const hand = handFor(condition.target, context); return Boolean(hand && canSplitLastCard(hand)); }
     case "hand-is-twenty-one": { const hand = handFor(condition.target, context); return Boolean(hand && handTotal(hand) === 21); }
     case "gun-bullets": { const actor = resolveActor(condition.target, context); return Boolean(actor && compare(gunBullets(context.world.guns[actor]), condition.operator, resolveScalar(condition.value, context))); }
     case "gun-is-full": { const actor = resolveActor(condition.target, context); return Boolean(actor && gunIsFull(context.world.guns[actor]) === condition.expected); }
     case "round-reason-is": return context.event.roundOutcome?.reason === condition.value;
     case "round-penalty-target-is": return context.event.roundOutcome?.penaltyTarget === resolveActor(condition.target, context);
+    case "event-ability-kind-is": return context.event.playedAbilityKind === condition.kind;
     case "status-present": { const actor = resolveActor(condition.target, context); return Boolean(actor && context.world.statuses.some((status) => status.owner === actor && status.statusDefinitionId === condition.statusDefinitionId && status.stacks > 0)); }
     case "any": return condition.conditions.some((entry) => evaluateCondition(entry, context));
     case "not": return !evaluateCondition(condition.condition, context);

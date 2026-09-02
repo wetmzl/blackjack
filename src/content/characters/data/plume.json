@@ -1,0 +1,97 @@
+{
+  "$schema": "../character.schema.json",
+  "assets": {
+    "relaxed": "/assets/characters/plume-relaxed.png",
+    "conflicted": "/assets/characters/plume-conflicted.png",
+    "mocking": "/assets/characters/plume-mocking.png",
+    "threatened": "/assets/characters/plume-threatened.png",
+    "staffRevolver": "/assets/characters/staff-revolver-7mm.png",
+    "unconscious": "/assets/characters/plume-unconscious-reclined.png",
+    "defeatedSummary": "/assets/characters/plume-defeated-summary-chair.png"
+  },
+  "profile": {
+    "description": "来自拉特兰的羽族先锋。翎羽把纪律、责任和一次次准时抵达视为最可靠的东西，却始终牵挂着那些仍需从战火中撤离的人。收到策展人的邀请后，她接受了以性命换取愿望的公开条件，希望为仍在前线的人换来一条不会再被截断的安全归途。进入古堡后，她换上策展人指定的灰黑白战术礼装，收拢双翼，以一贯严肃的态度在牌桌对面坐下。"
+  },
+  "matchSummary": {
+    "playerVictory": "枪声落定，翎羽无力地靠进工业椅的椅背。她没能把那条安全归途带回前线，只有灰黑羽翼与未说完的愿望一同沉寂下来。",
+    "playerDefeat": "翎羽赢得了公开规则下的整局胜利。她没有庆祝，只是郑重要求策展人兑现承诺：让仍在前线的人都能平安归队。",
+    "escaped": "策展人中途终止了牌局。翎羽沉默地整理好手套与围巾，确认契约已经失效后才起身离席。"
+  },
+  "trophyGallery": {
+    "headshot": "/assets/characters/plume-trophy-gallery-headshot.png",
+    "fullBody": "/assets/characters/plume-trophy-gallery-full.png",
+    "closeups": [
+      {
+        "id": "face",
+        "name": "凝住的警觉",
+        "x": 50,
+        "y": 16,
+        "image": "/assets/characters/plume-trophy-detail-face.png",
+        "description": "半启的金色眼眸已经失去焦点，贝雷帽、长羽与严肃的面部轮廓仍保持着翎羽一贯的克制。"
+      },
+      {
+        "id": "skirt",
+        "name": "层叠裙摆",
+        "x": 50,
+        "y": 46,
+        "image": "/assets/characters/plume-trophy-detail-skirt.png",
+        "description": "灰黑裙摆由不对称面片、黑色包边与金色小型饰件组成，交叠束带把战术服的几何结构延续到腰际。"
+      },
+      {
+        "id": "stockings",
+        "name": "透肤黑色长袜",
+        "x": 50,
+        "y": 69,
+        "image": "/assets/characters/plume-trophy-detail-stockings.png",
+        "description": "深色半透明织物在暖光下保留细微肤色底调，加固袜口与均匀织纹清楚呈现出材质层次。"
+      },
+      {
+        "id": "boots",
+        "name": "平置短靴",
+        "x": 50,
+        "y": 88,
+        "image": "/assets/characters/plume-trophy-detail-boots.png",
+        "description": "俯视视角记录黑色短靴的浅灰护片、金色包边与靴面结构；仰卧时鞋底与陈列舱软垫近似垂直，只显出窄边。"
+      }
+    ]
+  },
+  "tablePortraitScale": 1.3,
+  "revolverPlacement": {
+    "top": 152,
+    "left": 118,
+    "mobileTop": 116,
+    "mobileLeft": 116
+  },
+  "ai": {
+    "P": 0,
+    "A": 1,
+    "B": 1,
+    "C": 1
+  },
+  "mechanics": [],
+  "dialogue": {
+    "MATCH_START": ["（翎羽台词占位：开局）"],
+    "PLAYER_HIT": ["（翎羽台词占位：策展人要牌）"],
+    "PLAYER_STAND": ["（翎羽台词占位：策展人停牌）"],
+    "OPPONENT_FIRST_HIT": ["（翎羽台词占位：首次要牌）"],
+    "OPPONENT_FIRST_STAND": ["（翎羽台词占位：首次停牌）"],
+    "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": ["（翎羽台词占位：连续要牌）"],
+    "PLAYER_BLACKJACK": ["（翎羽台词占位：策展人黑杰克）"],
+    "OPPONENT_BLACKJACK": ["（翎羽台词占位：翎羽黑杰克）"],
+    "PLAYER_BUST": ["（翎羽台词占位：策展人爆牌）"],
+    "OPPONENT_BUST": ["（翎羽台词占位：翎羽爆牌）"],
+    "PLAYER_SURVIVED_TRIGGER": ["（翎羽台词占位：策展人空枪）"],
+    "OPPONENT_SURVIVED_TRIGGER": ["（翎羽台词占位：翎羽空枪）"],
+    "PLAYER_WIN_ROUND": ["（翎羽台词占位：策展人赢轮）"],
+    "OPPONENT_WIN_ROUND": ["（翎羽台词占位：翎羽赢轮）"],
+    "PUSH_ROUND": ["（翎羽台词占位：平局）"],
+    "PLAYER_TRIGGER_READY": ["（翎羽台词占位：策展人准备扣扳机）"],
+    "OPPONENT_TRIGGER_READY": ["（翎羽台词占位：翎羽准备受罚）"],
+    "PLAYER_TRIGGER_HIT": ["（翎羽台词占位：策展人命中）"],
+    "OPPONENT_TRIGGER_HIT": ["（翎羽台词占位：翎羽命中）"],
+    "SPECIAL_TWENTY_ONE_PUSH": ["（翎羽台词占位：二十一点平局）"],
+    "SPECIAL_ONE_POINT_FINISH": ["（翎羽台词占位：一分之差）"],
+    "SPECIAL_SMALL_HAND_TWENTY_ONE": ["（翎羽台词占位：多张牌二十一点）"],
+    "SPECIAL_LOW_PUSH": ["（翎羽台词占位：低点数平局）"]
+  }
+}

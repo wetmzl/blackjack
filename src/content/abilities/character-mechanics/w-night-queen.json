@@ -1,0 +1,20 @@
+{
+  "id": "w-night-queen",
+  "name": "暗夜女王",
+  "description": "手牌变化后，带有Q及其同花色伙伴且未达21点时，获得一张衍生牌补至21点。",
+  "triggerNotice": "获得一张衍生牌，手牌补至21点。",
+  "profileLore": "她踩过敌人的尸体时从不低头，裙摆、硝烟与火星一同掠过身后。若夜晚需要一位女王，大概也只能是她。",
+  "sourceKind": "character-mechanic",
+  "activation": { "type": "automatic" },
+  "rules": [{
+    "id": "complete-to-twenty-one",
+    "trigger": "after-hand-changed",
+    "conditions": [
+      { "type": "actor-is", "actor": "owner" },
+      { "type": "hand-rank-has-suit-partner", "target": "owner", "rank": "Q" },
+      { "type": "hand-total", "target": "owner", "operator": "lt", "value": 21 }
+    ],
+    "effects": [{ "type": "add-derived-card-for-exact-total", "target": "owner", "total": 21 }]
+  }],
+  "tags": []
+}

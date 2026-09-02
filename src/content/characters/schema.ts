@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DIALOGUE_EVENT_CODES, type DialogueEvent } from "../../dialogue/types";
 import { AbilityBindingSchema } from "../../core/abilities/schema";
-import { getAbilityDefinition, validateAbilityBinding } from "../../core/abilities/registry";
+import { getAbilityDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "../../core/abilities/registry";
 
 const safeDataFile = z.string().regex(/^[a-z0-9][a-z0-9_-]*\.json$/, "dataFile 必须是安全文件名");
 const metadataEntry = z.object({
@@ -51,13 +51,14 @@ export const CharacterDataSchema = z.object({
   profile: z.object({ description: z.string().min(1) }).strict(),
   matchSummary: z.object({ playerVictory: z.string().min(1), playerDefeat: z.string().min(1), escaped: z.string().min(1) }).strict(),
   trophyGallery: trophyGallery.optional(),
+  tablePortraitScale: z.number().finite().min(0.75).max(1.5).default(1),
   revolverPlacement: z.object({ top: z.number().finite(), left: z.number().finite(), mobileTop: z.number().finite(), mobileLeft: z.number().finite() }).strict(),
   ai: z.object({ P: z.number().finite(), A: z.number().finite(), B: z.number().finite(), C: z.number().finite() }).strict(),
   mechanics: z.array(AbilityBindingSchema).default([]).superRefine((mechanics, ctx) => {
     for (const [index, binding] of mechanics.entries()) {
       const definition = getAbilityDefinition(binding.definitionId);
       if (!definition) { ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "definitionId"], message: `未知能力机制：${binding.definitionId}` }); continue; }
-      if (definition.sourceKind !== "character-mechanic") ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "definitionId"], message: "角色机制必须引用 character-mechanic 定义" });
+      if (!supportsAbilitySourceKind(definition, "character-mechanic")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "definitionId"], message: "角色机制必须引用 character-mechanic 定义" });
       try { validateAbilityBinding(binding); } catch (error) { ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "parameters"], message: error instanceof Error ? error.message : String(error) }); }
     }
   }),

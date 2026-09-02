@@ -16,6 +16,8 @@ export interface ParticipantState {
   readonly hand: Hand;
   readonly stood: boolean;
   readonly busted: boolean;
+  /** Last bust threshold checked for this hand; omitted for ordinary hands. */
+  readonly bustLimit?: number;
 }
 
 export type RoundReason = "blackjack" | "bust" | "comparison" | "push";
@@ -63,6 +65,7 @@ export type GameEvent =
   | { readonly type: "STATUS_REMOVED"; readonly statusDefinitionId: string; readonly owner: Actor; readonly reason: "consumed" | "expired" | "dispelled" }
   | { readonly type: "PENDING_EVENT_MODIFIED"; readonly eventId: string; readonly effectType: string; readonly sourceInstanceId: string }
   | { readonly type: "PENDING_EVENT_CANCELLED"; readonly eventId: string; readonly sourceInstanceId: string }
+  | { readonly type: "CARD_SUIT_REVEALED"; readonly viewer: Actor; readonly target: Actor; readonly cardIndex: number; readonly suit: Card["suit"] }
   | { readonly type: "ROUND_STARTED"; readonly roundIndex: number }
   | { readonly type: "CARD_DEALT"; readonly actor: Actor; readonly card: Card; readonly private: boolean }
   | { readonly type: "INITIAL_BLACKJACK_CHECK"; readonly player: boolean; readonly opponent: boolean }

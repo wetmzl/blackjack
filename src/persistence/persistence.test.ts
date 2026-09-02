@@ -22,6 +22,14 @@ describe("current SaveFile schema and validation", () => {
     expect(imported.history).toEqual([]);
   });
 
+  it("round-trips the suit-only private-card reveal event", async () => {
+    const match = createMatch("suit-event-roundtrip");
+    const withReveal = { ...match, history: [...match.history, { type: "CARD_SUIT_REVEALED" as const, viewer: "player" as const, target: "opponent" as const, cardIndex: 1, suit: "hearts" as const }] };
+    const save = saveActiveMatch(createDefaultSave(NOW), withReveal, NOW);
+    const imported = await importSave(exportSaveJson(save));
+    expect(imported.activeMatch?.history.at(-1)).toEqual(withReveal.history.at(-1));
+  });
+
   it("rejects malformed nested cards, RNG, guns, and unknown fields", () => {
     const save = createDefaultSave(NOW);
     const invalid = JSON.parse(JSON.stringify(save)) as Record<string, unknown>;

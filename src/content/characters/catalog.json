@@ -5,7 +5,7 @@
       "id": "w",
       "name": "W",
       "subtitle": "舞会牌桌上的危险戏谑者",
-      "tier": "B",
+      "tier": "S",
       "previewImage": "/assets/characters/w-relaxed.png",
       "trophyImage": "/assets/characters/w-trophy-defeated.png",
       "dataFile": "w.json"
@@ -36,6 +36,15 @@
       "previewImage": "/assets/characters/nian-relaxed.png",
       "trophyImage": "/assets/characters/nian-trophy-defeated.png",
       "dataFile": "nian.json"
+    },
+    {
+      "id": "plume",
+      "name": "翎羽",
+      "subtitle": "严守归途的羽族先锋",
+      "tier": "B",
+      "previewImage": "/assets/characters/plume-relaxed.png",
+      "trophyImage": "/assets/characters/plume-trophy-defeated.png",
+      "dataFile": "plume.json"
     }
   ]
 }

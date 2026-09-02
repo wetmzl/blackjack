@@ -1,9 +1,9 @@
 import { SeededRng } from "../rng/seeded";
 import { allConditionsPass } from "./conditions";
 import { applyEffects } from "./effects";
-import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, type AbilityRegistry } from "./registry";
+import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, type AbilityRegistry } from "./registry";
 import { addAbilityInstance, canConsumeRule, consumeRule } from "./runtime";
-import type { AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingDraw, PendingLoad, PendingTrigger } from "./types";
+import type { AbilityDefinition, AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger } from "./types";
 
 const MAX_ABILITY_DEPTH = 16;
 export class AbilityResolutionError extends Error {
@@ -21,6 +21,7 @@ function collect(runtime: AbilityRuntimeState, trigger: AbilityEventContext["tri
     if (trigger === "on-ability-played" && instance.instanceId !== directInstanceId) continue;
     const definition = registry?.definitionsById[instance.definitionId] ?? getAbilityDefinition(instance.definitionId);
     if (!definition) throw new AbilityResolutionError(`Unknown ability definition: ${instance.definitionId}`, [], { instanceId: instance.instanceId, definitionId: instance.definitionId, ruleId: "definition-missing" });
+    if (!supportsAbilitySourceKind(definition, instance.kind)) throw new AbilityResolutionError(`Ability instance kind ${instance.kind} is not supported by ${instance.definitionId}`, [], { instanceId: instance.instanceId, definitionId: instance.definitionId, ruleId: "source-kind-mismatch" });
     definition.rules.forEach((rule, index) => { if (rule.trigger === trigger) rules.push({ instance, rule, index }); });
   }
   for (const status of runtime.statuses) {
@@ -28,12 +29,14 @@ function collect(runtime: AbilityRuntimeState, trigger: AbilityEventContext["tri
     if (!definition) throw new AbilityResolutionError(`Unknown status definition: ${status.statusDefinitionId}`, [], { instanceId: status.sourceInstanceId, definitionId: status.statusDefinitionId, ruleId: "status-definition-missing" });
     const source = runtime.instances.find((instance) => instance.instanceId === status.sourceInstanceId);
     if (!source) throw new AbilityResolutionError(`Status source instance is missing: ${status.sourceInstanceId}`, [], { instanceId: status.sourceInstanceId, definitionId: status.statusDefinitionId, ruleId: "status-source-missing" });
+    const sourceDefinition = registry?.definitionsById[source.definitionId] ?? getAbilityDefinition(source.definitionId);
+    if (!sourceDefinition || !supportsAbilitySourceKind(sourceDefinition, source.kind)) throw new AbilityResolutionError(`Status source instance kind ${source.kind} is not supported by ${source.definitionId}`, [], { instanceId: source.instanceId, definitionId: source.definitionId, ruleId: "source-kind-mismatch" });
     definition.rules.forEach((rule, index) => { if (rule.trigger === trigger) rules.push({ instance: source, rule, index }); });
   }
   return rules.sort((left, right) => (left.rule.priority ?? 0) - (right.rule.priority ?? 0) || left.instance.createdAtSequence - right.instance.createdAtSequence || left.index - right.index);
 }
 
-export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingTrigger?: PendingTrigger; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly drawSkillCards?: import("./effects").EffectContext["drawSkillCards"]; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; }
+export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly drawSkillCards?: import("./effects").EffectContext["drawSkillCards"]; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; }
 export interface AbilityResolution extends AbilityEffectResult { readonly triggered: readonly string[]; }
 
 export interface PlayAbilityInput extends Omit<AbilityResolutionInput, "event" | "directInstanceId"> {
@@ -50,6 +53,10 @@ function cardAndInstanceAgree(card: AbilityWorld["cards"][number] | undefined, i
   return !card || !instance || (card.definitionId === instance.definitionId && card.owner === instance.owner && card.kind === instance.kind);
 }
 
+export function isAbilityBlockedByStatus(world: AbilityWorld, owner: "player" | "opponent", definition: AbilityDefinition, registry?: AbilityRegistry): boolean {
+  return world.statuses.some((status) => status.owner === owner && status.stacks > 0 && ((registry?.statusesById[status.statusDefinitionId] ?? getStatusDefinition(status.statusDefinitionId))?.blocksAbilityTags ?? []).some((tag) => definition.tags.includes(tag)));
+}
+
 export function canPlayAbility(input: PlayAbilityInput): boolean {
   try {
     if (!catalogMatches(input.runtime, input.registry)) return false;
@@ -59,10 +66,9 @@ export function canPlayAbility(input: PlayAbilityInput): boolean {
     const source = card ?? instance;
     if (!source || source.owner !== input.owner) return false;
     const definition = input.registry?.definitionsById[source.definitionId] ?? getAbilityDefinition(source.definitionId);
-    if (!definition || definition.sourceKind !== source.kind || definition.activation.type !== "action" || !definition.activation.windows.includes(input.window)) return false;
+    if (!definition || !supportsAbilitySourceKind(definition, source.kind) || definition.activation.type !== "action" || !definition.activation.windows.includes(input.window)) return false;
     if (definition.activation.consume === "card" && !card) return false;
-    const blocked = input.world.statuses.some((status) => status.owner === input.owner && status.stacks > 0 && ((input.registry?.statusesById[status.statusDefinitionId] ?? getStatusDefinition(status.statusDefinitionId))?.blocksAbilityTags ?? []).some((tag) => definition.tags.includes(tag)));
-    if (blocked) return false;
+    if (isAbilityBlockedByStatus(input.world, input.owner, definition, input.registry)) return false;
     const ability: AbilityInstance = instance ?? { ...card!, createdAtSequence: input.runtime.sequence + 1, parameters: {} };
     const event = { trigger: "on-ability-played" as const, sourceEventId: `ability:${input.instanceId}`, eventActor: input.owner };
     if (!allConditionsPass(definition.activation.availability, { world: input.world, ability, event })) return false;
@@ -87,10 +93,9 @@ export function playAbility(input: PlayAbilityInput): AbilityResolution {
   const source = card ?? instance;
   if (!source || source.owner !== input.owner) throw new AbilityResolutionError("Ability card is not owned or is unavailable");
   const definition = input.registry?.definitionsById[source.definitionId] ?? getAbilityDefinition(source.definitionId);
-  if (!definition || definition.sourceKind !== source.kind || definition.activation.type !== "action" || !definition.activation.windows.includes(input.window)) throw new AbilityResolutionError("Ability is not available in this action window");
+  if (!definition || !supportsAbilitySourceKind(definition, source.kind) || definition.activation.type !== "action" || !definition.activation.windows.includes(input.window)) throw new AbilityResolutionError("Ability is not available in this action window");
   if (definition.activation.consume === "card" && !card) throw new AbilityResolutionError("Ability card is not owned or is unavailable");
-  const statusBlocks = input.world.statuses.some((status) => status.owner === input.owner && status.stacks > 0 && ((input.registry?.statusesById[status.statusDefinitionId] ?? getStatusDefinition(status.statusDefinitionId))?.blocksAbilityTags ?? []).some((tag) => definition.tags.includes(tag)));
-  if (statusBlocks) throw new AbilityResolutionError("A status blocks this ability tag");
+  if (isAbilityBlockedByStatus(input.world, input.owner, definition, input.registry)) throw new AbilityResolutionError("A status blocks this ability tag");
   const ability: AbilityInstance = instance ?? { ...card!, createdAtSequence: input.runtime.sequence + 1, parameters: {} };
   const availabilityContext = { world: input.world, ability, event: { trigger: "on-ability-played" as const, sourceEventId: `ability:${input.instanceId}`, eventActor: input.owner } };
   if (!allConditionsPass(definition.activation.availability, availabilityContext)) throw new AbilityResolutionError("Ability availability conditions are not satisfied");
@@ -112,6 +117,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
   world = { ...world, statuses: runtime.statuses };
   let pendingDraw = input.pendingDraw;
   let pendingLoad = input.pendingLoad;
+  let pendingBust = input.pendingBust;
   let pendingTrigger = input.pendingTrigger;
   let events: readonly AbilityDomainEvent[] = [];
   const triggered: string[] = [];
@@ -121,10 +127,11 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
     if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId)) continue;
     try {
       const abilityRng = SeededRng.fromSnapshot(runtime.rng);
-      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, drawSkillCards: input.drawSkillCards, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, trigger: pendingTrigger });
+      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, drawSkillCards: input.drawSkillCards, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger });
       world = result.world;
       pendingDraw = result.pendingDraw;
       pendingLoad = result.pendingLoad;
+      pendingBust = result.pendingBust;
       pendingTrigger = result.pendingTrigger;
       runtime = { ...result.runtime, rng: abilityRng.snapshot() };
       runtime = consumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId);
@@ -135,7 +142,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
       throw new AbilityResolutionError(`${entry.instance.instanceId}/${entry.rule.id}: ${reason}`, [...triggered, `${entry.instance.instanceId}:${entry.rule.id}`], { instanceId: entry.instance.instanceId, definitionId: entry.instance.definitionId, ruleId: entry.rule.id });
     }
   }
-  return { world, pendingDraw, pendingLoad, pendingTrigger, runtime, events, triggered };
+  return { world, pendingDraw, pendingLoad, pendingBust, pendingTrigger, runtime, events, triggered };
 }
 
 export { MAX_ABILITY_DEPTH };
