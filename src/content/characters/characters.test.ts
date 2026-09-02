@@ -135,6 +135,7 @@ describe("data-driven character registry", () => {
     expect(nian.matchSummary.playerDefeat.length).toBeGreaterThan(0);
     expect(nian.matchSummary.escaped.length).toBeGreaterThan(0);
     expect([w.ai, texas.ai, irene.ai, nian.ai]).toEqual(Array.from({ length: 4 }, () => ({ P: 0, A: 1, B: 1, C: 1 })));
+    expect(texas.mechanics).toEqual([{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]);
     expect("MATCH_WIN" in w.dialogue).toBe(false);
     expect("MATCH_LOSS" in w.dialogue).toBe(false);
     expect("PLAYER_ESCAPE" in w.dialogue).toBe(false);

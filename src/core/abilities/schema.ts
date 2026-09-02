@@ -4,7 +4,7 @@ import type { AbilityBinding, AbilityDefinition, Condition, ScalarValue } from "
 const actorSelector = z.enum(["owner", "rival", "event-actor", "penalty-target"]);
 const scalar: z.ZodType<ScalarValue> = z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.literal("gun-bullets"), target: actorSelector }).strict(), z.object({ type: z.literal("hand-total"), target: actorSelector }).strict()]) as z.ZodType<ScalarValue>;
 const compare = z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]);
-const trigger = z.enum(["on-match-created", "on-ability-played", "before-card-draw", "after-card-draw", "after-hand-changed", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
+const trigger = z.enum(["on-match-created", "on-ability-played", "before-card-draw", "after-card-draw", "after-hand-changed", "after-stand", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
 const candidate = z.union([
   z.object({ type: z.literal("resulting-hand-total-at-most"), value: scalar }).strict(),
   z.object({ type: z.literal("resulting-hand-total-exactly"), value: scalar }).strict()
@@ -53,7 +53,7 @@ export const AbilityDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9
   if (definition.sourceKind === "player-skill" && definition.activation.consume !== "card") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: "player-skill actions must consume a card" });
   if (definition.sourceKind === "character-mechanic" && definition.activation.consume !== "none") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: "character-mechanic actions cannot consume a player card" });
 });
-export const StatusDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), rules: z.array(AbilityRuleSchema), defaultDuration: z.enum(["turn", "round", "match", "until-consumed"]), blocksAbilityTags: z.array(z.string().min(1)).optional() }).strict();
+export const StatusDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), rules: z.array(AbilityRuleSchema), defaultDuration: z.enum(["turn", "round", "match", "until-owner-action", "until-consumed"]), blocksAbilityTags: z.array(z.string().min(1)).optional() }).strict();
 export const AbilityBindingSchema = z.object({ definitionId: z.string().min(1), enabled: z.boolean(), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])) }).strict();
 
 export type AbilityDefinitionInput = z.infer<typeof AbilityDefinitionSchema>;

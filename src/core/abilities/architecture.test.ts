@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CORE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const SKILL_IDS = ["early-preparation", "hunter-instinct", "switcheroo", "rhodes-heartthrob", "night-queen", "siracusan-fury"] as const;
+const ABILITY_IDS = ["early-preparation", "hunter-instinct", "switcheroo", "rhodes-heartthrob", "night-queen", "siracusan-fury", "silent-drizzle"] as const;
 
 function productionTypeScript(directory: string): string {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -19,7 +19,7 @@ describe("ability architecture boundaries", () => {
     const match = productionTypeScript(join(CORE_ROOT, "match"));
     const interpreter = ["engine.ts", "conditions.ts", "effects.ts", "runtime.ts", "card-zone-adapter.ts", "roulette-adapter.ts"]
       .map((file) => readFileSync(join(CORE_ROOT, "abilities", file), "utf8")).join("\n");
-    for (const id of SKILL_IDS) {
+    for (const id of ABILITY_IDS) {
       expect(match, `match layer contains ${id}`).not.toContain(id);
       expect(interpreter, `generic interpreter contains ${id}`).not.toContain(id);
     }

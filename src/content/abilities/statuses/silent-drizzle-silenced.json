@@ -1,0 +1,6 @@
+{
+  "id": "silent-drizzle-silenced",
+  "defaultDuration": "until-owner-action",
+  "blocksAbilityTags": ["active-skill-card"],
+  "rules": []
+}

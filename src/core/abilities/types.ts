@@ -6,9 +6,10 @@ export type AbilityActor = "player" | "opponent";
 export type AbilitySourceKind = "player-skill" | "character-mechanic";
 export type AbilityTrigger =
   | "on-match-created" | "on-ability-played" | "before-card-draw" | "after-card-draw"
-  | "after-hand-changed" | "before-round-resolution" | "before-bullet-load" | "after-bullet-load"
+  | "after-hand-changed" | "after-stand" | "before-round-resolution" | "before-bullet-load" | "after-bullet-load"
   | "before-trigger-pull" | "after-trigger-result" | "on-round-end";
 export type ActionWindow = "owner-turn" | "owner-roulette-reaction";
+export type StatusDuration = "turn" | "round" | "match" | "until-owner-action" | "until-consumed";
 export type Compare = "eq" | "neq" | "lt" | "lte" | "gt" | "gte";
 export type ScalarValue = number | NumberValue;
 export type NumberValue =
@@ -64,8 +65,8 @@ export type AbilityActivation =
   | { readonly type: "action"; readonly windows: readonly ActionWindow[]; readonly consume: "card" | "none"; readonly availability?: readonly Condition[] }
   | { readonly type: "automatic" } | { readonly type: "passive" };
 export interface AbilityDefinition { readonly id: string; readonly name: string; readonly description: string; readonly usage?: string; readonly sourceKind: AbilitySourceKind; readonly parameters?: Readonly<Record<string, AbilityParameterSpec>>; readonly activation: AbilityActivation; readonly rules: readonly AbilityRule[]; readonly tags: readonly string[]; readonly unlock?: { readonly opponentId: string; readonly label: string }; }
-export interface StatusDefinition { readonly id: string; readonly rules: readonly AbilityRule[]; readonly defaultDuration: "turn" | "round" | "match" | "until-consumed"; readonly blocksAbilityTags?: readonly string[]; }
-export interface AbilityStatus { readonly statusDefinitionId: string; readonly owner: AbilityActor; readonly sourceInstanceId: string; readonly stacks: number; readonly duration: "turn" | "round" | "match" | "until-consumed"; readonly parameters: Readonly<Record<string, string | number | boolean>>; readonly createdAtSequence: number; }
+export interface StatusDefinition { readonly id: string; readonly rules: readonly AbilityRule[]; readonly defaultDuration: StatusDuration; readonly blocksAbilityTags?: readonly string[]; }
+export interface AbilityStatus { readonly statusDefinitionId: string; readonly owner: AbilityActor; readonly sourceInstanceId: string; readonly stacks: number; readonly duration: StatusDuration; readonly parameters: Readonly<Record<string, string | number | boolean>>; readonly createdAtSequence: number; }
 export interface AbilityRuntimeState { readonly instances: readonly AbilityInstance[]; readonly statuses: readonly AbilityStatus[]; readonly counters: Readonly<Record<string, number>>; readonly sequence: number; readonly catalogVersion: string; readonly rng: RngSnapshot; }
 
 export interface PendingDraw { readonly id: string; readonly actor: AbilityActor; readonly card?: Card; readonly replacement?: Card; readonly cancelled?: boolean; }

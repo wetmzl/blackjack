@@ -1,6 +1,6 @@
 import type { RngSnapshot } from "../rng/seeded";
 import { ABILITY_CATALOG_VERSION } from "./registry";
-import type { AbilityInstance, AbilityRuntimeState, AbilityStatus, RuleLimit, SkillCardInstance } from "./types";
+import type { AbilityActor, AbilityInstance, AbilityRuntimeState, AbilityStatus, RuleLimit, SkillCardInstance, StatusDuration } from "./types";
 import type { AbilityRegistry } from "./registry";
 import { getAbilityDefinition } from "./registry";
 
@@ -46,8 +46,13 @@ export function clearEventCounters(runtime: AbilityRuntimeState, sourceEventId: 
   const suffix = `:event:${sourceEventId}`;
   return { ...runtime, counters: Object.fromEntries(Object.entries(runtime.counters).filter(([key]) => !key.endsWith(suffix))) };
 }
-export function expireStatuses(runtime: AbilityRuntimeState, duration: "turn" | "round" | "match"): AbilityRuntimeState {
+export function expireStatuses(runtime: AbilityRuntimeState, duration: StatusDuration): AbilityRuntimeState {
   return { ...runtime, statuses: runtime.statuses.filter((status) => status.duration !== duration) };
+}
+
+/** Expire statuses scoped to the affected actor's next completed Hit or Stand. */
+export function expireOwnerActionStatuses(runtime: AbilityRuntimeState, owner: AbilityActor): AbilityRuntimeState {
+  return { ...runtime, statuses: runtime.statuses.filter((status) => status.duration !== "until-owner-action" || status.owner !== owner) };
 }
 
 /** Remove consumed action instances while retaining cards, status sources and passive mechanics. */

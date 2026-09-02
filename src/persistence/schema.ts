@@ -52,7 +52,7 @@ const AiDecisionSchema = z.object({
 }).strict();
 const AbilityCardSchema = z.object({ kind: z.literal("player-skill"), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), instanceId: z.string().min(1) }).strict();
 const AbilityInstanceSchema = z.object({ kind: z.enum(["player-skill", "character-mechanic"]), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), instanceId: z.string().min(1), createdAtSequence: z.number().int().min(0), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])) }).strict();
-const AbilityStatusSchema = z.object({ statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), sourceInstanceId: z.string().min(1), stacks: z.number().int().positive(), duration: z.enum(["turn", "round", "match", "until-consumed"]), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])), createdAtSequence: z.number().int().min(0) }).strict();
+const AbilityStatusSchema = z.object({ statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), sourceInstanceId: z.string().min(1), stacks: z.number().int().positive(), duration: z.enum(["turn", "round", "match", "until-owner-action", "until-consumed"]), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])), createdAtSequence: z.number().int().min(0) }).strict();
 const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema), statuses: z.array(AbilityStatusSchema), counters: z.record(z.number().int().min(0)), sequence: z.number().int().min(0), catalogVersion: z.string().min(1), rng: RngSnapshotSchema }).strict().superRefine((runtime, ctx) => {
   if (runtime.catalogVersion !== ABILITY_CATALOG_VERSION) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["catalogVersion"], message: "unsupported ability catalog version" });
   const instanceIds = new Set<string>();
@@ -71,8 +71,6 @@ const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema
     if (status.createdAtSequence > runtime.sequence) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["statuses", index, "createdAtSequence"], message: "status sequence exceeds runtime sequence" });
     if (!getStatusDefinition(status.statusDefinitionId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["statuses", index, "statusDefinitionId"], message: "unknown status definition" });
     if (!instanceIds.has(status.sourceInstanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["statuses", index, "sourceInstanceId"], message: "status source instance does not exist" });
-    const source = runtime.instances.find((instance) => instance.instanceId === status.sourceInstanceId);
-    if (source && source.owner !== status.owner) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["statuses", index, "owner"], message: "status owner does not match source instance" });
   });
 });
 

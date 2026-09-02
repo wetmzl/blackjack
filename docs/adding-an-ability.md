@@ -25,6 +25,17 @@ and implement it in `effects.ts`, preferably delegating card and roulette
 operations to their adapters. Do not add a definition-ID or character-ID
 conditional to the engine or match reducer.
 
+`after-stand` is emitted only when an actor explicitly chooses Stand; reaching
+21 and being marked stood automatically does not emit it. A status with
+`until-owner-action` remains through ability and event resolution, then expires
+after its target completes the next Hit or Stand; the round boundary is an
+upper bound so it cannot leak into a later deal. Cross-target statuses retain
+their source instance while `owner` identifies the affected actor.
+
+Use the `active-skill-card` tag for player-skill definitions with action/card
+activation. Statuses may block that tag to suppress only actively played skill
+cards without suppressing passive player skills or card-free character actions.
+
 Every new primitive should have a focused unit test for valid data, rejected
 extra fields, deterministic RNG, and atomic failure. Prefer owner/rival
 selectors so one definition can be bound to either actor.

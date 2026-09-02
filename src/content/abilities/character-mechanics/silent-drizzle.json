@@ -1,0 +1,29 @@
+{
+  "id": "silent-drizzle",
+  "name": "细雨无声",
+  "description": "主动选择 Stand 后，使对手在完成下一次基础行动前无法使用主动技能牌。",
+  "sourceKind": "character-mechanic",
+  "activation": {
+    "type": "automatic"
+  },
+  "rules": [
+    {
+      "id": "silence-rival-next-action",
+      "trigger": "after-stand",
+      "conditions": [
+        {
+          "type": "actor-is",
+          "actor": "owner"
+        }
+      ],
+      "effects": [
+        {
+          "type": "add-status",
+          "target": "rival",
+          "statusDefinitionId": "silent-drizzle-silenced"
+        }
+      ]
+    }
+  ],
+  "tags": []
+}

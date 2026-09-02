@@ -7,8 +7,8 @@ import { MemorySaveRepository } from "./memory-repository";
 import { assertMatchStateForSave, CURRENT_SCHEMA_VERSION, SaveValidationError, validateSave, type SaveFile } from "./schema";
 import type { SaveRepository } from "./repository";
 import { requestPersistentStorage } from "./storage";
-import { createDerivedCard } from "../core/blackjack/card";
-import { addCard } from "../core/blackjack/hand";
+import { createCard, createDerivedCard } from "../core/blackjack/card";
+import { addCard, createHand } from "../core/blackjack/hand";
 
 const NOW = "2026-08-30T00:00:00.000Z";
 
@@ -91,6 +91,22 @@ describe("current SaveFile schema and validation", () => {
     expect(restored).toEqual(match);
     expect(restored?.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw")).toHaveLength(openingTriggers);
     expect(restored?.abilities.instances).toContainEqual(expect.objectContaining({ definitionId: "owner-load-penalty", owner: "opponent" }));
+  });
+
+  it("persists a cross-target, next-action status created by an opponent mechanic", async () => {
+    const base = createMatch("silent-drizzle-save", {
+      opponentId: "texas",
+      equippedSkillIds: ["hunter-instinct"],
+      opponentMechanics: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
+    });
+    const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
+    const opponent = { ...base.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
+    const ready = { ...base, player, opponent, round: { ...base.round, phase: "turns" as const, currentActor: "opponent" as const, player, opponent, outcome: null } };
+    const silenced = gameReducer(ready, { type: "AI_STAND" });
+    expect(silenced.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "silent-drizzle-silenced", owner: "player", duration: "until-owner-action" }));
+
+    const save = saveActiveMatch(createDefaultSave(NOW), silenced, NOW);
+    expect((await importSave(exportSaveJson(save))).activeMatch).toEqual(silenced);
   });
 
   it("persists derived cards in hands but rejects them inside the physical shoe", () => {

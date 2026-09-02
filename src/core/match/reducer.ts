@@ -9,7 +9,7 @@ import { decideAiAction, sampleAiNoise } from "../ai/policy";
 import { buildObservation } from "../ai/observation";
 import { decideOptimalAction } from "../ai/policy";
 import { getRoundStarter } from "../blackjack/round";
-import { createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireStatuses, garbageCollectAbilityInstances } from "../abilities/runtime";
+import { createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "../abilities/runtime";
 import { getAbilityDefinition, instantiateAbility, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
 import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
@@ -37,6 +37,12 @@ function withRound(state: MatchState, round: RoundState, extra: Partial<MatchSta
 function expireLifecycle(state: MatchState, duration: "turn" | "round" | "match"): MatchState {
   const before = state.abilities.statuses;
   const runtime = garbageCollectAbilityInstances(expireStatuses(clearCounters(state.abilities, duration), duration), state.skills.cards);
+  const expired = before.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
+  return append({ ...state, abilities: runtime }, ...expired);
+}
+function expireOwnerActionLifecycle(state: MatchState, owner: Actor): MatchState {
+  const before = state.abilities.statuses;
+  const runtime = garbageCollectAbilityInstances(expireOwnerActionStatuses(state.abilities, owner), state.skills.cards);
   const expired = before.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
   return append({ ...state, abilities: runtime }, ...expired);
 }
@@ -152,20 +158,26 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
   const beforeAfterDraw = abilityWorld(next);
   const afterDraw = runAbilityEvent(next, { trigger: "after-card-draw", sourceEventId: `after:${pending.id}`, eventActor: actor }, {}).state;
   const changedActors = [...new Set<Actor>([actor, ...changedHandActors(beforeAfterDraw, abilityWorld(afterDraw))])];
-  let changed = normalizeAbilityHands(broadcastHandChanges(afterDraw, changedActors, `hand:${pending.id}`));
+  let changed = expireOwnerActionLifecycle(normalizeAbilityHands(broadcastHandChanges(afterDraw, changedActors, `hand:${pending.id}`)), actor);
   if (changed.round.phase !== "turns") return changed;
   if (changed[actor].stood) return setPhase(changed, "turns", actor === "player" ? "opponent" : "player");
   const other = actor === "player" ? "opponent" : "player";
   return setPhase(changed, "turns", changed[other].stood ? actor : other);
 }
 
-function standFor(state: MatchState, actor: Actor): MatchState { const next = append(withRound({ ...state, skills: actor === "player" ? skillState(state, { advice: null }) : state.skills }, { ...state.round, [actor]: { ...state[actor], stood: true } } as RoundState), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" }); const other = actor === "player" ? "opponent" : "player"; return next[other].stood ? resolveComparison(next) : setPhase(next, "turns", other); }
+function standFor(state: MatchState, actor: Actor): MatchState {
+  let next = append(withRound({ ...state, skills: actor === "player" ? skillState(state, { advice: null }) : state.skills }, { ...state.round, [actor]: { ...state[actor], stood: true } } as RoundState), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
+  next = runAbilityEvent(next, { trigger: "after-stand", sourceEventId: `stand:${state.roundIndex}:${state.history.length}`, eventActor: actor }, {}).state;
+  next = expireOwnerActionLifecycle(next, actor);
+  const other = actor === "player" ? "opponent" : "player";
+  return next[other].stood ? resolveComparison(next) : setPhase(next, "turns", other);
+}
 
 function startNextRound(state: MatchState): MatchState {
   const index = state.roundIndex + 1; const deck = SeededRng.fromSnapshot(state.rng.deck); const nextRound = makeRound(index, state.shoe, deck);
   const round: RoundState = { index, phase: "initial-blackjack-check", starter: nextRound.starter, currentActor: null, player: nextRound.player, opponent: nextRound.opponent, outcome: null };
   let next = runAbilityEvent(state, { trigger: "on-round-end", sourceEventId: `round-end:${state.roundIndex}`, roundOutcome: state.round.outcome ?? undefined }, {}).state;
-  const runtime = garbageCollectAbilityInstances(expireStatuses(clearCounters(next.abilities, "round"), "round"), next.skills.cards);
+  const runtime = garbageCollectAbilityInstances(expireStatuses(expireStatuses(clearCounters(next.abilities, "round"), "round"), "until-owner-action"), next.skills.cards);
   const expired = next.abilities.statuses.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
   const ai = SeededRng.fromSnapshot(next.rng.ai);
   const playNoise = sampleAiNoise(ai);

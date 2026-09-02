@@ -59,7 +59,13 @@
     "B": 1,
     "C": 1
   },
-  "mechanics": [],
+  "mechanics": [
+    {
+      "definitionId": "silent-drizzle",
+      "enabled": true,
+      "parameters": {}
+    }
+  ],
   "dialogue": {
     "MATCH_START": [
       "你的枪口朝向天花板，而发牌员的枪口指着我的太阳穴。这场交易并不对等……但我需要你手里能治好拉普兰德的解药。",

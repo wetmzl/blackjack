@@ -77,6 +77,8 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 能力使用 `owner` / `rival` 等相对语义，不写死玩家、与会者或角色。待抽牌、待装填和待扣扳机通过受控 pending event 修改；单条能力解析失败时保持原子性，基础行动仍可安全继续。
 
+显式 Stand 会广播 `after-stand`。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
+
 `replace-pending-draw` 的 `create-derived-card` fallback 只在实体牌堆没有合适候选时创建衍生牌。衍生牌不修改实体牌堆、不进入弃牌堆，离开手牌或本轮结束后不作为实体牌保存回牌堆。
 
 能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。新增能力流程见 [新增能力工作流](adding-an-ability.md)。

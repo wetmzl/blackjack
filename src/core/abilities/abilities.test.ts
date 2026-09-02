@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createHand } from "../blackjack/hand";
 import { createCard, createDerivedCard } from "../blackjack/card";
 import { createRng } from "../rng/seeded";
-import { AbilityDefinitionSchema } from "./schema";
+import { AbilityDefinitionSchema, StatusDefinitionSchema } from "./schema";
 import { ABILITY_DEFINITIONS, createAbilityRegistry, getAbilityDefinition, validateAbilityBinding } from "./registry";
-import { canConsumeRule, clearCounters, clearEventCounters, consumeRule, createAbilityRuntime, expireStatuses, garbageCollectAbilityInstances } from "./runtime";
+import { canConsumeRule, clearCounters, clearEventCounters, consumeRule, createAbilityRuntime, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "./runtime";
 import { AbilityResolutionError, MAX_ABILITY_DEPTH, canPlayAbility, playAbility, resolveAbilityEvent } from "./engine";
 import { drawExactResultingTotal, replaceLastHandCard } from "./card-zone-adapter";
 import { evaluateCondition } from "./conditions";
@@ -47,10 +47,11 @@ describe("ability schemas and immutable registry", () => {
     expect(() => validateAbilityBinding({ definitionId: "parameter-fixture", enabled: true, parameters: { required: true, extra: 1 } }, registry)).toThrow(/Unknown parameter/);
   });
 
-  it("registers six player skills and three reusable character fixtures as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(10);
+  it("registers six player skills, reusable character fixtures, and Texas's mechanic as deeply frozen data", () => {
+    expect(ABILITY_DEFINITIONS).toHaveLength(11);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(6);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(4);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(5);
+    expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
     expect(ABILITY_DEFINITIONS.every((definition) => definition.rules.length > 0)).toBe(true);
     expect(Object.isFrozen(ABILITY_DEFINITIONS[0]?.rules[0]?.effects[0])).toBe(true);
   });
@@ -68,6 +69,8 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, executable: "doSomething()" }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "card" } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "after-stand" }] }).success).toBe(true);
+    expect(StatusDefinitionSchema.safeParse({ id: "next-action", rules: [], defaultDuration: "until-owner-action", blocksAbilityTags: ["active-skill-card"] }).success).toBe(true);
   });
 
   it("rejects unresolved parameter, status, and ability references while building a registry", () => {
@@ -164,9 +167,13 @@ describe("generic resolution and lifecycle", () => {
 
   it("expires only the requested duration and garbage-collects unreferenced consumed actions and counters", () => {
     const source: AbilityInstance = { kind: "player-skill", definitionId: "hunter-instinct", owner: "player", instanceId: "consumed", createdAtSequence: 1, parameters: {} };
-    const statuses: AbilityStatus[] = (["turn", "round", "match", "until-consumed"] as const).map((duration, index) => ({ statusDefinitionId: "night-queen-armed", owner: "player", sourceInstanceId: source.instanceId, stacks: 1, duration, parameters: {}, createdAtSequence: index + 1 }));
+    const statuses: AbilityStatus[] = (["turn", "round", "match", "until-owner-action", "until-consumed"] as const).map((duration, index) => ({ statusDefinitionId: "night-queen-armed", owner: "player", sourceInstanceId: source.instanceId, stacks: 1, duration, parameters: {}, createdAtSequence: index + 1 }));
     let runtime: AbilityRuntimeState = { ...createAbilityRuntime(createRng("lifecycle").snapshot()), instances: [source], statuses, counters: { "consumed:rule:match": 1 } };
-    expect(expireStatuses(runtime, "turn").statuses.map((status) => status.duration)).toEqual(["round", "match", "until-consumed"]);
+    expect(expireStatuses(runtime, "turn").statuses.map((status) => status.duration)).toEqual(["round", "match", "until-owner-action", "until-consumed"]);
+    runtime = expireOwnerActionStatuses(runtime, "opponent");
+    expect(runtime.statuses.some((status) => status.duration === "until-owner-action")).toBe(true);
+    runtime = expireOwnerActionStatuses(runtime, "player");
+    expect(runtime.statuses.some((status) => status.duration === "until-owner-action")).toBe(false);
     runtime = garbageCollectAbilityInstances(runtime, []);
     expect(runtime.instances).toHaveLength(1);
     runtime = garbageCollectAbilityInstances({ ...runtime, statuses: [] }, []);

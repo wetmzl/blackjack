@@ -524,6 +524,49 @@ describe("match lifecycle", () => {
 });
 
 describe("character mechanic integration", () => {
+  it("lets Silent Drizzle block only the player's next active skill-card window after Texas chooses Stand", () => {
+    const configured = createMatch("silent-drizzle", {
+      equippedSkillIds: ["hunter-instinct"],
+      opponentMechanics: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
+    });
+    const prepared = withSkillCard(withHands(configured, [card("10"), card("6")], [card("10"), card("8")], "opponent"), "hunter-instinct", "silent-drizzle-card");
+    const state: MatchState = { ...prepared, shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 } };
+    const action = { type: "PLAY_ABILITY" as const, instanceId: "silent-drizzle-card" };
+
+    const silenced = gameReducer(state, { type: "AI_STAND" });
+    expect(silenced.history.slice(state.history.length)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "silent-drizzle", ruleId: "silence-rival-next-action", owner: "opponent" }),
+      expect.objectContaining({ type: "STATUS_ADDED", statusDefinitionId: "silent-drizzle-silenced", owner: "player" })
+    ]));
+    expect(silenced.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "silent-drizzle-silenced", owner: "player", duration: "until-owner-action" }));
+    expect(getLegalActions(silenced)).not.toContainEqual(action);
+    expect(gameReducer(silenced, action)).toBe(silenced);
+    expect(silenced.skills.cards).toContainEqual(expect.objectContaining({ instanceId: action.instanceId }));
+
+    const afterHit = gameReducer(silenced, { type: "PLAYER_HIT" });
+    expect(afterHit.round.phase).toBe("turns");
+    expect(afterHit.round.currentActor).toBe("player");
+    expect(afterHit.abilities.statuses.some((status) => status.statusDefinitionId === "silent-drizzle-silenced")).toBe(false);
+    expect(afterHit.history.slice(silenced.history.length)).toContainEqual(expect.objectContaining({ type: "STATUS_REMOVED", statusDefinitionId: "silent-drizzle-silenced", owner: "player", reason: "expired" }));
+    expect(getLegalActions(afterHit)).toContainEqual(action);
+  });
+
+  it("does not let Silent Drizzle suppress passive player-skill resolution", () => {
+    const base = createMatch("silent-drizzle-passive", {
+      equippedSkillIds: ["hunter-instinct", "siracusan-fury"],
+      opponentMechanics: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
+    });
+    const state: MatchState = {
+      ...withHands(base, [card("10"), card("9")], [card("10"), card("8")], "opponent"),
+      roulette: { player: { capacity: 6, bullets: 3 }, opponent: { capacity: 6, bullets: 0 } }
+    };
+    const silenced = gameReducer(state, { type: "AI_STAND" });
+    const resolved = gameReducer(silenced, { type: "PLAYER_STAND" });
+    expect(resolved.history.slice(silenced.history.length)).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "siracusan-fury", ruleId: "double-rival-load" }));
+    expect(resolved.round.outcome).toMatchObject({ winner: "player", penaltyTarget: "opponent", bulletsAdded: 2 });
+    expect(resolved.roulette.opponent.bullets).toBe(2);
+  });
+
   it("rejects player-skill definitions at the match mechanic boundary", () => {
     expect(() => createMatch("invalid-mechanic-source", { opponentMechanics: [{ definitionId: "switcheroo", enabled: true, parameters: {} }] })).toThrow(/character-mechanic/);
   });

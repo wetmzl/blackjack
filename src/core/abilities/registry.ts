@@ -8,12 +8,14 @@ import ownerLoadPenalty from "../../content/abilities/character-mechanics/owner-
 import rivalBustLoad from "../../content/abilities/character-mechanics/rival-bust-load.json" with { type: "json" };
 import actionAdviceMechanic from "../../content/abilities/character-mechanics/action-advice-mechanic.json" with { type: "json" };
 import handChangeObserver from "../../content/abilities/character-mechanics/hand-change-observer.json" with { type: "json" };
+import silentDrizzle from "../../content/abilities/character-mechanics/silent-drizzle.json" with { type: "json" };
 import rhodesHeartthrobStatus from "../../content/abilities/statuses/rhodes-heartthrob-armed.json" with { type: "json" };
 import nightQueenStatus from "../../content/abilities/statuses/night-queen-armed.json" with { type: "json" };
+import silentDrizzleStatus from "../../content/abilities/statuses/silent-drizzle-silenced.json" with { type: "json" };
 import { AbilityDefinitionSchema, StatusDefinitionSchema, validateBinding } from "./schema";
 import type { AbilityBinding, AbilityDefinition, AbilityInstance, StatusDefinition } from "./types";
 
-export const ABILITY_CATALOG_VERSION = "abilities-v2" as const;
+export const ABILITY_CATALOG_VERSION = "abilities-v3" as const;
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
@@ -22,9 +24,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const definitions = [earlyPreparation, hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, siracusanFury, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver]
+const definitions = [earlyPreparation, hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, siracusanFury, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle]
   .map((value) => deepFreeze(AbilityDefinitionSchema.parse(value) as AbilityDefinition));
-const statuses = [rhodesHeartthrobStatus, nightQueenStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
+const statuses = [rhodesHeartthrobStatus, nightQueenStatus, silentDrizzleStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
 export const ABILITY_DEFINITIONS: readonly AbilityDefinition[] = Object.freeze(definitions);
 export const STATUS_DEFINITIONS: readonly StatusDefinition[] = Object.freeze(statuses);
 export const ABILITY_DEFINITIONS_BY_ID: Readonly<Record<string, AbilityDefinition>> = Object.freeze(Object.fromEntries(definitions.map((definition) => [definition.id, definition])));
