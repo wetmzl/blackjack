@@ -11,7 +11,7 @@ let admin: ReturnType<typeof createDialogueAdminServer>;
 const characterData = {
   assets: { relaxed: "r", conflicted: "c", mocking: "m", threatened: "t", staffRevolver: "s", unconscious: "u", defeatedSummary: "d" },
   revolverPlacement: { top: 1, left: 2, mobileTop: 3, mobileLeft: 4 },
-  ai: { rationality: 0.8, personalityHitProbability: 1 },
+  ai: { P: 0, A: 1, B: 1, C: 1 },
   dialogue: { MATCH_START: ["原始开局对白"] }
 };
 

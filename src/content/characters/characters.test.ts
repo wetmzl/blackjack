@@ -134,6 +134,7 @@ describe("data-driven character registry", () => {
     expect(nian.matchSummary.playerVictory.length).toBeGreaterThan(0);
     expect(nian.matchSummary.playerDefeat.length).toBeGreaterThan(0);
     expect(nian.matchSummary.escaped.length).toBeGreaterThan(0);
+    expect([w.ai, texas.ai, irene.ai, nian.ai]).toEqual(Array.from({ length: 4 }, () => ({ P: 0, A: 1, B: 1, C: 1 })));
     expect("MATCH_WIN" in w.dialogue).toBe(false);
     expect("MATCH_LOSS" in w.dialogue).toBe(false);
     expect("PLAYER_ESCAPE" in w.dialogue).toBe(false);
@@ -178,6 +179,13 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse(texasData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(ireneData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(nianData).success).toBe(true);
+  });
+
+  it("requires finite P/A/B/C AI threshold parameters", () => {
+    const { C: _removed, ...missingC } = wData.ai;
+    expect(CharacterDataSchema.safeParse({ ...wData, ai: missingC }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, ai: { ...wData.ai, P: Number.POSITIVE_INFINITY } }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, ai: { ...wData.ai, unknown: 1 } }).success).toBe(false);
   });
 
   it("strictly validates declarative mechanic bindings", () => {

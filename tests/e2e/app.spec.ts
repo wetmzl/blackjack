@@ -235,7 +235,7 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-strip .eyebrow")).toContainText("年 // S级");
-  await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted)\.png/);
+  await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted|mocking)\.png/);
 });
 
 test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => {
@@ -339,7 +339,7 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await expect(page.locator("[data-open-trophies]")).toContainText("0 局");
 });
 
-test("旧版 IndexedDB 存档在启动时直接丢弃并覆盖", async ({ page }) => {
+test("旧版 IndexedDB 存档不会自动迁移并会引导清理", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await page.evaluate(async () => {
@@ -354,6 +354,9 @@ test("旧版 IndexedDB 存档在启动时直接丢弃并覆盖", async ({ page }
     });
   });
   await page.reload();
+  await expect(page.locator("main.error-shell")).toBeVisible();
+  await expect(page.locator("main.error-shell")).toContainText("不兼容");
+  await page.locator("[data-reset-invalid-save]").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   const stored = await page.evaluate(async () => {
     const request = indexedDB.open("house-of-chances");
@@ -742,7 +745,7 @@ test("开发者面板显示确定性诊断字段", async ({ page }) => {
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   const hud = page.locator(".dev-hud");
   await expect(hud).toBeVisible();
-  for (const label of ["种子", "轮次 / 阶段", "牌库剩余", "玩家真实手牌", "对手真实手牌", "对手理性程度", "最终要牌概率", "上次行动", "上次领域事件"])
+  for (const label of ["种子", "轮次 / 阶段", "牌库剩余", "玩家真实手牌", "对手真实手牌", "AI 参数 P / A / B / C", "Rmatch / Rplay", "上次手牌值 / 阈值 T", "上次行动", "上次领域事件"])
     await expect(hud).toContainText(label);
 });
 

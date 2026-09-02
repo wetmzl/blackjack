@@ -118,15 +118,14 @@ describe("boot and repositories", () => {
     expect(reset.history).toEqual([]);
   });
 
-  it("discards an incompatible stored save and overwrites it with a fresh one", async () => {
+  it("does not migrate an incompatible stored save", async () => {
     const writes: SaveFile[] = [];
     const repository: SaveRepository = {
       load: async () => { throw new SaveValidationError("outdated save"); },
       save: async (next) => { writes.push(next); }
     };
-    const fresh = await bootLoad(repository, NOW);
-    expect(fresh).toEqual(createDefaultSave(NOW));
-    expect(writes).toEqual([fresh]);
+    await expect(bootLoad(repository, NOW)).rejects.toThrow(SaveValidationError);
+    expect(writes).toEqual([]);
   });
   it("creates and persists a default save on first boot, then restores active match", async () => {
     const repository = new MemorySaveRepository();

@@ -1,14 +1,12 @@
 import { handValue } from "../blackjack/hand";
 import type { Card } from "../blackjack/types";
-import type { AiAction, AiDecision, AiProfile, MatchObservation } from "./types";
-import type { SeededRng, RngSnapshot } from "../rng/seeded";
+import type { AiAction, AiDecision, AiNoiseState, AiProfile, MatchObservation } from "./types";
+import type { SeededRng } from "../rng/seeded";
 
-export interface AiDecisionResult {
-  readonly decision: AiDecision;
-  readonly rng: RngSnapshot;
-}
+export const AI_NOISE_MIN = -0.3;
+export const AI_NOISE_MAX = 0.3;
 
-/** Approximate policy for this variant: hit below 17, stand at 17 or higher. */
+/** Baseline Hit/Stand advice used by the player's action-advice ability. */
 export function decideOptimalAction(observation: MatchObservation): AiAction {
   const side = observation.viewer === "player" ? observation.player : observation.opponent;
   const knownCards = side.cards.filter((card): card is Card => card !== null);
@@ -16,30 +14,42 @@ export function decideOptimalAction(observation: MatchObservation): AiAction {
   return handValue({ cards: knownCards }) < 17 ? "hit" : "stand";
 }
 
-export function finalHitProbability(profile: AiProfile, optimalHit: 0 | 1): number {
-  const probability = profile.rationality * optimalHit + (1 - profile.rationality) * profile.personalityHitProbability;
-  return Math.min(1, Math.max(0, probability));
+/** Samples Rmatch or Rplay in [-0.3, 0.3). */
+export function sampleAiNoise(rng: SeededRng): number {
+  return AI_NOISE_MIN + rng.next() * (AI_NOISE_MAX - AI_NOISE_MIN);
 }
 
-export function decideAiAction(observation: MatchObservation, profile: AiProfile, rng: SeededRng): AiDecisionResult {
-  if (profile.rationality < 0 || profile.rationality > 1 || profile.personalityHitProbability < 0 || profile.personalityHitProbability > 1) {
-    throw new RangeError("AI profile probabilities must be between 0 and 1");
+function assertFiniteProfile(profile: AiProfile): void {
+  if (![profile.P, profile.A, profile.B, profile.C].every(Number.isFinite)) {
+    throw new RangeError("AI profile parameters must be finite numbers");
   }
-  const optimalAction = decideOptimalAction(observation);
-  const optimalHit: 0 | 1 = optimalAction === "hit" ? 1 : 0;
-  const probability = finalHitProbability(profile, optimalHit);
-  const roll = rng.next();
-  const action: AiAction = roll < probability ? "hit" : "stand";
+}
+
+function assertNoise(noise: AiNoiseState): void {
+  if (![noise.match, noise.play].every((value) => Number.isFinite(value) && value >= AI_NOISE_MIN && value <= AI_NOISE_MAX)) {
+    throw new RangeError("AI noise must be between -0.3 and 0.3");
+  }
+}
+
+export function calculateAiThreshold(observation: MatchObservation, profile: AiProfile, noise: AiNoiseState): number {
+  assertFiniteProfile(profile);
+  assertNoise(noise);
+  const bulletDifference = observation.roulette.playerBullets - observation.roulette.opponentBullets;
+  return 16 + profile.P + 0.1 * profile.A * bulletDifference + profile.B * noise.match + profile.C * noise.play;
+}
+
+export function decideAiAction(observation: MatchObservation, profile: AiProfile, noise: AiNoiseState): AiDecision {
+  const side = observation.viewer === "player" ? observation.player : observation.opponent;
+  const knownCards = side.cards.filter((card): card is Card => card !== null);
+  const value = knownCards.length === 0 ? 0 : handValue({ cards: knownCards });
+  const bulletDifference = observation.roulette.playerBullets - observation.roulette.opponentBullets;
+  const threshold = calculateAiThreshold(observation, profile, noise);
   return {
-    decision: {
-      optimalAction,
-      optimalHit,
-      personalityHitProbability: profile.personalityHitProbability,
-      rationality: profile.rationality,
-      finalHitProbability: probability,
-      roll,
-      action
-    },
-    rng: rng.snapshot()
+    handValue: value,
+    threshold,
+    bulletDifference,
+    matchNoise: noise.match,
+    playNoise: noise.play,
+    action: knownCards.length > 0 && value <= threshold ? "hit" : "stand"
   };
 }

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { createCard, createDerivedCard } from "../blackjack/card";
 import { createHand, handValue } from "../blackjack/hand";
 import type { Card } from "../blackjack/types";
-import { createRng } from "../rng/seeded";
+import { createRng, SeededRng } from "../rng/seeded";
 import { buildObservation } from "../ai/observation";
-import { decideAiAction, finalHitProbability } from "../ai/policy";
+import { calculateAiThreshold, decideAiAction, sampleAiNoise } from "../ai/policy";
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
@@ -393,11 +393,47 @@ describe("observation and AI", () => {
     expect("shoe" in observation).toBe(false);
   });
 
-  it("applies the documented rationality/personality formula with deterministic roll", () => {
-    expect(finalHitProbability({ rationality: 0.8, personalityHitProbability: 1 }, 0)).toBeCloseTo(0.2);
-    const state = createMatch("ai-debug");
-    const result = decideAiAction(buildObservation(state, "opponent"), { rationality: 0.8, personalityHitProbability: 1 }, createRng("ai-roll"));
-    expect(result.decision).toEqual(expect.objectContaining({ rationality: 0.8, personalityHitProbability: 1, optimalHit: expect.any(Number), finalHitProbability: expect.any(Number), roll: expect.any(Number), action: expect.any(String) }));
+  it("applies the documented threshold formula and hits at the inclusive boundary", () => {
+    const profile = { P: 0.25, A: 1.5, B: 2, C: 0.5 };
+    const noise = { match: 0.2, play: -0.1 };
+    const base = withHands(createMatch("ai-threshold"), [card("10"), card("7")], [card("10"), card("6")], "opponent");
+    const state = { ...base, roulette: { player: { capacity: 6, bullets: 5 }, opponent: { capacity: 6, bullets: 1 } } };
+    const observation = buildObservation(state, "opponent");
+    expect(calculateAiThreshold(observation, profile, noise)).toBeCloseTo(17.2);
+    expect(decideAiAction(observation, profile, noise)).toEqual({
+      handValue: 16,
+      threshold: expect.closeTo(17.2),
+      bulletDifference: 4,
+      matchNoise: 0.2,
+      playNoise: -0.1,
+      action: "hit"
+    });
+
+    const neutral = { P: 0, A: 1, B: 1, C: 1 };
+    const equalGuns = { player: { capacity: 6, bullets: 0 }, opponent: { capacity: 6, bullets: 0 } };
+    const sixteen = { ...base, roulette: equalGuns };
+    const seventeen = withHands(sixteen, [card("10"), card("7")], [card("10"), card("7")], "opponent");
+    expect(decideAiAction(buildObservation(sixteen, "opponent"), neutral, { match: 0, play: 0 }).action).toBe("hit");
+    expect(decideAiAction(buildObservation(seventeen, "opponent"), neutral, { match: 0, play: 0 }).action).toBe("stand");
+  });
+
+  it("keeps Rmatch for the match and samples one new Rplay per hand", () => {
+    const state = createMatch("ai-noise-lifecycle");
+    expect(state.aiNoise.match).toBeGreaterThanOrEqual(-0.3);
+    expect(state.aiNoise.match).toBeLessThan(0.3);
+    expect(state.aiNoise.play).toBeGreaterThanOrEqual(-0.3);
+    expect(state.aiNoise.play).toBeLessThan(0.3);
+    expect(createMatch("ai-noise-lifecycle").aiNoise).toEqual(state.aiNoise);
+
+    const ai = SeededRng.fromSnapshot(state.rng.ai);
+    const expectedPlayNoise = sampleAiNoise(ai);
+    const outcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 } as const;
+    const ready = { ...state, round: { ...state.round, phase: "roulette-result", currentActor: null, outcome } } as MatchState;
+    const next = gameReducer(ready, { type: "ACK_TRIGGER_RESULT" });
+    expect(next.roundIndex).toBe(state.roundIndex + 1);
+    expect(next.aiNoise.match).toBe(state.aiNoise.match);
+    expect(next.aiNoise.play).toBe(expectedPlayNoise);
+    expect(next.rng.ai).toEqual(ai.snapshot());
   });
 });
 

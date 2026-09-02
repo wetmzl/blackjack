@@ -5,7 +5,7 @@ import { deriveRng, SeededRng } from "../rng/seeded";
 import { addBullets, createGun, pullTrigger } from "../roulette/roulette";
 import { INITIAL_SKILL_IDS, getSkillDefinition, isActiveSkill } from "../skills/definitions";
 import { drawRandomSkill, validateLoadout } from "../skills/skills";
-import { decideAiAction } from "../ai/policy";
+import { decideAiAction, sampleAiNoise } from "../ai/policy";
 import { buildObservation } from "../ai/observation";
 import { decideOptimalAction } from "../ai/policy";
 import { getRoundStarter } from "../blackjack/round";
@@ -14,7 +14,7 @@ import { getAbilityDefinition, instantiateAbility, validateAbilityBinding } from
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
 import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
-import { RECKLESS_B_PROFILE, type AiProfile } from "../ai/types";
+import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
 export interface CreateMatchOptions { readonly id?: string; readonly opponentId?: string; readonly aiProfile?: AiProfile; readonly equippedSkillIds?: readonly string[]; readonly opponentMechanics?: readonly AbilityBinding[]; readonly playerMechanics?: readonly AbilityBinding[]; }
 
@@ -167,7 +167,9 @@ function startNextRound(state: MatchState): MatchState {
   let next = runAbilityEvent(state, { trigger: "on-round-end", sourceEventId: `round-end:${state.roundIndex}`, roundOutcome: state.round.outcome ?? undefined }, {}).state;
   const runtime = garbageCollectAbilityInstances(expireStatuses(clearCounters(next.abilities, "round"), "round"), next.skills.cards);
   const expired = next.abilities.statuses.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
-  next = withRound({ ...next, shoe: nextRound.shoe, abilities: runtime, skills: skillState(next, { advice: null }), rng: { ...next.rng, deck: nextRound.deckRng.snapshot() } }, round);
+  const ai = SeededRng.fromSnapshot(next.rng.ai);
+  const playNoise = sampleAiNoise(ai);
+  next = withRound({ ...next, shoe: nextRound.shoe, abilities: runtime, skills: skillState(next, { advice: null }), rng: { ...next.rng, deck: nextRound.deckRng.snapshot(), ai: ai.snapshot() }, aiNoise: { ...next.aiNoise, play: playNoise } }, round);
   return resolveInitialBlackjack(append(next, ...expired, ...nextRound.events));
 }
 function resolveInitialBlackjack(state: MatchState): MatchState { const p = isBlackjack(state.player.hand); const o = isBlackjack(state.opponent.hand); let next = append(state, { type: "INITIAL_BLACKJACK_CHECK", player: p, opponent: o }); if (!p && !o) return setPhase(next, "turns", state.round.starter); if (p) next = append(next, { type: "BLACKJACK", actor: "player" }); if (o) next = append(next, { type: "BLACKJACK", actor: "opponent" }); if (p && o) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 }); const winner: Actor = p ? "player" : "opponent"; return resolveRound(next, { winner, reason: "blackjack", penaltyTarget: winner === "player" ? "opponent" : "player", bulletsAdded: 2, playerSkillReward: winner === "player" ? 2 : 0 }); }
@@ -233,7 +235,7 @@ function play(state: MatchState, instanceId: string): MatchState {
 }
 
 export function createMatch(seed: string, options: CreateMatchOptions = {}): MatchState {
-  const root = deriveRng(seed, "root"); const deck = root.derive("deck"); const roulette = root.derive("roulette"); const ai = root.derive("ai"); const loot = root.derive("loot"); const dialogue = root.derive("dialogue"); const ability = root.derive("ability"); const initial = makeRound(0, createShoe(deck), deck); const equipped = normalizeEquipped(options.equippedSkillIds);
+  const root = deriveRng(seed, "root"); const deck = root.derive("deck"); const roulette = root.derive("roulette"); const ai = root.derive("ai"); const loot = root.derive("loot"); const dialogue = root.derive("dialogue"); const ability = root.derive("ability"); const initial = makeRound(0, createShoe(deck), deck); const equipped = normalizeEquipped(options.equippedSkillIds); const aiNoise = { match: sampleAiNoise(ai), play: sampleAiNoise(ai) };
   let runtime = createAbilityRuntime(ability.snapshot());
   let instanceSerial = 0;
   for (const id of equipped) { const skill = getSkillDefinition(id); if (skill?.category === "passive") runtime = addAbilityInstance(runtime, instantiateAbility(validateAbilityBinding({ definitionId: id, enabled: true, parameters: {} }), "player", `ability-player-${id}`, ++instanceSerial)); }
@@ -244,7 +246,7 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
       if (valid.enabled) runtime = addAbilityInstance(runtime, instantiateAbility(valid, owner, `ability-${owner}-${valid.definitionId}-${++instanceSerial}`, instanceSerial));
     }
   }
-  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player: initial.player, opponent: initial.opponent, shoe: initial.shoe, roulette: { player: createGun(), opponent: createGun() }, skills: { equippedSkillIds: equipped, cards: [], advice: null }, abilities: runtime, round: { index: 0, phase: "initial-blackjack-check", starter: initial.starter, currentActor: null, player: initial.player, opponent: initial.opponent, outcome: null }, history: initial.events, rng: { deck: initial.deckRng.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? RECKLESS_B_PROFILE, lastAiDecision: null };
+  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player: initial.player, opponent: initial.opponent, shoe: initial.shoe, roulette: { player: createGun(), opponent: createGun() }, skills: { equippedSkillIds: equipped, cards: [], advice: null }, abilities: runtime, round: { index: 0, phase: "initial-blackjack-check", starter: initial.starter, currentActor: null, player: initial.player, opponent: initial.opponent, outcome: null }, history: initial.events, rng: { deck: initial.deckRng.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
   const opened = gainSkills(base, 1); const created = runAbilityEvent(opened, { trigger: "on-match-created", sourceEventId: `match-created:${opened.id}` }, {}).state;
   return resolveInitialBlackjack(created);
 }
@@ -268,7 +270,7 @@ export function gameReducer(state: MatchState, action: Action): MatchState {
     case "PLAYER_STAND": return state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood ? standFor(state, "player") : state;
     case "AI_HIT": case "OPPONENT_HIT": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? drawFor(state, "opponent") : state;
     case "AI_STAND": case "OPPONENT_STAND": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? standFor(state, "opponent") : state;
-    case "AI_TURN": { if (state.round.phase !== "turns" || state.round.currentActor !== "opponent") return state; const decision = decideAiAction(buildObservation(state, "opponent"), state.aiProfile, SeededRng.fromSnapshot(state.rng.ai)); const next = append({ ...state, rng: { ...state.rng, ai: decision.rng }, lastAiDecision: decision.decision }, { type: "AI_DECISION", decision: decision.decision }); return decision.decision.action === "hit" ? drawFor(next, "opponent") : standFor(next, "opponent"); }
+    case "AI_TURN": { if (state.round.phase !== "turns" || state.round.currentActor !== "opponent") return state; const decision = decideAiAction(buildObservation(state, "opponent"), state.aiProfile, state.aiNoise); const next = append({ ...state, lastAiDecision: decision }, { type: "AI_DECISION", decision }); return decision.action === "hit" ? drawFor(next, "opponent") : standFor(next, "opponent"); }
     case "PLAY_ABILITY": return play(state, action.instanceId);
     case "TRIGGER_ROULETTE": return state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger" ? triggerFor(state, state.round.outcome?.penaltyTarget ?? "player") : state;
     case "CONTINUE_ROUND": return state.round.phase === "round-end" ? startNextRound(state) : state;

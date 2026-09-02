@@ -3,14 +3,29 @@ import type { Card } from "../blackjack/types";
 export type AiAction = "hit" | "stand";
 
 export interface AiProfile {
-  readonly rationality: number;
-  readonly personalityHitProbability: number;
+  /** Fixed threshold offset. */
+  readonly P: number;
+  /** Weight applied to 0.1 * (player bullets - opponent bullets). */
+  readonly A: number;
+  /** Match-long noise weight. */
+  readonly B: number;
+  /** Current-hand noise weight. */
+  readonly C: number;
 }
 
-export const RECKLESS_B_PROFILE: AiProfile = {
-  rationality: 0.8,
-  personalityHitProbability: 1
+export const DEFAULT_AI_PROFILE: AiProfile = {
+  P: 0,
+  A: 1,
+  B: 1,
+  C: 1
 };
+
+export interface AiNoiseState {
+  /** Rmatch, sampled once when the match is created. */
+  readonly match: number;
+  /** Rplay, sampled once when the current hand is created. */
+  readonly play: number;
+}
 
 export interface ObservedParticipant {
   readonly cards: readonly (Card | null)[];
@@ -35,11 +50,10 @@ export interface MatchObservation {
 }
 
 export interface AiDecision {
-  readonly optimalAction: AiAction;
-  readonly optimalHit: 0 | 1;
-  readonly personalityHitProbability: number;
-  readonly rationality: number;
-  readonly finalHitProbability: number;
-  readonly roll: number;
+  readonly handValue: number;
+  readonly threshold: number;
+  readonly bulletDifference: number;
+  readonly matchNoise: number;
+  readonly playNoise: number;
   readonly action: AiAction;
 }

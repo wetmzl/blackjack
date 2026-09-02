@@ -17,7 +17,7 @@ import { createAutosaveController, type AutosaveController } from "./persistence
 import { downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
 import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
-import type { SaveFile } from "./persistence/schema";
+import { SaveValidationError, type SaveFile } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { presentMatchHaptics } from "./presentation/haptics";
 import { gameAudio } from "./audio/game-audio";
@@ -645,7 +645,14 @@ function renderMatch(state: MatchState): void {
   root.querySelector<HTMLButtonElement>("[data-skill-close]")?.addEventListener("click", () => root.querySelector<HTMLDialogElement>("#skill-info-dialog")?.close());
   if (shouldType) { lastDialogueKey = key; startTypewriter(dialogue); }
 }
-function devHud(state: MatchState): string { const dev = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV); if (!dev && !new URLSearchParams(window.location.search).has("debug")) return ""; const ai = state.lastAiDecision; const text = JSON.stringify({ gameVersion: save.gameVersion, seed: state.seed, round: state.roundIndex, phase: state.round.phase, currentActor: state.round.currentActor, relevantMatchState: state, recentActionsOrEvents: state.history.slice(-8), lastAction, lastDomainEvent, aiDecision: ai }, null, 2); return `<details class="dev-hud" open><summary>开发者面板</summary><dl><dt>种子</dt><dd>${state.seed}</dd><dt>轮次 / 阶段</dt><dd>${state.roundIndex} / ${phaseLabel(state.round.phase)}</dd><dt>当前行动者</dt><dd>${state.round.currentActor === "player" ? "玩家" : state.round.currentActor === "opponent" ? currentCharacter.name : "—"}</dd><dt>牌库剩余</dt><dd>${state.shoe.cards.length - state.shoe.cursor}</dd><dt>玩家真实手牌</dt><dd>${state.player.hand.cards.map(cardLabel).join(" ")}</dd><dt>对手真实手牌</dt><dd>${state.opponent.hand.cards.map(cardLabel).join(" ")}</dd><dt>玩家 / 对手子弹</dt><dd>${state.roulette.player.bullets} / ${state.roulette.opponent.bullets}</dd><dt>对手最优动作</dt><dd>${decisionLabel(ai?.optimalAction)}</dd><dt>对手理性程度</dt><dd>${ai ? `${(ai.rationality * 100).toFixed(0)}%` : "—"}</dd><dt>性格要牌倾向</dt><dd>${ai ? `${(ai.personalityHitProbability * 100).toFixed(0)}%` : "—"}</dd><dt>最终要牌概率</dt><dd>${ai ? `${(ai.finalHitProbability * 100).toFixed(0)}%` : "—"}</dd><dt>决策随机数</dt><dd>${ai ? `${(ai.roll * 100).toFixed(0)}%` : "—"}</dd><dt>对手上次决策</dt><dd>${decisionLabel(ai?.action)}</dd><dt>上次行动</dt><dd>${lastAction ? ACTION_LABELS[lastAction.type] : "—"}</dd><dt>上次领域事件</dt><dd>${lastDomainEvent ? EVENT_LABELS[lastDomainEvent] : "—"}</dd></dl><button class="quiet-button" data-copy-debug>复制调试状态</button><textarea id="debug-json" readonly hidden>${escapeHtml(text)}</textarea></details>`; }
+function devHud(state: MatchState): string {
+  const dev = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
+  if (!dev && !new URLSearchParams(window.location.search).has("debug")) return "";
+  const ai = state.lastAiDecision;
+  const text = JSON.stringify({ gameVersion: save.gameVersion, seed: state.seed, round: state.roundIndex, phase: state.round.phase, currentActor: state.round.currentActor, relevantMatchState: state, recentActionsOrEvents: state.history.slice(-8), lastAction, lastDomainEvent, aiDecision: ai }, null, 2);
+  const profile = state.aiProfile;
+  return `<details class="dev-hud" open><summary>开发者面板</summary><dl><dt>种子</dt><dd>${state.seed}</dd><dt>轮次 / 阶段</dt><dd>${state.roundIndex} / ${phaseLabel(state.round.phase)}</dd><dt>当前行动者</dt><dd>${state.round.currentActor === "player" ? "玩家" : state.round.currentActor === "opponent" ? currentCharacter.name : "—"}</dd><dt>牌库剩余</dt><dd>${state.shoe.cards.length - state.shoe.cursor}</dd><dt>玩家真实手牌</dt><dd>${state.player.hand.cards.map(cardLabel).join(" ")}</dd><dt>对手真实手牌</dt><dd>${state.opponent.hand.cards.map(cardLabel).join(" ")}</dd><dt>玩家 / 对手子弹</dt><dd>${state.roulette.player.bullets} / ${state.roulette.opponent.bullets}</dd><dt>AI 参数 P / A / B / C</dt><dd>${profile.P} / ${profile.A} / ${profile.B} / ${profile.C}</dd><dt>Rmatch / Rplay</dt><dd>${state.aiNoise.match.toFixed(3)} / ${state.aiNoise.play.toFixed(3)}</dd><dt>上次手牌值 / 阈值 T</dt><dd>${ai ? `${ai.handValue} / ${ai.threshold.toFixed(3)}` : "—"}</dd><dt>上次子弹差 Bp - Ba</dt><dd>${ai?.bulletDifference ?? "—"}</dd><dt>对手上次决策</dt><dd>${decisionLabel(ai?.action)}</dd><dt>上次行动</dt><dd>${lastAction ? ACTION_LABELS[lastAction.type] : "—"}</dd><dt>上次领域事件</dt><dd>${lastDomainEvent ? EVENT_LABELS[lastDomainEvent] : "—"}</dd></dl><button class="quiet-button" data-copy-debug>复制调试状态</button><textarea id="debug-json" readonly hidden>${escapeHtml(text)}</textarea></details>`;
+}
 function renderSummary(state: MatchState): void {
   const winner = state.outcome?.winner;
   const escaped = state.outcome?.reason === "escaped";
@@ -669,8 +676,15 @@ function renderError(error: unknown): void {
   clearAiSchedule();
   clearSkillGainQueue();
   detachFullscreenListener();
-  root.innerHTML = `<main class="error-shell"><p class="kicker">牌桌暂时离线</p><h1>出现了<br><em>意外回合</em></h1><p>${escapeHtml(uiError(error, "游戏无法启动。"))}</p><button class="primary-button" data-retry>重试</button></main>`;
+  const incompatibleSave = error instanceof SaveValidationError;
+  const action = incompatibleSave
+    ? `<button class="danger-button" data-reset-invalid-save>删除旧存档并重新开始</button><button class="secondary-button" data-retry>重新检查</button>`
+    : `<button class="primary-button" data-retry>重试</button>`;
+  const message = incompatibleSave ? "当前版本不兼容这份旧存档。请删除旧存档后重新开始。" : uiError(error, "游戏无法启动。");
+  const heading = incompatibleSave ? "需要清理<br><em>旧存档</em>" : "出现了<br><em>意外回合</em>";
+  root.innerHTML = `<main class="error-shell"><p class="kicker">牌桌暂时离线</p><h1>${heading}</h1><p>${escapeHtml(message)}</p>${action}</main>`;
   root.querySelector("[data-retry]")?.addEventListener("click", () => void boot());
+  root.querySelector("[data-reset-invalid-save]")?.addEventListener("click", () => void resetCurrentData());
 }
 async function boot(): Promise<void> { clearAiSchedule(); root.innerHTML = `<main class="loading-shell"><span class="mark">✦</span><p>正在洗牌……</p></main>`; try { save = await bootLoad(repository); document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); gameAudio.preload(); const unlockAudio = () => { gameAudio.unlock(); const state = autosave?.getState(); if (state) syncMatchAudioState(gameAudio, state); }; document.addEventListener("pointerdown", unlockAudio, { capture: true, once: true }); document.addEventListener("keydown", unlockAudio, { capture: true, once: true }); document.addEventListener("visibilitychange", () => { if (document.hidden) gameAudio.pauseBgm(); else gameAudio.restoreBgm(); }); void requestPersistentStorage(); if (save.activeMatch) await resumeMatch(save.activeMatch); else renderLobby(); } catch (error) { renderError(error); } }
 void boot();

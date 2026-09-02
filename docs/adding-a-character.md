@@ -81,7 +81,7 @@
 
 1. 新建 `src/content/characters/data/<id>.json`，满足 `character.schema.json` 的全部字段和全部有限状态对白池。
 2. 在 `catalog.json` 添加唯一的 `id`、名称、副标题、等级、预览图、收藏横幅和数据文件名。
-3. 为角色单独配置 AI 参数、结算文案和 `revolverPlacement`；不要复制 W 的人物对白充数。
+3. 为角色单独配置 AI 阈值参数 `P/A/B/C`、结算文案和 `revolverPlacement`；参数默认值为 `0/1/1/1`，含义与公式见 [玩法与叙事设计](game-design.md#ai-与信息权限)。不要复制 W 的人物对白充数。
 4. `staffRevolver` 指向共享发牌员资源；根据紧张态头部位置分别校准桌面端和移动端坐标。
 5. 只有在任务明确要求时才实现策展人胜利奖励技能；单纯的技能建议不写入 `definitions.ts`。
 6. 深度收藏资源写入可选的 `trophyGallery`：`headshot`、`fullBody` 和 `closeups`。每个 `closeups` 对象必须包含与会者内唯一 `id`、名称、0–100 的 `x/y` 百分比坐标、方形图片和描述；数组没有数量上限。

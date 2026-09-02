@@ -1,4 +1,4 @@
-import type { AiDecision, AiProfile } from "../ai/types";
+import type { AiDecision, AiNoiseState, AiProfile } from "../ai/types";
 import type { Card, Hand, ShoeState, RoundStarter } from "../blackjack/types";
 import type { RngSnapshot } from "../rng/seeded";
 import type { RouletteState } from "../roulette/types";
@@ -118,5 +118,6 @@ export interface MatchState {
   readonly history: readonly GameEvent[];
   readonly rng: MatchRngState;
   readonly aiProfile: AiProfile;
+  readonly aiNoise: AiNoiseState;
   readonly lastAiDecision: AiDecision | null;
 }

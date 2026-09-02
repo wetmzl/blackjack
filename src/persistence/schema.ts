@@ -6,7 +6,7 @@ import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, val
 import characterCatalog from "../content/characters/catalog.json" with { type: "json" };
 
 export const SAVE_FORMAT = "house-of-chances-save" as const;
-export const CURRENT_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SCHEMA_VERSION = 3 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -44,11 +44,11 @@ const RoundSchema = z.object({
   opponent: ParticipantSchema,
   outcome: RoundOutcomeSchema.nullable()
 }).strict();
-const AiProfileSchema = z.object({ rationality: z.number().min(0).max(1), personalityHitProbability: z.number().min(0).max(1) }).strict();
+const AiProfileSchema = z.object({ P: z.number().finite(), A: z.number().finite(), B: z.number().finite(), C: z.number().finite() }).strict();
+const AiNoiseSchema = z.object({ match: z.number().min(-0.3).max(0.3), play: z.number().min(-0.3).max(0.3) }).strict();
 const AiDecisionSchema = z.object({
-  optimalAction: z.enum(["hit", "stand"]), optimalHit: z.union([z.literal(0), z.literal(1)]),
-  personalityHitProbability: z.number().min(0).max(1), rationality: z.number().min(0).max(1),
-  finalHitProbability: z.number().min(0).max(1), roll: z.number().min(0).lt(1), action: z.enum(["hit", "stand"])
+  handValue: z.number().int().min(0), threshold: z.number().finite(), bulletDifference: z.number().int(),
+  matchNoise: z.number().min(-0.3).max(0.3), playNoise: z.number().min(-0.3).max(0.3), action: z.enum(["hit", "stand"])
 }).strict();
 const AbilityCardSchema = z.object({ kind: z.literal("player-skill"), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), instanceId: z.string().min(1) }).strict();
 const AbilityInstanceSchema = z.object({ kind: z.enum(["player-skill", "character-mechanic"]), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), instanceId: z.string().min(1), createdAtSequence: z.number().int().min(0), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])) }).strict();
@@ -115,7 +115,7 @@ export const MatchStateSchema = z.object({
   outcome: z.object({ winner: z.enum(["player", "opponent"]).nullable(), reason: z.enum(["player-killed", "opponent-killed", "escaped"]) }).strict().optional(),
   history: z.array(GameEventSchema),
   rng: z.object({ deck: RngSnapshotSchema, roulette: RngSnapshotSchema, ai: RngSnapshotSchema, loot: RngSnapshotSchema, dialogue: RngSnapshotSchema }).strict(),
-  aiProfile: AiProfileSchema, lastAiDecision: AiDecisionSchema.nullable()
+  aiProfile: AiProfileSchema, aiNoise: AiNoiseSchema, lastAiDecision: AiDecisionSchema.nullable()
 }).strict().superRefine((match, ctx) => {
   const instances = new Map(match.abilities.instances.map((instance) => [instance.instanceId, instance]));
   match.skills.cards.forEach((card, index) => {

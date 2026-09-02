@@ -86,12 +86,14 @@
     },
     "ai": {
       "type": "object",
-      "description": "与会者 AI 决策参数，范围均为 0 到 1。",
+      "description": "与会者 AI 阈值参数。T = 16 + P + 0.1 × A × (策展人子弹数 - 与会者子弹数) + B × Rmatch + C × Rplay；总点数小于等于 T 时 Hit。",
       "additionalProperties": false,
-      "required": ["rationality", "personalityHitProbability"],
+      "required": ["P", "A", "B", "C"],
       "properties": {
-        "rationality": { "type": "number", "minimum": 0, "maximum": 1, "description": "与会者面对牌面与死亡风险时采用概率最优动作的倾向。" },
-        "personalityHitProbability": { "type": "number", "minimum": 0, "maximum": 1, "description": "与会者受自身性格与执念驱动的 Hit 倾向。" }
+        "P": { "type": "number", "default": 0, "description": "固定阈值偏移；默认 0。" },
+        "A": { "type": "number", "default": 1, "description": "双方子弹差值的权重；默认 1。" },
+        "B": { "type": "number", "default": 1, "description": "整局固定噪声 Rmatch 的权重；默认 1。" },
+        "C": { "type": "number", "default": 1, "description": "每手重抽噪声 Rplay 的权重；默认 1。" }
       }
     },
     "mechanics": {

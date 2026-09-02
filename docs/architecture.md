@@ -49,11 +49,11 @@ DOM render / presentation / autosave
 - `GameEvent` 是对白、历史、调试和演出的事实记录，状态仍由 reducer 决定。
 - 已完成对局从牌桌确认进入 `match-summary`，再次确认后才切到 `lobby` 并由持久化层生成历史摘要。
 
-`MatchState` 的核心组成包括双方状态、牌堆、两把左轮、技能表现外观、能力运行时、轮次状态、历史、AI 配置和各随机流快照。`execution-room` 是保留的表现层视图，当前致命演出仍在牌桌完成。
+`MatchState` 的核心组成包括双方状态、牌堆、两把左轮、技能表现外观、能力运行时、轮次状态、历史、AI 配置、整局/每手 AI 噪声和各随机流快照。`execution-room` 是保留的表现层视图，当前致命演出仍在牌桌完成。
 
 ## 确定性与信息边界
 
-所有领域随机行为使用 seeded PRNG。牌局种子派生独立的 deck、roulette、AI、loot、dialogue 流；能力运行时另保存 ability RNG。相同存档和相同行动应得到相同结果，增加对白不能改变牌序或枪击结果。
+所有领域随机行为使用 seeded PRNG。牌局种子派生独立的 deck、roulette、AI、loot、dialogue 流；能力运行时另保存 ability RNG。AI 流只在建局时生成 `Rmatch/Rplay`、后续每手开始时更新 `Rplay`，决策本身不消耗随机数。相同存档和相同行动应得到相同结果，增加对白不能改变牌序或枪击结果。
 
 AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的拥有者看到自己的私有牌；对手、未公开牌堆和未来随机结果不会进入 AI 输入。
 
@@ -92,7 +92,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 - 能力实例、状态来源、参数、目录版本和卡牌实例一致性；
 - 历史摘要结构。
 
-不兼容或损坏的本地存档在启动时被视为不可恢复并替换为新档。JSON 导入会明确报错；导出优先使用 File System Access API，缺失时退回 Blob 下载。
+不兼容或损坏的本地存档在启动时被视为不可恢复，界面会明确引导玩家删除/清理后重新开始，不自动迁移或覆盖旧档。JSON 导入会明确报错；导出优先使用 File System Access API，缺失时退回 Blob 下载。
 
 ## PWA 与资源缓存
 

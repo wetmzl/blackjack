@@ -52,7 +52,7 @@ export const CharacterDataSchema = z.object({
   matchSummary: z.object({ playerVictory: z.string().min(1), playerDefeat: z.string().min(1), escaped: z.string().min(1) }).strict(),
   trophyGallery: trophyGallery.optional(),
   revolverPlacement: z.object({ top: z.number().finite(), left: z.number().finite(), mobileTop: z.number().finite(), mobileLeft: z.number().finite() }).strict(),
-  ai: z.object({ rationality: z.number().min(0).max(1), personalityHitProbability: z.number().min(0).max(1) }).strict(),
+  ai: z.object({ P: z.number().finite(), A: z.number().finite(), B: z.number().finite(), C: z.number().finite() }).strict(),
   mechanics: z.array(AbilityBindingSchema).default([]).superRefine((mechanics, ctx) => {
     for (const [index, binding] of mechanics.entries()) {
       const definition = getAbilityDefinition(binding.definitionId);
