@@ -65,6 +65,7 @@
     "rationality": 0.8,
     "personalityHitProbability": 1
   },
+  "mechanics": [],
   "dialogue": {
     "MATCH_START": [
       "朝天花板开枪就算受罚？呵，高高在上的古堡主人还真懂怎么保全自己。不过无所谓……只要能把特蕾西娅殿下换回来，这不公平的烂赌局我陪你玩到底。",

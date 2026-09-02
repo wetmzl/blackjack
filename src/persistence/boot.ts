@@ -1,6 +1,6 @@
 import type { MatchState } from "../core/match/types";
 import { summarizeMatch } from "../core/match/history";
-import { assertMatchStateForSave, CURRENT_GAME_VERSION, CURRENT_SCHEMA_VERSION, SAVE_FORMAT, type GameSettings, type PlayerProfile, type SaveFile } from "./schema";
+import { assertMatchStateForSave, CURRENT_GAME_VERSION, CURRENT_SCHEMA_VERSION, SAVE_FORMAT, SaveValidationError, type GameSettings, type PlayerProfile, type SaveFile } from "./schema";
 import { INITIAL_SKILL_IDS } from "../core/skills/definitions";
 import type { SaveRepository } from "./repository";
 
@@ -14,7 +14,13 @@ export function createDefaultSave(now = new Date().toISOString()): SaveFile {
 export function resetSave(now = new Date().toISOString()): SaveFile { return createDefaultSave(now); }
 
 export async function bootLoad(repository: SaveRepository, now = new Date().toISOString()): Promise<SaveFile> {
-  const existing = await repository.load();
+  let existing: SaveFile | null;
+  try {
+    existing = await repository.load();
+  } catch (error) {
+    if (!(error instanceof SaveValidationError)) throw error;
+    existing = null;
+  }
   if (existing) return existing;
   const fresh = createDefaultSave(now);
   await repository.save(fresh);

@@ -1,0 +1,1 @@
+{"id":"early-preparation","name":"早有准备","description":"入场时额外获得一张主动技能牌。","usage":"被动效果：入场时额外获得 1 张主动技能牌。","sourceKind":"player-skill","activation":{"type":"passive"},"rules":[{"id":"opening-draw","trigger":"on-match-created","effects":[{"type":"draw-skill-cards","target":"owner","amount":1}],"limit":{"perMatch":1}}],"tags":[]}

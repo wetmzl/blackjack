@@ -180,6 +180,17 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse(nianData).success).toBe(true);
   });
 
+  it("strictly validates declarative mechanic bindings", () => {
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] }).success).toBe(true);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 2 } }] }).success).toBe(true);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "unknown-mechanic", enabled: true, parameters: {} }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "switcheroo", enabled: true, parameters: {} }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: {} }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 11 } }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: { unknown: true } }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {}, extra: true }] }).success).toBe(false);
+  });
+
   it("supports any number of bounded, uniquely identified trophy closeups", () => {
     const gallery = nianData.trophyGallery;
     expect(gallery.closeups).toHaveLength(4);

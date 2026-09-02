@@ -3,6 +3,7 @@ import type { Card, Hand, ShoeState, RoundStarter } from "../blackjack/types";
 import type { RngSnapshot } from "../rng/seeded";
 import type { RouletteState } from "../roulette/types";
 import type { SkillInventory } from "../skills/types";
+import type { AbilityRuntimeState } from "../abilities/types";
 
 export type AppScene = "lobby" | "match" | "trophy-room";
 export type MatchView = "table" | "execution-room" | "match-summary";
@@ -51,11 +52,17 @@ export interface MatchRngState {
   readonly roulette: RngSnapshot;
   readonly ai: RngSnapshot;
   readonly loot: RngSnapshot;
-  readonly skill: RngSnapshot;
   readonly dialogue: RngSnapshot;
 }
 
 export type GameEvent =
+  | { readonly type: "ABILITY_PLAYED"; readonly instanceId: string; readonly definitionId: string; readonly owner: Actor }
+  | { readonly type: "ABILITY_TRIGGERED"; readonly instanceId: string; readonly definitionId: string; readonly ruleId: string; readonly owner: Actor }
+  | { readonly type: "ABILITY_RESOLUTION_FAILED"; readonly instanceId: string; readonly definitionId: string; readonly ruleId: string; readonly reason: string }
+  | { readonly type: "STATUS_ADDED"; readonly statusDefinitionId: string; readonly owner: Actor; readonly sourceInstanceId: string }
+  | { readonly type: "STATUS_REMOVED"; readonly statusDefinitionId: string; readonly owner: Actor; readonly reason: "consumed" | "expired" | "dispelled" }
+  | { readonly type: "PENDING_EVENT_MODIFIED"; readonly eventId: string; readonly effectType: string; readonly sourceInstanceId: string }
+  | { readonly type: "PENDING_EVENT_CANCELLED"; readonly eventId: string; readonly sourceInstanceId: string }
   | { readonly type: "ROUND_STARTED"; readonly roundIndex: number }
   | { readonly type: "CARD_DEALT"; readonly actor: Actor; readonly card: Card; readonly private: boolean }
   | { readonly type: "INITIAL_BLACKJACK_CHECK"; readonly player: boolean; readonly opponent: boolean }
@@ -68,13 +75,10 @@ export type GameEvent =
   | { readonly type: "BULLET_ADDED"; readonly actor: Actor; readonly amount: number }
   | { readonly type: "TRIGGER_PULLED"; readonly actor: Actor; readonly probability: number; readonly fired: boolean }
   | { readonly type: "TRIGGER_SURVIVED"; readonly actor: Actor }
-  | { readonly type: "TRIGGER_AVOIDED_BY_SKILL"; readonly actor: Actor; readonly skillId: string }
   | { readonly type: "TRIGGER_RESULT_ACKNOWLEDGED" }
   /** Compatibility event name; actor=player never means the Curator physically dies. */
   | { readonly type: "PARTICIPANT_KILLED"; readonly actor: Actor }
   | { readonly type: "SKILL_GAINED"; readonly skillId: string }
-  | { readonly type: "SKILL_USED"; readonly skillId: string }
-  | { readonly type: "SKILL_ADVICE"; readonly advice: "hit" | "stand" }
   | { readonly type: "MATCH_FINISHED"; readonly reason: MatchEndReason }
   | { readonly type: "MATCH_ESCAPED" }
   | { readonly type: "MATCH_RESULT_ACKNOWLEDGED" }
@@ -86,7 +90,7 @@ export type Action =
   | { readonly type: "AI_TURN" }
   | { readonly type: "AI_HIT" | "OPPONENT_HIT" }
   | { readonly type: "AI_STAND" | "OPPONENT_STAND" }
-  | { readonly type: "USE_SKILL"; readonly skillId: string }
+  | { readonly type: "PLAY_ABILITY"; readonly instanceId: string; readonly selections?: Readonly<Record<string, string | number>> }
   | { readonly type: "TRIGGER_ROULETTE" }
   | { readonly type: "ACK_ROUND_RESULT" }
   | { readonly type: "ACK_TRIGGER_RESULT" }
@@ -107,6 +111,8 @@ export interface MatchState {
   readonly shoe: ShoeState;
   readonly roulette: RouletteState;
   readonly skills: SkillInventory;
+  /** Declarative ability runtime; `skills` is retained as the presentation facade. */
+  readonly abilities: AbilityRuntimeState;
   readonly round: RoundState;
   readonly outcome?: MatchOutcome;
   readonly history: readonly GameEvent[];

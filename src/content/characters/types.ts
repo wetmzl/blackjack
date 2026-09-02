@@ -1,5 +1,6 @@
 import type { AiProfile } from "../../core/ai/types";
 import type { CharacterDialogue } from "../../dialogue/types";
+import type { AbilityBinding } from "../../core/abilities/types";
 
 export type Tier = "D" | "C" | "B" | "A" | "S";
 
@@ -78,6 +79,7 @@ export interface CharacterData {
   /** All normal attendee portraits use TABLE_ART_BASELINE; definitions cannot override its scale. */
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;
+  readonly mechanics: readonly AbilityBinding[];
   readonly dialogue: CharacterDialogue;
 }
 

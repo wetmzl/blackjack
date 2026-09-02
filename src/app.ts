@@ -8,15 +8,16 @@ import type { Action, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
 import { getSkillDefinition, SKILL_DEFINITIONS, isActiveSkill, isPassiveSkill } from "./core/skills/definitions";
 import { addUnlockedSkills, skillsUnlockedForVictory, validateLoadout } from "./core/skills/skills";
+import { getAbilityDefinition } from "./core/abilities/registry";
 import { chooseDialogue } from "./dialogue/types";
 import { resolveDialogueState } from "./dialogue/state";
 import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, getCharacterMetadata, loadCharacter, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint } from "./content/characters";
 import { bootLoad, resetSave } from "./persistence/boot";
 import { createAutosaveController, type AutosaveController } from "./persistence/autosave";
-import { downloadRawSave, downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
+import { downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
 import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
-import { SaveValidationError, type SaveFile } from "./persistence/schema";
+import type { SaveFile } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { presentMatchHaptics } from "./presentation/haptics";
 import { gameAudio } from "./audio/game-audio";
@@ -125,15 +126,17 @@ function phaseLabel(phase: MatchState["round"]["phase"]): string { return PHASE_
 const ACTION_LABELS: Readonly<Record<Action["type"], string>> = {
   PLAYER_HIT: "博士 Hit 要牌", PLAYER_STAND: "博士 Stand 停牌", AI_TURN: "对手行动一次",
   AI_HIT: "对手 Hit 要牌", OPPONENT_HIT: "对手 Hit 要牌", AI_STAND: "对手 Stand 停牌", OPPONENT_STAND: "对手 Stand 停牌",
-  USE_SKILL: "使用技能", TRIGGER_ROULETTE: "扣下扳机", ACK_ROUND_RESULT: "确认本轮结果",
+  PLAY_ABILITY: "使用能力", TRIGGER_ROULETTE: "扣下扳机", ACK_ROUND_RESULT: "确认本轮结果",
   ACK_TRIGGER_RESULT: "确认扳机结果", CONTINUE_ROUND: "进入下一轮", ESCAPE_MATCH: "逃离对局", ACK_MATCH_RESULT: "确认最终结果"
 };
 const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
+  ABILITY_PLAYED: "使用能力", ABILITY_TRIGGERED: "能力触发", ABILITY_RESOLUTION_FAILED: "能力解析失败",
+  STATUS_ADDED: "获得状态", STATUS_REMOVED: "状态移除", PENDING_EVENT_MODIFIED: "修改待结算事件", PENDING_EVENT_CANCELLED: "取消待结算事件",
   ROUND_STARTED: "本轮开始", CARD_DEALT: "发牌", INITIAL_BLACKJACK_CHECK: "检查黑杰克",
   PLAYER_HIT: "博士 Hit 要牌", OPPONENT_HIT: "对手 Hit 要牌", PLAYER_STOOD: "博士 Stand 停牌", OPPONENT_STOOD: "对手 Stand 停牌",
   BLACKJACK: "黑杰克", BUST: "爆牌", ROUND_RESOLVED: "本轮结算", ROUND_RESULT_ACKNOWLEDGED: "已确认本轮结果",
-  BULLET_ADDED: "装填子弹", TRIGGER_PULLED: "已扣下扳机", TRIGGER_SURVIVED: "空枪幸存", TRIGGER_AVOIDED_BY_SKILL: "技能免除扳机", TRIGGER_RESULT_ACKNOWLEDGED: "已确认扳机结果",
-  PARTICIPANT_KILLED: "参与者倒下", SKILL_GAINED: "获得技能", SKILL_USED: "使用技能", SKILL_ADVICE: "获得行动建议", MATCH_FINISHED: "对局结束",
+  BULLET_ADDED: "装填子弹", TRIGGER_PULLED: "已扣下扳机", TRIGGER_SURVIVED: "空枪幸存", TRIGGER_RESULT_ACKNOWLEDGED: "已确认扳机结果",
+  PARTICIPANT_KILLED: "参与者倒下", SKILL_GAINED: "获得技能", MATCH_FINISHED: "对局结束",
   MATCH_ESCAPED: "博士离席", MATCH_RESULT_ACKNOWLEDGED: "已确认最终结果", AI_DECISION: "对手完成决策"
 };
 function decisionLabel(action: "hit" | "stand" | undefined): string { return action === "hit" ? "Hit 要牌" : action === "stand" ? "Stand 停牌" : "—"; }
@@ -315,18 +318,21 @@ function startTypewriter(text: string): void {
 function presentDelta(before: MatchState, after: MatchState): void {
   const events = after.history.slice(before.history.length);
   enqueueSkillGains(events);
-  const event = events.find((candidate) => candidate.type === "TRIGGER_AVOIDED_BY_SKILL") ?? events.find((candidate) => candidate.type === "TRIGGER_PULLED") ?? events.find((candidate) => candidate.type === "BUST") ?? events.find((candidate) => candidate.type === "BLACKJACK") ?? events.find((candidate) => candidate.type === "BULLET_ADDED") ?? events.find((candidate) => candidate.type === "TRIGGER_SURVIVED");
+  const event = events.find((candidate) => candidate.type === "PENDING_EVENT_CANCELLED") ?? events.find((candidate) => candidate.type === "TRIGGER_PULLED") ?? events.find((candidate) => candidate.type === "BUST") ?? events.find((candidate) => candidate.type === "BLACKJACK") ?? events.find((candidate) => candidate.type === "BULLET_ADDED") ?? events.find((candidate) => candidate.type === "TRIGGER_SURVIVED");
   if (event) {
     if (event.type === "BUST") present(`${event.actor === "player" ? "博士" : currentCharacter.name} 爆牌`, "danger");
     else if (event.type === "BLACKJACK") present("黑杰克", "gold");
     else if (event.type === "BULLET_ADDED") present(`已装填 ${event.amount} 发子弹`, "danger");
     else if (event.type === "TRIGGER_PULLED") present(event.fired ? "砰！" : "咔哒……", event.fired ? "danger" : "gold");
     else if (event.type === "TRIGGER_SURVIVED") present("空枪，暂时活下来了", "gold");
-    else if (event.type === "TRIGGER_AVOIDED_BY_SKILL") present("罗德岛万人迷：免除本次扳机", "gold");
+    else if (event.type === "PENDING_EVENT_CANCELLED") {
+      const source = before.abilities.instances.find((instance) => instance.instanceId === event.sourceInstanceId);
+      present(`${source ? getAbilityDefinition(source.definitionId)?.name ?? "能力" : "能力"}：免除本次扳机`, "gold");
+    }
     return;
   }
-  const skill = events.find((candidate) => candidate.type === "SKILL_USED");
-  if (skill) { present(`已使用技能：${getSkillDefinition(skill.skillId)?.name ?? "未知技能"}`, "gold"); return; }
+  const played = events.find((candidate) => candidate.type === "ABILITY_PLAYED");
+  if (played) { present(`已使用技能：${getSkillDefinition(played.definitionId)?.name ?? "未知技能"}`, "gold"); return; }
   if (events.some((candidate) => candidate.type === "CARD_DEALT" && candidate.actor === "player") && handValue(after.player.hand) === 21) present("21 · 自动停牌", "gold");
 }
 function wireActions(container: ParentNode, handler: (action: Action) => void): void { container.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => element.addEventListener("click", () => handler(JSON.parse(element.dataset.action ?? "{}") as Action))); }
@@ -459,7 +465,7 @@ function renderTrophyRoom(): void {
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer); autosave = null;
   const records = [...save.history].reverse();
   const cards = records.map((record) => {
-    const character = getCharacterMetadata(record.opponentId) ?? getCharacterMetadata(DEFAULT_CHARACTER_ID)!;
+    const character = getCharacterMetadata(record.opponentId)!;
     const won = record.winner === "player" && !record.escaped;
     const image = won
       ? `<img src="${character.trophyImage}" alt="被博士战胜后平躺的${escapeHtml(character.name)}" />`
@@ -508,7 +514,7 @@ async function openHistoryDetail(id: string): Promise<void> {
   const dialog = root.querySelector<HTMLDialogElement>("#history-detail");
   const content = root.querySelector<HTMLDivElement>("#history-detail-content");
   if (!record || !dialog || !content) return;
-  const metadata = getCharacterMetadata(record.opponentId) ?? getCharacterMetadata(DEFAULT_CHARACTER_ID)!;
+  const metadata = getCharacterMetadata(record.opponentId)!;
   const won = record.winner === "player" && !record.escaped;
   const character = won ? await loadCharacter(metadata.id).catch(() => undefined) : undefined;
   const gallery = character?.trophyGallery;
@@ -542,7 +548,7 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
     selectedCharacterId = character.id;
     lastAction = null;
     lastDomainEvent = null;
-    const match = createMatch(secureSeed(), { opponentId: character.id, aiProfile: character.ai, equippedSkillIds: save.profile.equippedSkillIds });
+    const match = createMatch(secureSeed(), { opponentId: character.id, aiProfile: character.ai, equippedSkillIds: save.profile.equippedSkillIds, opponentMechanics: character.mechanics });
     await resumeMatch(match, character);
     enqueueSkillGains(match.history);
     presentOpeningMatchAudio(gameAudio, match);
@@ -551,7 +557,7 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
 }
 async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinition): Promise<void> {
   clearAiSchedule();
-  currentCharacter = loadedCharacter ?? await loadCharacter(getCharacterMetadata(match.opponentId)?.id ?? DEFAULT_CHARACTER_ID);
+  currentCharacter = loadedCharacter ?? await loadCharacter(match.opponentId);
   selectedCharacterId = currentCharacter.id;
   autosave = createAutosaveController(repository, save, match);
   const state = autosave.getState();
@@ -566,12 +572,15 @@ function renderMatch(state: MatchState): void {
   const reveal = state.round.phase !== "turns";
   const opponentCards = reveal ? state.opponent.hand.cards.map((card) => cardMarkup(card)).join("") : observation.opponent.cards.map((card, index) => cardMarkup(card, index > 0)).join("");
   const playerCards = state.player.hand.cards.map((card) => cardMarkup(card)).join("");
-  const counts = new Map<string, number>(); state.skills.cards.forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1));
+  const counts = new Map<string, number>(); state.skills.cards.forEach((card) => { const id = card.definitionId; counts.set(id, (counts.get(id) ?? 0) + 1); });
   const activeSkills = [...new Set(state.skills.equippedSkillIds)].filter((id) => isActiveSkill(id)).map((id) => {
     const count = counts.get(id) ?? 0;
     const skill = getSkillDefinition(id);
     if (!skill) return "";
-    const action = { type: "USE_SKILL" as const, skillId: id };
+    const firstCard = state.skills.cards.find((card) => card.definitionId === id);
+    const action = firstCard
+      ? { type: "PLAY_ABILITY" as const, instanceId: firstCard.instanceId }
+      : { type: "PLAY_ABILITY" as const, instanceId: `unavailable-${id}` };
     const enabled = legal(state, action);
     return `<span class="skill-tile ${enabled ? "" : "is-disabled"}"><button class="skill-card" data-action='${JSON.stringify(action)}' ${enabled ? "" : "disabled"} aria-label="使用${escapeHtml(skill.name)}"><b>${escapeHtml(skill.name)}</b><small>${count === 0 ? "×0" : count > 1 ? `×${count}` : ""}</small></button><button class="skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
   }).join("");
@@ -660,20 +669,8 @@ function renderError(error: unknown): void {
   clearAiSchedule();
   clearSkillGainQueue();
   detachFullscreenListener();
-  const invalidSave = error instanceof SaveValidationError;
-  root.innerHTML = `<main class="error-shell"><p class="kicker">牌桌暂时离线</p><h1>出现了<br><em>意外回合</em></h1><p>${escapeHtml(uiError(error, "游戏无法启动。"))}</p><button class="primary-button" data-retry>重试</button>${invalidSave ? `<button class="secondary-button" data-export-invalid>导出存档</button><button class="danger-button" data-reset-invalid>清理数据</button><p class="status-line" id="error-status" role="status"></p>` : ""}</main>`;
+  root.innerHTML = `<main class="error-shell"><p class="kicker">牌桌暂时离线</p><h1>出现了<br><em>意外回合</em></h1><p>${escapeHtml(uiError(error, "游戏无法启动。"))}</p><button class="primary-button" data-retry>重试</button></main>`;
   root.querySelector("[data-retry]")?.addEventListener("click", () => void boot());
-  if (!invalidSave) return;
-  root.querySelector<HTMLButtonElement>("[data-export-invalid]")?.addEventListener("click", () => void (async () => {
-    const status = root.querySelector<HTMLParagraphElement>("#error-status");
-    try {
-      const raw = await repository.loadRaw();
-      if (raw == null) throw new Error("没有找到可导出的原始存档。");
-      const method = await downloadRawSave(raw);
-      if (status) status.textContent = method === "file-system-access" ? "原始存档已写入。" : "已开始下载原始存档。";
-    } catch (exportError) { if (status) status.textContent = exportError instanceof Error ? exportError.message : "原始存档导出失败。"; }
-  })());
-  root.querySelector<HTMLButtonElement>("[data-reset-invalid]")?.addEventListener("click", () => { if (confirmResetCurrentData()) void resetCurrentData(); });
 }
 async function boot(): Promise<void> { clearAiSchedule(); root.innerHTML = `<main class="loading-shell"><span class="mark">✦</span><p>正在洗牌……</p></main>`; try { save = await bootLoad(repository); document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); gameAudio.preload(); const unlockAudio = () => { gameAudio.unlock(); const state = autosave?.getState(); if (state) syncMatchAudioState(gameAudio, state); }; document.addEventListener("pointerdown", unlockAudio, { capture: true, once: true }); document.addEventListener("keydown", unlockAudio, { capture: true, once: true }); document.addEventListener("visibilitychange", () => { if (document.hidden) gameAudio.pauseBgm(); else gameAudio.restoreBgm(); }); void requestPersistentStorage(); if (save.activeMatch) await resumeMatch(save.activeMatch); else renderLobby(); } catch (error) { renderError(error); } }
 void boot();

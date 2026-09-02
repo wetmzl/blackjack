@@ -1,6 +1,7 @@
 import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, getCharacterMetadata } from "./catalog";
 import { CharacterDataSchema } from "./schema";
 import type { CharacterData, CharacterDefinition, CharacterMetadata } from "./types";
+import { validateAbilityBinding } from "../../core/abilities/registry";
 
 type DataLoader = () => Promise<{ default: unknown }>;
 
@@ -28,6 +29,7 @@ export function loadCharacter(id: string): Promise<CharacterDefinition> {
   if (cached) return cached;
   const pending = loader().then(({ default: rawData }) => {
     const data = CharacterDataSchema.parse(rawData) as CharacterData;
+    for (const binding of data.mechanics) validateAbilityBinding(binding);
     const definition: CharacterDefinition = { ...metadata, ...data };
     for (const key of METADATA_KEYS) {
       if (definition[key] !== metadata[key]) throw new Error(`角色定义与目录不一致：${id}.${key}`);

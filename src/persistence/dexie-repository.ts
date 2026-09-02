@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import { validateAndMigrateSave, type SaveFile } from "./schema";
+import { validateSave, type SaveFile } from "./schema";
 import type { SaveRepository } from "./repository";
 
 interface SaveRecord { readonly id: "current"; readonly data: unknown; }
@@ -11,16 +11,11 @@ export class IndexedDbSaveRepository implements SaveRepository {
 
   async load(): Promise<SaveFile | null> {
     const record = await this.db.saves.get("current");
-    return record ? validateAndMigrateSave(record.data) : null;
-  }
-
-  async loadRaw(): Promise<unknown | null> {
-    const record = await this.db.saves.get("current");
-    return record?.data ?? null;
+    return record ? validateSave(record.data) : null;
   }
 
   async save(save: SaveFile): Promise<void> {
-    const valid = validateAndMigrateSave(save);
+    const valid = validateSave(save);
     await this.db.saves.put({ id: "current", data: valid });
   }
 

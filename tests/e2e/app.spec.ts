@@ -237,18 +237,6 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
   await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted)\.png/);
 });
 
-test("旧存档中的未知角色安全回退到 W", async ({ page }) => {
-  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
-  imported.settings.reducedMotion = true;
-  imported.activeMatch = { ...findTurnsMatch("retired-character"), opponentId: "retired-character" };
-  await page.goto("/");
-  await openLobbySettings(page);
-  await page.locator("#save-file").setInputFiles({ name: "retired.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
-  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  await expect(page.locator(".character-strip .eyebrow")).toContainText("W // B级");
-  await expect(page.locator(".character-portrait")).toHaveAttribute("src", /w-(relaxed|conflicted)\.png/);
-});
-
 test("设置原地保存并走中文导入导出", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined, configurable: true }));
   await page.goto("/");
@@ -333,8 +321,7 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await expect(page.locator("[data-open-trophies]")).toContainText("0 局");
 });
 
-test("无效 IndexedDB 存档可导出原始标记，清理取消或确认均安全", async ({ page }) => {
-  await page.addInitScript(() => Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined, configurable: true }));
+test("旧版 IndexedDB 存档在启动时直接丢弃并覆盖", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await page.evaluate(async () => {
@@ -343,24 +330,27 @@ test("无效 IndexedDB 存档可导出原始标记，清理取消或确认均安
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const transaction = request.result.transaction("saves", "readwrite");
-        transaction.objectStore("saves").put({ id: "current", data: { marker: "raw-invalid-record", schemaVersion: 3 } });
+        transaction.objectStore("saves").put({ id: "current", data: { marker: "outdated-save", schemaVersion: 99 } });
         transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error);
       };
     });
   });
   await page.reload();
-  await expect(page.locator("main.error-shell")).toContainText("存档无效");
-  await expect(page.locator("[data-export-invalid]")).toBeVisible();
-  const [download] = await Promise.all([page.waitForEvent("download"), page.locator("[data-export-invalid]").click()]);
-  expect(download.suggestedFilename()).toBe("house-of-chances-invalid-save.json");
-  const exportedPath = await download.path();
-  expect(exportedPath ? readFileSync(exportedPath, "utf8") : "").toContain("raw-invalid-record");
-  page.once("dialog", (dialog) => void dialog.dismiss());
-  await page.locator("[data-reset-invalid]").click();
-  await expect(page.locator("main.error-shell")).toBeVisible();
-  page.once("dialog", (dialog) => void dialog.accept());
-  await page.locator("[data-reset-invalid]").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
+  const stored = await page.evaluate(async () => {
+    const request = indexedDB.open("house-of-chances");
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const transaction = request.result.transaction("saves", "readonly");
+        const get = transaction.objectStore("saves").get("current");
+        get.onsuccess = () => resolve((get.result as { data: Record<string, unknown> }).data);
+        get.onerror = () => reject(get.error);
+      };
+    });
+  });
+  expect(stored.schemaVersion).toBe(createDefaultSave().schemaVersion);
+  expect(stored.marker).toBeUndefined();
   await page.reload();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
 });
@@ -388,11 +378,19 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
 test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡面仍可使用", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const source = findTurnsMatch("compact-skills");
+  const oldCardIds = new Set(source.skills.cards.map((card) => card.instanceId));
+  const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-hunter-instinct" };
+  const hunterSequence = source.abilities.sequence + 1;
   imported.settings.reducedMotion = true;
   imported.activeMatch = {
     ...source,
     round: { ...source.round, currentActor: "player" },
-    skills: { ...source.skills, cards: ["hunter-instinct"] }
+    skills: { ...source.skills, cards: [hunterCard] },
+    abilities: {
+      ...source.abilities,
+      instances: [...source.abilities.instances.filter((instance) => !oldCardIds.has(instance.instanceId)), { ...hunterCard, createdAtSequence: hunterSequence, parameters: {} }],
+      sequence: hunterSequence
+    }
   };
   await page.goto("/?debug=1");
   await page.addStyleTag({ content: ".dev-hud { display: none !important; }" });
@@ -401,7 +399,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
   await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(4);
-  const debugBefore = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[] } } };
+  const debugBefore = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
   const playerCardElement = await page.locator(".player-zone .card").first().elementHandle();
   expect(playerCardElement).not.toBeNull();
   const drawerToggle = page.locator(".skill-drawer-toggle");
@@ -509,7 +507,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(page.locator("#skill-info-dialog")).toBeVisible();
   await expect(page.locator("#skill-info-dialog")).toContainText("数学最优 Hit / Stand");
   expect(await activeSkill.allTextContents()).toEqual(activeCardsBefore);
-  const debugAfter = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[] } } };
+  const debugAfter = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
   expect(debugAfter.relevantMatchState.skills.cards).toEqual(debugBefore.relevantMatchState.skills.cards);
   await page.locator("[data-skill-close]").click();
   await expect(page.locator("#skill-info-dialog")).not.toBeVisible();

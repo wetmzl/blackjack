@@ -1,16 +1,7 @@
-import { validateAndMigrateSave, type SaveFile } from "./schema";
+import { validateSave, type SaveFile } from "./schema";
 
 export function exportSaveJson(save: SaveFile): string {
-  return JSON.stringify(validateAndMigrateSave(save), null, 2);
-}
-
-/** Serializes an untrusted recovery record without validating or changing it. */
-export function exportRawSaveJson(raw: unknown): string {
-  let json: string | undefined;
-  try { json = JSON.stringify(raw, null, 2); }
-  catch { throw new Error("原始存档无法序列化。"); }
-  if (json === undefined) throw new Error("原始存档无法序列化。");
-  return json;
+  return JSON.stringify(validateSave(save), null, 2);
 }
 
 export async function importSave(input: string | File): Promise<SaveFile> {
@@ -18,7 +9,7 @@ export async function importSave(input: string | File): Promise<SaveFile> {
   let parsed: unknown;
   try { parsed = JSON.parse(text) as unknown; }
   catch { throw new Error("Invalid save JSON: unable to parse file"); }
-  return validateAndMigrateSave(parsed);
+  return validateSave(parsed);
 }
 
 interface FileSystemWritable { write(data: string): Promise<void>; close(): Promise<void>; }
@@ -33,10 +24,6 @@ export type SaveExportMethod = "file-system-access" | "blob-download";
 
 export async function downloadSave(save: SaveFile, filename = "house-of-chances-save.json"): Promise<SaveExportMethod> {
   return downloadJson(exportSaveJson(save), filename);
-}
-
-export async function downloadRawSave(raw: unknown, filename = "house-of-chances-invalid-save.json"): Promise<SaveExportMethod> {
-  return downloadJson(exportRawSaveJson(raw), filename);
 }
 
 async function downloadJson(json: string, filename: string): Promise<SaveExportMethod> {

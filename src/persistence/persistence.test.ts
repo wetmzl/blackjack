@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { createMatch, gameReducer } from "../core/match/reducer";
+import { createMatch, gameReducer, getLegalActions } from "../core/match/reducer";
 import { bootLoad, acknowledgeMatchResult, createDefaultSave, resetSave, restoreActiveMatch, saveActiveMatch } from "./boot";
 import { createAutosaveController } from "./autosave";
-import { exportRawSaveJson, exportSaveJson, importSave } from "./json";
+import { exportSaveJson, importSave } from "./json";
 import { MemorySaveRepository } from "./memory-repository";
-import { CURRENT_SCHEMA_VERSION, SaveValidationError, validateAndMigrateSave, type SaveFile } from "./schema";
+import { assertMatchStateForSave, CURRENT_SCHEMA_VERSION, SaveValidationError, validateSave, type SaveFile } from "./schema";
 import type { SaveRepository } from "./repository";
 import { requestPersistentStorage } from "./storage";
 
 const NOW = "2026-08-30T00:00:00.000Z";
 
-describe("SaveFile schema, validation, and migration", () => {
+describe("current SaveFile schema and validation", () => {
   it("round-trips a default save and an active MatchState through JSON", async () => {
     const save = saveActiveMatch(createDefaultSave(NOW), createMatch("save-roundtrip"), NOW);
     const imported = await importSave(exportSaveJson(save));
@@ -20,40 +20,75 @@ describe("SaveFile schema, validation, and migration", () => {
     expect(imported.history).toEqual([]);
   });
 
-  it("rejects obsolete v1 saves instead of attempting unsafe migration", () => {
-    const current = createDefaultSave(NOW);
-    const { history: _history, ...v1 } = current;
-    expect(() => validateAndMigrateSave({ ...v1, schemaVersion: 1 })).toThrow(/Unsupported old save schema version/);
-  });
-
   it("rejects malformed nested cards, RNG, guns, and unknown fields", () => {
     const save = createDefaultSave(NOW);
     const invalid = JSON.parse(JSON.stringify(save)) as Record<string, unknown>;
     (invalid.profile as Record<string, unknown>).unexpected = true;
-    expect(() => validateAndMigrateSave(invalid)).toThrow(SaveValidationError);
+    expect(() => validateSave(invalid)).toThrow(SaveValidationError);
 
     const withMatch = JSON.parse(JSON.stringify(saveActiveMatch(save, createMatch("invalid-match"), NOW))) as Record<string, unknown>;
     const match = withMatch.activeMatch as Record<string, unknown>;
     const player = match.player as Record<string, unknown>;
     const hand = player.hand as Record<string, unknown>;
     (hand.cards as Array<Record<string, unknown>>)[0].rank = "JOKER";
-    expect(() => validateAndMigrateSave(withMatch)).toThrow(/activeMatch/);
+    expect(() => validateSave(withMatch)).toThrow(/activeMatch/);
 
     const invalidRng = JSON.parse(JSON.stringify(saveActiveMatch(save, createMatch("invalid-rng"), NOW))) as Record<string, unknown>;
     (((invalidRng.activeMatch as Record<string, unknown>).rng as Record<string, unknown>).ai as Record<string, unknown>).state = -1;
-    expect(() => validateAndMigrateSave(invalidRng)).toThrow(SaveValidationError);
+    expect(() => validateSave(invalidRng)).toThrow(SaveValidationError);
 
     const invalidShoe = JSON.parse(JSON.stringify(saveActiveMatch(save, createMatch("invalid-shoe"), NOW))) as Record<string, unknown>;
     const shoe = (invalidShoe.activeMatch as Record<string, unknown>).shoe as Record<string, unknown>;
     shoe.cursor = (shoe.cards as unknown[]).length + 1;
-    expect(() => validateAndMigrateSave(invalidShoe)).toThrow(/cursor cannot exceed cards length/);
+    expect(() => validateSave(invalidShoe)).toThrow(/cursor cannot exceed cards length/);
   });
 
-  it("rejects unknown, old, and future schema versions clearly", () => {
+  it("accepts only the current schema version and format", () => {
     const save = createDefaultSave(NOW);
-    expect(() => validateAndMigrateSave({ ...save, schemaVersion: CURRENT_SCHEMA_VERSION + 1 })).toThrow(/future save schema version/);
-    expect(() => validateAndMigrateSave({ ...save, schemaVersion: 0 })).toThrow(/Unsupported (old )?save schema version/);
-    expect(() => validateAndMigrateSave({ ...save, format: "other-game" })).toThrow(SaveValidationError);
+    expect(() => validateSave({ ...save, schemaVersion: CURRENT_SCHEMA_VERSION + 1 })).toThrow(/schemaVersion/);
+    expect(() => validateSave({ ...save, schemaVersion: 0 })).toThrow(/schemaVersion/);
+    expect(() => validateSave({ ...save, format: "other-game" })).toThrow(SaveValidationError);
+  });
+
+  it("rejects missing ability definitions and catalog mismatches with locating save errors", () => {
+    const saved = JSON.parse(exportSaveJson(saveActiveMatch(createDefaultSave(NOW), createMatch("ability-save-errors"), NOW))) as Record<string, unknown>;
+    const missing = structuredClone(saved);
+    const missingRuntime = ((missing.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>);
+    ((missingRuntime.instances as Array<Record<string, unknown>>)[0]!).definitionId = "missing-definition";
+    expect(() => validateSave(missing)).toThrow(/activeMatch.*abilities.*instances|unknown ability definition/i);
+
+    const mismatch = structuredClone(saved);
+    (((mismatch.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).catalogVersion) = "abilities-v999";
+    expect(() => validateSave(mismatch)).toThrow(/catalogVersion.*unsupported ability catalog version/i);
+  });
+
+  it("rejects character IDs outside the current catalog", () => {
+    const saved = JSON.parse(exportSaveJson(saveActiveMatch(createDefaultSave(NOW), createMatch("unknown-character"), NOW))) as Record<string, unknown>;
+    (saved.activeMatch as Record<string, unknown>).opponentId = "retired-character";
+    expect(() => validateSave(saved)).toThrow(/activeMatch.*opponentId.*unknown character/i);
+  });
+
+  it("keeps an active save valid after consuming a concrete ability card", () => {
+    let match = createMatch("post-ability-save");
+    for (let index = 0; index < 80; index += 1) {
+      const action = getLegalActions(match).find((candidate) => candidate.type === "PLAY_ABILITY");
+      if (action) { match = gameReducer(match, action); break; }
+      const next = getLegalActions(match).find((candidate) => candidate.type === "AI_TURN" || candidate.type === "PLAYER_STAND" || candidate.type === "ACK_ROUND_RESULT" || candidate.type === "TRIGGER_ROULETTE" || candidate.type === "ACK_TRIGGER_RESULT");
+      if (!next) break;
+      match = gameReducer(match, next);
+    }
+    expect(match.history.some((event) => event.type === "ABILITY_PLAYED")).toBe(true);
+    expect(() => assertMatchStateForSave(match)).not.toThrow();
+  });
+
+  it("round-trips registered character mechanics and does not retrigger on-match-created on restore", async () => {
+    const match = createMatch("mechanic-restore", { opponentMechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] });
+    const openingTriggers = match.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw").length;
+    const save = saveActiveMatch(createDefaultSave(NOW), match, NOW);
+    const restored = restoreActiveMatch(await importSave(exportSaveJson(save)));
+    expect(restored).toEqual(match);
+    expect(restored?.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw")).toHaveLength(openingTriggers);
+    expect(restored?.abilities.instances).toContainEqual(expect.objectContaining({ definitionId: "owner-load-penalty", owner: "opponent" }));
   });
 });
 
@@ -68,15 +103,15 @@ describe("boot and repositories", () => {
     expect(reset.history).toEqual([]);
   });
 
-  it("repository loadRaw preserves the persisted record and raw JSON does not validate it", async () => {
-    const original = createDefaultSave(NOW);
-    const repository = new MemorySaveRepository(original);
-    const raw = await repository.loadRaw();
-    expect(raw).toEqual(original);
-    const marked = { marker: "raw-invalid-record", payload: raw };
-    expect(exportRawSaveJson(marked)).toContain("raw-invalid-record");
-    const circular: Record<string, unknown> = {}; circular.self = circular;
-    expect(() => exportRawSaveJson(circular)).toThrow(/无法序列化/);
+  it("discards an incompatible stored save and overwrites it with a fresh one", async () => {
+    const writes: SaveFile[] = [];
+    const repository: SaveRepository = {
+      load: async () => { throw new SaveValidationError("outdated save"); },
+      save: async (next) => { writes.push(next); }
+    };
+    const fresh = await bootLoad(repository, NOW);
+    expect(fresh).toEqual(createDefaultSave(NOW));
+    expect(writes).toEqual([fresh]);
   });
   it("creates and persists a default save on first boot, then restores active match", async () => {
     const repository = new MemorySaveRepository();
@@ -111,7 +146,6 @@ describe("serial autosave", () => {
     readonly writes: SaveFile[] = [];
     private sequence = Promise.resolve();
     async load(): Promise<SaveFile | null> { return null; }
-    async loadRaw(): Promise<unknown | null> { return null; }
     async save(save: SaveFile): Promise<void> {
       const snapshot = save;
       this.sequence = this.sequence.then(async () => {
