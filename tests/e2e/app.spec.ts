@@ -6,6 +6,7 @@ import { createMatch } from "../../src/core/match/reducer";
 import type { MatchHistoryRecord } from "../../src/core/match/history";
 import type { MatchState } from "../../src/core/match/types";
 import { getAiTurnDelayMs } from "../../src/presentation/ai-timing";
+import { createDerivedCard } from "../../src/core/blackjack/card";
 
 const wDialogue = (JSON.parse(readFileSync(new URL("../../src/content/characters/data/w.json", import.meta.url), "utf8")) as {
   dialogue: { PLAYER_BLACKJACK: string[]; PLAYER_WIN_ROUND: string[] };
@@ -154,7 +155,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(dialogue).not.toHaveText("");
   await page.locator("button[data-action*='ESCAPE_MATCH']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
-  await page.getByRole("button", { name: "返回舞会大厅" }).click();
+  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
 });
 
@@ -207,9 +208,9 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
 
-  await page.locator("button[aria-label='离开余兴牌桌']").click();
+  await page.locator("button[data-action*='ESCAPE_MATCH']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
-  await page.getByRole("button", { name: "返回舞会大厅" }).click();
+  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
   await enterCharacterSelection(page);
   await expect(page.locator(".character-card")).toHaveCount(4);
   const ireneRequestedPaths: string[] = [];
@@ -235,6 +236,23 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-strip .eyebrow")).toContainText("年 // S级");
   await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted)\.png/);
+});
+
+test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.settings.reducedMotion = true;
+  const source = findTurnsMatch("derived-card-visibility");
+  const opponent = { ...source.opponent, hand: { cards: [source.opponent.hand.cards[0]!, createDerivedCard("hearts", "K")] } };
+  imported.activeMatch = { ...source, opponent, round: { ...source.round, opponent } };
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "derived.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  const hidden = page.locator(".opponent-zone .cards .card").nth(1);
+  await expect(hidden).toHaveClass(/card-back/);
+  await expect(hidden).toHaveAttribute("data-card-origin", "derived");
+  await expect(hidden).toHaveAttribute("aria-label", "暗牌");
+  await expect(hidden).not.toContainText("K");
+  await expect(hidden).not.toContainText("♥");
 });
 
 test("设置原地保存并走中文导入导出", async ({ page }) => {
@@ -362,13 +380,13 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
-  await expect(page.getByRole("heading", { name: "博士胜利" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "策展人胜利" })).toBeVisible();
   await expect(page.locator(".summary-character")).toHaveAttribute("src", /w-defeated-summary-chair\.png/);
   await expect(page.locator(".unlock-panel")).toContainText("暗夜女王");
   await expect(page.locator(".presentation")).toHaveCount(0);
   let nativeDialogs = 0;
   page.on("dialog", (dialog) => { nativeDialogs += 1; void dialog.dismiss(); });
-  await page.getByRole("button", { name: "返回舞会大厅" }).click();
+  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   expect(nativeDialogs).toBe(0);
   await page.getByRole("button", { name: "技能管理" }).click();
@@ -600,7 +618,7 @@ test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏",
   await page.locator("[data-history-id='history-win']").click();
   const detail = page.locator("#history-detail");
   await expect(detail).toBeVisible();
-  await expect(detail).toContainText("博士最终左轮");
+  await expect(detail).toContainText("策展人最终左轮");
   await expect(detail).toContainText("3 / 6");
   await expect(detail.locator(".history-trophy-preview > img")).toHaveAttribute("src", /nian-trophy-gallery-headshot\.png/);
   await expect(detail.locator(".history-trophy-preview")).toContainText("战利品等级：S");
@@ -613,11 +631,11 @@ test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏",
   await detail.screenshot({ path: testInfo.outputPath("nian-trophy-history.png") });
   await expect(detail).toContainText("年最终左轮");
   await expect(detail).toContainText("5 / 6");
-  await expect(detail).toContainText("博士爆牌");
+  await expect(detail).toContainText("策展人爆牌");
   await expect(detail).toContainText("1 次");
   await expect(detail).toContainText("年爆牌");
   await expect(detail).toContainText("2 次");
-  await expect(detail).toContainText("博士黑杰克");
+  await expect(detail).toContainText("策展人黑杰克");
   await expect(detail).toContainText("2 次");
   await expect(detail).toContainText("年黑杰克");
   expect(await detail.locator(".history-stats dd").allTextContents()).toEqual(["3 / 6", "5 / 6", "1 次", "2 次", "2 次", "1 次"]);
@@ -802,7 +820,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   await expect(page.locator("main.summary-shell")).toBeVisible({ timeout: 8_000 });
   expect(sawReveal).toBe(true);
   expect(sawTriggerResult).toBe(true);
-  await page.getByRole("button", { name: "返回舞会大厅" }).click();
+  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await page.locator("[data-open-trophies]").click();
   await expect(page.locator(".trophy-card")).toHaveCount(1);

@@ -6,18 +6,21 @@ import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, val
 import characterCatalog from "../content/characters/catalog.json" with { type: "json" };
 
 export const SAVE_FORMAT = "house-of-chances-save" as const;
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
-const CardSchema = z.object({
+const CardFaceSchema = {
   suit: z.enum(["spades", "hearts", "diamonds", "clubs"]),
   rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"])
-}).strict();
+};
+const PhysicalCardSchema = z.object({ ...CardFaceSchema, origin: z.literal("shoe") }).strict();
+const DerivedCardSchema = z.object({ ...CardFaceSchema, origin: z.literal("derived") }).strict();
+const CardSchema = z.discriminatedUnion("origin", [PhysicalCardSchema, DerivedCardSchema]);
 const HandSchema = z.object({ cards: z.array(CardSchema) }).strict();
 const RngSnapshotSchema = z.object({ seed: z.string(), state: z.number().int().min(0).max(0xffffffff) }).strict();
 const CHARACTER_IDS = new Set(characterCatalog.characters.map((character) => character.id));
 const CharacterIdSchema = z.string().min(1).refine((id) => CHARACTER_IDS.has(id), "unknown character");
-const ShoeSchema = z.object({ cards: z.array(CardSchema), cursor: z.number().int().min(0), shuffleIndex: z.number().int().min(0) }).strict()
+const ShoeSchema = z.object({ cards: z.array(PhysicalCardSchema), cursor: z.number().int().min(0), shuffleIndex: z.number().int().min(0) }).strict()
   .refine((shoe) => shoe.cursor <= shoe.cards.length, "cursor cannot exceed cards length");
 const GunSchema = z.object({ capacity: z.number().int().positive(), bullets: z.number().int().min(0) }).strict()
   .refine((gun) => gun.bullets <= gun.capacity, "bullets cannot exceed capacity");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardValue, createCard, createStandardDeck } from "./card";
+import { cardValue, createCard, createDerivedCard, createStandardDeck, isDerivedCard, isPhysicalCard } from "./card";
 import { createHand, handValue, isBlackjack, isBust, isTwentyOne } from "./hand";
 import { createShoe, dealInitialHands, drawCard, shuffle, shoeRemaining } from "./shoe";
 import { getRoundStarter } from "./round";
@@ -29,6 +29,17 @@ describe("blackjack hand rules", () => {
     expect(isBlackjack(later21)).toBe(false);
     expect(isTwentyOne(blackjack)).toBe(true);
     expect(isTwentyOne(later21)).toBe(true);
+  });
+
+  it("scores derived cards normally but never treats them as natural Blackjack", () => {
+    const derivedAce = createDerivedCard("spades", "A");
+    const hand = createHand([derivedAce, createCard("hearts", "K")]);
+    expect(handValue(hand)).toBe(21);
+    expect(hand.cards).toHaveLength(2);
+    expect(new Set(hand.cards.map((card) => card.suit))).toEqual(new Set(["spades", "hearts"]));
+    expect(isBlackjack(hand)).toBe(false);
+    expect(isDerivedCard(derivedAce)).toBe(true);
+    expect(isPhysicalCard(createCard("clubs", "2"))).toBe(true);
   });
 
   it("detects bust hands", () => {
@@ -69,6 +80,7 @@ describe("shoe and deterministic dealing", () => {
     const deck = createStandardDeck();
     expect(deck).toHaveLength(52);
     expect(new Set(deck.map((card) => `${card.rank}-${card.suit}`)).size).toBe(52);
+    expect(deck.every(isPhysicalCard)).toBe(true);
   });
 
   it("shuffles deterministically without changing the cards", () => {

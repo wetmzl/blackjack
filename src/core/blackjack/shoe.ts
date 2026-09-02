@@ -1,5 +1,5 @@
 import { createStandardDeck } from "./card";
-import type { Card, ShoeState } from "./types";
+import type { PhysicalCard, ShoeState } from "./types";
 import { SeededRng } from "../rng/seeded";
 
 export function shuffle<T>(items: readonly T[], rng: SeededRng): T[] {
@@ -11,7 +11,7 @@ export function shuffle<T>(items: readonly T[], rng: SeededRng): T[] {
   return result;
 }
 
-export function createShoe(rng: SeededRng, deck: readonly Card[] = createStandardDeck()): ShoeState {
+export function createShoe(rng: SeededRng, deck: readonly PhysicalCard[] = createStandardDeck()): ShoeState {
   return { cards: shuffle(deck, rng), cursor: 0, shuffleIndex: 1 };
 }
 
@@ -19,7 +19,7 @@ export function shoeRemaining(shoe: ShoeState): number {
   return Math.max(0, shoe.cards.length - shoe.cursor);
 }
 
-export function drawCard(shoe: ShoeState): { card: Card; shoe: ShoeState } {
+export function drawCard(shoe: ShoeState): { card: PhysicalCard; shoe: ShoeState } {
   if (shoe.cursor >= shoe.cards.length) throw new Error("Cannot draw from an empty shoe");
   return {
     card: shoe.cards[shoe.cursor],
@@ -28,15 +28,15 @@ export function drawCard(shoe: ShoeState): { card: Card; shoe: ShoeState } {
 }
 
 export interface InitialDeal {
-  readonly player: readonly [Card, Card];
-  readonly opponent: readonly [Card, Card];
+  readonly player: readonly [PhysicalCard, PhysicalCard];
+  readonly opponent: readonly [PhysicalCard, PhysicalCard];
   readonly shoe: ShoeState;
 }
 
 /** Deal order is player public, opponent public, player private, opponent private. */
 export function dealInitialHands(shoe: ShoeState): InitialDeal {
   let nextShoe = shoe;
-  const draw = (): Card => {
+  const draw = (): PhysicalCard => {
     const result = drawCard(nextShoe);
     nextShoe = result.shoe;
     return result.card;

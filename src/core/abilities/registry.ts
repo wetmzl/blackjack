@@ -7,12 +7,13 @@ import siracusanFury from "../../content/abilities/player-skills/siracusan-fury.
 import ownerLoadPenalty from "../../content/abilities/character-mechanics/owner-load-penalty.json" with { type: "json" };
 import rivalBustLoad from "../../content/abilities/character-mechanics/rival-bust-load.json" with { type: "json" };
 import actionAdviceMechanic from "../../content/abilities/character-mechanics/action-advice-mechanic.json" with { type: "json" };
+import handChangeObserver from "../../content/abilities/character-mechanics/hand-change-observer.json" with { type: "json" };
 import rhodesHeartthrobStatus from "../../content/abilities/statuses/rhodes-heartthrob-armed.json" with { type: "json" };
 import nightQueenStatus from "../../content/abilities/statuses/night-queen-armed.json" with { type: "json" };
 import { AbilityDefinitionSchema, StatusDefinitionSchema, validateBinding } from "./schema";
 import type { AbilityBinding, AbilityDefinition, AbilityInstance, StatusDefinition } from "./types";
 
-export const ABILITY_CATALOG_VERSION = "abilities-v1" as const;
+export const ABILITY_CATALOG_VERSION = "abilities-v2" as const;
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
@@ -21,7 +22,7 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const definitions = [earlyPreparation, hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, siracusanFury, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic]
+const definitions = [earlyPreparation, hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, siracusanFury, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver]
   .map((value) => deepFreeze(AbilityDefinitionSchema.parse(value) as AbilityDefinition));
 const statuses = [rhodesHeartthrobStatus, nightQueenStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
 export const ABILITY_DEFINITIONS: readonly AbilityDefinition[] = Object.freeze(definitions);

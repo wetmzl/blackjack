@@ -53,6 +53,7 @@ export function evaluateCondition(condition: Condition, context: ConditionContex
     case "hand-card-count": { const hand = handFor(condition.target, context); return Boolean(hand && compare(handCardCount(hand), condition.operator, resolveScalar(condition.value, context))); }
     case "hand-total": { const hand = handFor(condition.target, context); return Boolean(hand && compare(handTotal(hand), condition.operator, resolveScalar(condition.value, context))); }
     case "hand-all-same-suit": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && new Set(hand.cards.map((card) => card.suit)).size === 1); }
+    case "hand-card-origin-is": { const hand = handFor(condition.target, context); return hand?.cards.at(-1)?.origin === condition.origin; }
     case "card-candidate-exists": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && candidateExists(hand, context, condition.candidate)); }
     case "hand-is-twenty-one": { const hand = handFor(condition.target, context); return Boolean(hand && handTotal(hand) === 21); }
     case "gun-bullets": { const actor = resolveActor(condition.target, context); return Boolean(actor && compare(gunBullets(context.world.guns[actor]), condition.operator, resolveScalar(condition.value, context))); }

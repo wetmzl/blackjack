@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createHand } from "../blackjack/hand";
-import { createCard } from "../blackjack/card";
+import { createCard, createDerivedCard } from "../blackjack/card";
 import { createRng } from "../rng/seeded";
 import { AbilityDefinitionSchema } from "./schema";
 import { ABILITY_DEFINITIONS, createAbilityRegistry, getAbilityDefinition, validateAbilityBinding } from "./registry";
 import { canConsumeRule, clearCounters, clearEventCounters, consumeRule, createAbilityRuntime, expireStatuses, garbageCollectAbilityInstances } from "./runtime";
 import { AbilityResolutionError, MAX_ABILITY_DEPTH, canPlayAbility, playAbility, resolveAbilityEvent } from "./engine";
+import { drawExactResultingTotal, replaceLastHandCard } from "./card-zone-adapter";
+import { evaluateCondition } from "./conditions";
 import type { AbilityInstance, AbilityRuntimeState, AbilityStatus, AbilityWorld, SkillCardInstance } from "./types";
 
 const gun = { capacity: 6, bullets: 2 };
@@ -46,9 +48,9 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers six player skills and three reusable character fixtures as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(9);
+    expect(ABILITY_DEFINITIONS).toHaveLength(10);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(6);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(3);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(4);
     expect(ABILITY_DEFINITIONS.every((definition) => definition.rules.length > 0)).toBe(true);
     expect(Object.isFrozen(ABILITY_DEFINITIONS[0]?.rules[0]?.effects[0])).toBe(true);
   });
@@ -81,6 +83,35 @@ describe("ability schemas and immutable registry", () => {
 });
 
 describe("generic resolution and lifecycle", () => {
+  it("creates derived exact-total cards without consuming the shoe and keeps them out of physical-card conditions", () => {
+    const shoe = { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 };
+    const hand = createHand([createCard("hearts", "6"), createCard("hearts", "6")]);
+    const result = drawExactResultingTotal(shoe, hand, createRng("derived-exact"), 21);
+    expect(result).toBeDefined();
+    expect(result?.derived).toBe(true);
+    expect(result?.card.origin).toBe("derived");
+    expect(result?.shoe).toBe(shoe);
+    expect(result?.shoe.cursor).toBe(0);
+
+    const ability = mechanic("hand-change-observer", "player");
+    const conditionWorld = { ...world(), hands: { ...world().hands, player: createHand([createCard("spades", "10"), result!.card]) } };
+    const context = { world: conditionWorld, ability, event: { trigger: "after-hand-changed" as const, sourceEventId: "derived-origin", eventActor: "player" as const } };
+    expect(evaluateCondition({ type: "hand-card-origin-is", target: "owner", card: "last-card", origin: "derived" }, context)).toBe(true);
+    expect(evaluateCondition({ type: "hand-card-origin-is", target: "owner", card: "last-card", origin: "shoe" }, context)).toBe(false);
+  });
+
+  it("dissipates a derived card replaced from hand instead of returning it to the shoe", () => {
+    const derived = createDerivedCard("hearts", "5");
+    const hand = createHand([createCard("spades", "10"), derived]);
+    const shoe = { cards: [createCard("clubs", "2"), createCard("diamonds", "3")], cursor: 0, shuffleIndex: 1 };
+    const result = replaceLastHandCard(shoe, hand, createRng("replace-derived"), "at-most", 21);
+    expect(result).toBeDefined();
+    expect(result?.shoe.cursor).toBe(1);
+    expect(result?.hand.cards.some((card) => card.origin === "derived")).toBe(false);
+    expect(result?.shoe.cards.every((card) => card.origin === "shoe")).toBe(true);
+    expect(result?.shoe.cards).not.toContainEqual(derived);
+  });
+
   it("uses owner/rival relative semantics for both actors", () => {
     const registry = createAbilityRegistry([relativeFixture]);
     for (const owner of ["player", "opponent"] as const) {
@@ -147,7 +178,7 @@ describe("generic resolution and lifecycle", () => {
     const invalid = {
       id: "invalid-action-context", name: "invalid", description: "fixture", sourceKind: "player-skill",
       activation: { type: "action", windows: ["owner-turn"], consume: "card" }, tags: [],
-      rules: [{ id: "requires-draw", trigger: "on-ability-played", effects: [{ type: "replace-pending-draw", target: "owner", policy: { type: "exact-resulting-total", total: 21, fallback: "synthesize-compatible-card" } }] }]
+      rules: [{ id: "requires-draw", trigger: "on-ability-played", effects: [{ type: "replace-pending-draw", target: "owner", policy: { type: "exact-resulting-total", total: 21, fallback: "create-derived-card" } }] }]
     } as const;
     const registry = createAbilityRegistry([invalid]);
     const card: SkillCardInstance = { kind: "player-skill", definitionId: invalid.id, owner: "player", instanceId: "invalid-card" };

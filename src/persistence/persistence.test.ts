@@ -7,6 +7,8 @@ import { MemorySaveRepository } from "./memory-repository";
 import { assertMatchStateForSave, CURRENT_SCHEMA_VERSION, SaveValidationError, validateSave, type SaveFile } from "./schema";
 import type { SaveRepository } from "./repository";
 import { requestPersistentStorage } from "./storage";
+import { createDerivedCard } from "../core/blackjack/card";
+import { addCard } from "../core/blackjack/hand";
 
 const NOW = "2026-08-30T00:00:00.000Z";
 
@@ -89,6 +91,19 @@ describe("current SaveFile schema and validation", () => {
     expect(restored).toEqual(match);
     expect(restored?.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw")).toHaveLength(openingTriggers);
     expect(restored?.abilities.instances).toContainEqual(expect.objectContaining({ definitionId: "owner-load-penalty", owner: "opponent" }));
+  });
+
+  it("persists derived cards in hands but rejects them inside the physical shoe", () => {
+    const base = createMatch("derived-save");
+    const player = { ...base.player, hand: addCard(base.player.hand, createDerivedCard("hearts", "5")) };
+    const match = { ...base, player, round: { ...base.round, player } };
+    const save = saveActiveMatch(createDefaultSave(NOW), match, NOW);
+    expect(validateSave(JSON.parse(exportSaveJson(save)) as unknown).activeMatch?.player.hand.cards.at(-1)?.origin).toBe("derived");
+
+    const invalid = JSON.parse(exportSaveJson(save)) as Record<string, unknown>;
+    const shoe = ((invalid.activeMatch as Record<string, unknown>).shoe as Record<string, unknown>);
+    ((shoe.cards as Array<Record<string, unknown>>)[0]!).origin = "derived";
+    expect(() => validateSave(invalid)).toThrow(/activeMatch.*shoe.*cards/i);
   });
 });
 

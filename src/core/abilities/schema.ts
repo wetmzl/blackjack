@@ -15,6 +15,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("hand-card-count"), target: actorSelector, operator: compare, value: scalar }).strict(),
   z.object({ type: z.literal("hand-total"), target: actorSelector, operator: compare, value: scalar }).strict(),
   z.object({ type: z.literal("hand-all-same-suit"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("hand-card-origin-is"), target: actorSelector, card: z.literal("last-card"), origin: z.enum(["shoe", "derived"]) }).strict(),
   z.object({ type: z.literal("card-candidate-exists"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate }).strict(),
   z.object({ type: z.literal("hand-is-twenty-one"), target: actorSelector }).strict(),
   z.object({ type: z.literal("gun-bullets"), target: actorSelector, operator: compare, value: scalar }).strict(),
@@ -31,7 +32,7 @@ const effect = z.union([
   z.object({ type: z.literal("replace-hand-card"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate, pick: z.literal("uniform-ability-rng") }).strict(),
   z.object({ type: z.literal("add-status"), target: actorSelector, statusDefinitionId: z.string().min(1), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).optional() }).strict(),
   z.object({ type: z.literal("remove-status"), target: actorSelector, statusDefinitionId: z.string().min(1), amount: scalar.optional() }).strict(),
-  z.object({ type: z.literal("replace-pending-draw"), target: actorSelector, policy: z.object({ type: z.literal("exact-resulting-total"), total: scalar, fallback: z.literal("synthesize-compatible-card") }).strict() }).strict(),
+  z.object({ type: z.literal("replace-pending-draw"), target: actorSelector, policy: z.object({ type: z.literal("exact-resulting-total"), total: scalar, fallback: z.literal("create-derived-card") }).strict() }).strict(),
   z.object({ type: z.literal("add-to-pending-load"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("multiply-pending-load"), target: actorSelector, factor: scalar }).strict(),
   z.object({ type: z.literal("cancel-pending-trigger"), target: actorSelector }).strict()

@@ -13,6 +13,11 @@ During rapid development, saves are current-version only. Bump
 stored save is discarded on boot and replaced with a fresh save. Do not add
 save migrations or legacy ability/event compatibility paths.
 
+`replace-pending-draw` may use the `create-derived-card` fallback when no
+physical card can satisfy an exact resulting total. A derived card does not
+mutate the physical shoe or enter a discard pile; do not use this fallback as a
+general substitute for selecting real cards.
+
 When a rule needs a new kind of fact, add a reusable condition primitive to
 `types.ts` and its strict Zod branch to `schema.ts`, then implement the same
 primitive in `conditions.ts`. For a state transition, add an effect primitive
@@ -41,9 +46,17 @@ Character JSON binds an existing definition with `{ definitionId, enabled,
 parameters }`. Bindings are checked against the definition's declared
 parameter table; unknown, missing, or out-of-range values fail during loading.
 
+Cards have an explicit `origin`: `shoe` for physical cards and `derived` for
+temporary cards. A derived card scores and counts normally, but never qualifies
+for natural Blackjack or a physical-card condition. It must never be inserted
+into `ShoeState.cards`; replacement removes it permanently, and starting the
+next round drops it with the old hand. Hidden rendering may expose only the
+origin marker—never its suit or rank.
+
 Test-only mechanisms live beside production content but remain unbound in
 formal character JSON. `owner-load-penalty` and `rival-bust-load` exercise
 automatic/passive owner-relative resolution; `action-advice-mechanic` proves a
-card-free active character action enters the same legal-action pipeline. They
-are canonical test fixtures so character loading, saves, and replay all use the
-same immutable definitions.
+card-free active character action enters the same legal-action pipeline; and
+`hand-change-observer` verifies that only real hand mutations broadcast
+`after-hand-changed`. They are canonical test fixtures so character loading,
+saves, and replay all use the same immutable definitions.

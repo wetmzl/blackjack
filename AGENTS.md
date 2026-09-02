@@ -1,64 +1,34 @@
-# Agent Notes
+# 项目协作规范
 
-## Cloudflare Pages CI/CD
+本文件是仓库唯一的 Agent 入口，只保留长期有效的设计约束、工作约束和文档索引。具体玩法、架构与操作步骤以 `docs/` 中的专题文档为准。
 
-This repository's production static site is deployed with Cloudflare Pages Direct Upload.
+## 设计规范
 
-- Pages project: `blackjack`
-- Production branch: `main`
-- Build command: `npm run build`
-- Build output: `dist/`
-- Production URL: `https://blackjack-9bp.pages.dev`
-- Wrangler version used for the first release: `4.128.0`
+- 产品是 Android 竖屏优先的单机 PWA，核心体验是“黑杰克 + 累积式俄罗斯轮盘 + 技能 + 角色叙事”。桌面端应可用，但不是视觉基准。
+- 玩家扮演“策展人”，代码中的 `player` 指策展人，`opponent` / `AI` 指与会者，`staff` 指发牌员。`player-killed`、`unconscious`、`defeated`、`trophy` 等是兼容性标识，不应按字面扩写剧情。
+- 策展人受罚时枪口朝向天花板；与会者受罚时由发牌员瞄准其头部。与会者不知道策展人能够回溯失败时间线，任何角色对白不得泄露这一真相。
+- 面向玩家的 UI 文案使用中文；Hit、Stand 等牌桌术语可保留英文并附中文。信息层级、按钮尺寸、安全区和反馈节奏首先服务于 390×844 与 320×720 的触屏体验。
+- 视觉方向是清晰、克制的日式二次元手游：角色、牌桌、背景共享色彩与光照；人物表情在手机尺寸下可辨；不使用原作解包素材，不让生成模型绘制需要规则准确性的牌面或文字。
+- 角色、对白、能力和状态优先由受 Schema 校验的数据驱动。新增内容不得在核心逻辑中加入角色 ID 或能力 ID 特判。
+- 不擅自改变既有游戏规则、叙事语义或已经验收的美术基线。规则细节见 [玩法设计](docs/game-design.md)，美术规格见 [新增与会者工作流](docs/adding-a-character.md)。
 
-### Credentials
+## 工作规范
 
-Local Cloudflare credentials are stored in the git-ignored `.env.local` file. Never print, copy into source files, or commit their values.
+- 修改前先阅读相关实现、测试、Schema 与专题文档；发生冲突时，以当前代码和测试证明的行为为事实，并在同一改动中修正文档。
+- 工作区中的未提交内容均视为用户工作。不要覆盖、回滚或顺手整理与任务无关的改动。
+- 优先做最小且完整的改动。除非需求确实超出现有边界，不新增依赖、不更换框架、不进行全仓重构。
+- `src/core/` 保持纯 TypeScript 与确定性：不依赖 DOM、Dexie、音频或计时器；领域随机数使用可保存的 seeded RNG；UI 只派发合法 Action，不直接改写领域状态。
+- AI 只能读取过滤后的 observation；对白和表现层不得消耗或改变领域随机流；异步动画、音效和延迟不得进入 reducer。
+- 角色内容直接维护 `src/content/characters/` 下的目录和 JSON；能力内容直接维护 `src/content/abilities/` 下的 JSON 与注册表。具体步骤遵循对应工作流文档。
+- 改动规则或数据契约时同步更新测试。一般提交前运行 `npm test` 与 `npm run build`；涉及交互时再运行 `npm run test:e2e`。
+- 不打印、复制或提交 `.env.local` 及其中的凭据。部署密钥只进入本机环境或 CI 的加密 Secret。
 
-The Pages deployment requires:
+## 文档入口
 
-- `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_API_TOKEN`
-
-R2/S3 variables in `.env.local` are unrelated to a normal static Pages deployment. Do not add them to hosted CI unless a future build or deployment step actually uses R2.
-
-In hosted CI, configure `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in the CI provider's encrypted secret store rather than creating `.env.local`.
-
-### Local production deployment
-
-Run from the repository root:
-
-```bash
-set -a
-source ./.env.local
-set +a
-npm run build
-npx --yes wrangler@4.128.0 pages deploy dist --project-name blackjack --branch main
-```
-
-The `blackjack` Pages project already exists. Do not run `pages project create` during routine deployments.
-
-The existing `npm run deploy` command restarts the local systemd service; it does not deploy to Cloudflare Pages.
-
-### CI deployment steps
-
-For a clean CI runner with the two Cloudflare secrets injected as environment variables:
-
-```bash
-npm ci
-npm run build
-npx --yes wrangler@4.128.0 pages deploy dist --project-name blackjack --branch main
-```
-
-Deploy `main` only after the build succeeds. Feature branches may omit `--branch main` or pass their actual branch name to create preview deployments.
-
-### Verification
-
-After production deployment, verify the stable URL:
-
-```bash
-curl --fail --silent --show-error --location --output /dev/null \
-  --write-out '%{http_code}\n' https://blackjack-9bp.pages.dev/
-```
-
-Expected status: `200`.
+- [文档索引](docs/README.md)
+- [玩法与叙事设计](docs/game-design.md)
+- [技术架构](docs/architecture.md)
+- [新增与会者工作流](docs/adding-a-character.md)
+- [新增能力工作流](docs/adding-an-ability.md)
+- [美术资源管线](tools/art/README.md)
+- [构建与部署](docs/deployment.md)

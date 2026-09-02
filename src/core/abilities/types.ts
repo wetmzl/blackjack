@@ -1,4 +1,4 @@
-import type { Card, Hand, ShoeState } from "../blackjack/types";
+import type { Card, CardOrigin, Hand, ShoeState } from "../blackjack/types";
 import type { GunState } from "../roulette/types";
 import type { RngSnapshot } from "../rng/seeded";
 
@@ -23,7 +23,7 @@ export type RandomPick = "uniform-ability-rng";
 export type CardCandidate =
   | { readonly type: "resulting-hand-total-at-most"; readonly value: ScalarValue }
   | { readonly type: "resulting-hand-total-exactly"; readonly value: ScalarValue };
-export type DrawReplacementPolicy = { readonly type: "exact-resulting-total"; readonly total: ScalarValue; readonly fallback: "synthesize-compatible-card" };
+export type DrawReplacementPolicy = { readonly type: "exact-resulting-total"; readonly total: ScalarValue; readonly fallback: "create-derived-card" };
 
 export type Condition =
   | { readonly type: "actor-is"; readonly actor: ActorSelector }
@@ -31,6 +31,7 @@ export type Condition =
   | { readonly type: "hand-card-count"; readonly target: ActorSelector; readonly operator: Compare; readonly value: ScalarValue }
   | { readonly type: "hand-total"; readonly target: ActorSelector; readonly operator: Compare; readonly value: ScalarValue }
   | { readonly type: "hand-all-same-suit"; readonly target: ActorSelector }
+  | { readonly type: "hand-card-origin-is"; readonly target: ActorSelector; readonly card: CardSelector; readonly origin: CardOrigin }
   | { readonly type: "card-candidate-exists"; readonly target: ActorSelector; readonly card: CardSelector; readonly source: CardSource; readonly candidate: CardCandidate }
   | { readonly type: "hand-is-twenty-one"; readonly target: ActorSelector }
   | { readonly type: "gun-bullets"; readonly target: ActorSelector; readonly operator: Compare; readonly value: ScalarValue }

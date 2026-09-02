@@ -58,6 +58,14 @@ export function commitAbilityWorld(state: MatchState, world: AbilityWorld): Matc
   return { ...state, player: { ...state.player, hand: world.hands.player }, opponent: { ...state.opponent, hand: world.hands.opponent }, shoe: world.shoe, roulette: world.guns, skills: skillState(state, { cards: [...world.cards], advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
 }
 
+function changedHandActors(before: AbilityWorld, after: AbilityWorld): Actor[] {
+  return (["player", "opponent"] as const).filter((actor) => before.hands[actor].cards !== after.hands[actor].cards);
+}
+
+function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourceEventId: string): MatchState {
+  return actors.reduce((next, actor) => runAbilityEvent(next, { trigger: "after-hand-changed", sourceEventId: `${sourceEventId}:${actor}`, eventActor: actor }, {}).state, state);
+}
+
 function drawSkillCards(state: MatchState, owner: Actor, amount: number, world: AbilityWorld, rng: SeededRng): readonly SkillCardInstance[] {
   if (owner !== "player") return [];
   const pool = state.skills.equippedSkillIds.filter(isActiveSkill);
@@ -141,11 +149,12 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
   const updated = { ...current, hand: addCard(current.hand, card) };
   next = withRound(next, { ...next.round, [actor]: updated } as RoundState);
   next = append(next, { type: actor === "player" ? "PLAYER_HIT" : "OPPONENT_HIT", value: handValue(updated.hand) }, { type: "CARD_DEALT", actor, card, private: true });
+  const beforeAfterDraw = abilityWorld(next);
   const afterDraw = runAbilityEvent(next, { trigger: "after-card-draw", sourceEventId: `after:${pending.id}`, eventActor: actor }, {}).state;
-  let changed = runAbilityEvent(afterDraw, { trigger: "after-hand-changed", sourceEventId: `hand:${pending.id}`, eventActor: actor }, {}).state;
-  if (isBust(changed[actor].hand)) { changed = withRound(changed, { ...changed.round, [actor]: { ...changed[actor], busted: true, stood: true } } as RoundState); return resolveBust(append(changed, { type: "BUST", actor }), actor); }
-  changed = normalizeAbilityHands(changed);
-  if (changed[actor].stood) { if (changed[actor === "player" ? "opponent" : "player"].stood) return resolveComparison(changed); return setPhase(changed, "turns", actor === "player" ? "opponent" : "player"); }
+  const changedActors = [...new Set<Actor>([actor, ...changedHandActors(beforeAfterDraw, abilityWorld(afterDraw))])];
+  let changed = normalizeAbilityHands(broadcastHandChanges(afterDraw, changedActors, `hand:${pending.id}`));
+  if (changed.round.phase !== "turns") return changed;
+  if (changed[actor].stood) return setPhase(changed, "turns", actor === "player" ? "opponent" : "player");
   const other = actor === "player" ? "opponent" : "player";
   return setPhase(changed, "turns", changed[other].stood ? actor : other);
 }
@@ -177,14 +186,25 @@ function triggerFor(state: MatchState, actor: Actor): MatchState {
   return append({ ...next, status: "finished", view: "table", scene: "match", outcome }, { type: "PARTICIPANT_KILLED", actor }, { type: "MATCH_FINISHED", reason });
 }
 
-function normalizeAbilityHands(state: MatchState): MatchState {
+export function normalizeAbilityHands(state: MatchState): MatchState {
+  if (state.round.phase !== "turns") return state;
   let next = state;
+  const busts: Actor[] = [];
   for (const actor of ["player", "opponent"] as const) {
-    if (!next[actor].stood && isTwentyOne(next[actor].hand)) {
+    if (isBust(next[actor].hand)) {
+      busts.push(actor);
+      if (!next[actor].busted) {
+        next = withRound(next, { ...next.round, [actor]: { ...next[actor], busted: true, stood: true } } as RoundState);
+        next = append(next, { type: "BUST", actor });
+      }
+    } else if (!next[actor].stood && isTwentyOne(next[actor].hand)) {
       next = withRound(next, { ...next.round, [actor]: { ...next[actor], stood: true } } as RoundState);
       next = append(next, { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
     }
   }
+  if (busts.length > 1) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 });
+  if (busts.length === 1) return resolveBust(next, busts[0]!);
+  if (next.player.stood && next.opponent.stood) return resolveComparison(next);
   return next;
 }
 
@@ -197,14 +217,15 @@ function play(state: MatchState, instanceId: string): MatchState {
   if (!canPlayAbility(input)) return state;
   try {
     const result = playAbility(input);
+    const handChanges = changedHandActors(input.world, result.world);
     let next = commitAbilityWorld(state, result.world);
     next = { ...next, abilities: clearEventCounters({ ...result.runtime, statuses: result.world.statuses }, `ability:${instanceId}`) };
     next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.skills.cards) };
     next = append(next, ...result.events as GameEvent[]);
-    next = runAbilityEvent(next, { trigger: "after-hand-changed", sourceEventId: `ability-hand:${instanceId}:${state.history.length}`, eventActor: instance.owner }, {}).state;
+    if (handChanges.length > 0) next = broadcastHandChanges(next, handChanges, `ability-hand:${instanceId}:${state.history.length}`);
     if (next.round.phase === "turns") {
       next = normalizeAbilityHands(next);
-      if (next.player.stood && next.opponent.stood) return resolveComparison(next);
+      if (next.round.phase !== "turns") return next;
       if (next[instance.owner].stood) return setPhase(next, "turns", instance.owner === "player" ? "opponent" : "player");
     }
     return next;

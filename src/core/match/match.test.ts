@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { createCard } from "../blackjack/card";
+import { createCard, createDerivedCard } from "../blackjack/card";
 import { createHand, handValue } from "../blackjack/hand";
+import type { Card } from "../blackjack/types";
 import { createRng } from "../rng/seeded";
 import { buildObservation } from "../ai/observation";
 import { decideAiAction, finalHitProbability } from "../ai/policy";
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
-import { createMatch, gameReducer, getLegalActions, resolveRound } from "./reducer";
+import { createMatch, gameReducer, getLegalActions, normalizeAbilityHands, resolveRound } from "./reducer";
 import type { MatchState, ParticipantState, RoundState } from "./types";
 
 const W_DIALOGUE = wData.dialogue;
@@ -15,7 +16,7 @@ const W_DIALOGUE = wData.dialogue;
 const card = (rank: Parameters<typeof createCard>[1], suit: Parameters<typeof createCard>[0] = "spades") => createCard(suit, rank);
 const skillCard = (definitionId: string, instanceId = `test-${definitionId}`) => ({ kind: "player-skill" as const, definitionId, owner: "player" as const, instanceId });
 
-function withHands(state: MatchState, playerCards: ReturnType<typeof card>[], opponentCards: ReturnType<typeof card>[], actor: "player" | "opponent" = "player"): MatchState {
+function withHands(state: MatchState, playerCards: Card[], opponentCards: Card[], actor: "player" | "opponent" = "player"): MatchState {
   const player: ParticipantState = { id: "player", hand: createHand(playerCards), stood: false, busted: false };
   const opponent: ParticipantState = { id: "opponent", hand: createHand(opponentCards), stood: false, busted: false };
   const round: RoundState = { ...state.round, phase: "turns", currentActor: actor, player, opponent, outcome: null };
@@ -98,6 +99,16 @@ describe("createMatch and legal actions", () => {
 });
 
 describe("round resolution and roulette", () => {
+  it("normalizes an ability-created bust through the same bust and round-resolution path", () => {
+    const base = withHands(createMatch("ability-bust-normalization"), [card("K"), card("9"), card("5")], [card("10"), card("7")]);
+    const next = normalizeAbilityHands(base);
+    expect(next.player).toMatchObject({ busted: true, stood: true });
+    expect(next.history).toContainEqual({ type: "BUST", actor: "player" });
+    expect(next.round.phase).toBe("round-reveal");
+    expect(next.round.outcome).toMatchObject({ winner: "opponent", reason: "bust", penaltyTarget: "player" });
+    expect(next.roulette.player.bullets).toBe(1);
+  });
+
   it("waits for confirmation after both players open with Blackjack", () => {
     const seed = findSeed((candidate) => candidate.history.some((event) => event.type === "INITIAL_BLACKJACK_CHECK" && event.player && event.opponent));
     const state = createMatch(seed);
@@ -202,6 +213,19 @@ describe("skills", () => {
     expect(gameReducer(advised, { type: "PLAYER_STAND" }).skills.advice).toBeNull();
   });
 
+  it("broadcasts after-hand-changed only when an active ability actually mutates a hand", () => {
+    const observer = [{ definitionId: "hand-change-observer", enabled: true, parameters: {} }];
+    const hunterBase = withHands(createMatch("hunter-no-hand-event", { playerMechanics: observer }), [card("10"), card("6")], [card("10"), card("7")]);
+    const hunter = withSkillCard(hunterBase, "hunter-instinct", "hunter-no-hand-event-card");
+    const advised = gameReducer(hunter, { type: "PLAY_ABILITY", instanceId: "hunter-no-hand-event-card" });
+    expect(advised.history.slice(hunter.history.length)).not.toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "observe-owner-hand-change" }));
+
+    const switchBase = withHands(createMatch("switch-hand-event", { playerMechanics: observer }), [card("10"), card("6")], [card("10"), card("7")]);
+    const switcheroo = withSkillCard({ ...switchBase, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } }, "switcheroo", "switch-hand-event-card");
+    const switched = gameReducer(switcheroo, { type: "PLAY_ABILITY", instanceId: "switch-hand-event-card" });
+    expect(switched.history.slice(switcheroo.history.length)).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "observe-owner-hand-change" }));
+  });
+
   it("gives one opening card without Early Preparation", () => {
     const state = createMatch(findSeed((candidate) => candidate.round.phase === "turns"), { equippedSkillIds: ["hunter-instinct", "switcheroo", "rhodes-heartthrob"] });
     expect(state.skills.cards).toHaveLength(1);
@@ -243,10 +267,27 @@ describe("skills", () => {
     const hit = gameReducer(armed, { type: "PLAYER_HIT" });
     expect(hit.player.hand.cards).toHaveLength(3);
     expect(handValue(hit.player.hand)).toBe(21);
-    expect(hit.shoe.cursor).toBe(1);
+    expect(hit.player.hand.cards.at(-1)?.origin).toBe("derived");
+    expect(hit.shoe.cursor).toBe(0);
     expect(hit.abilities.statuses.some((status) => status.statusDefinitionId === "night-queen-armed")).toBe(false);
     expect(hit.history).toContainEqual(expect.objectContaining({ type: "PLAYER_HIT" }));
     expect(hit.history).toContainEqual(expect.objectContaining({ type: "PLAYER_STOOD" }));
+  });
+
+  it("dissipates derived cards when they leave a hand or the round ends", () => {
+    const derived = createDerivedCard("hearts", "5");
+    const base = withHands(createMatch("derived-lifecycle"), [card("10"), derived], [card("10"), card("7")]);
+    const switcheroo = withSkillCard({ ...base, shoe: { cards: [card("2", "clubs"), card("3", "diamonds")], cursor: 0, shuffleIndex: 1 } }, "switcheroo", "derived-switch");
+    const replaced = gameReducer(switcheroo, { type: "PLAY_ABILITY", instanceId: "derived-switch" });
+    expect(replaced.player.hand.cards.some((entry) => entry.origin === "derived")).toBe(false);
+    expect(replaced.shoe.cards.every((entry) => entry.origin === "shoe")).toBe(true);
+    expect(replaced.shoe.cursor).toBe(1);
+
+    const endBase = withHands(createMatch("derived-round-end"), [card("10"), derived], [card("10"), card("7")]);
+    const atRoundEnd = { ...endBase, round: { ...endBase.round, phase: "round-end" as const, currentActor: null } };
+    const nextRound = gameReducer(atRoundEnd, { type: "CONTINUE_ROUND" });
+    expect([...nextRound.player.hand.cards, ...nextRound.opponent.hand.cards].every((entry) => entry.origin === "shoe")).toBe(true);
+    expect(nextRound.shoe.cards.every((entry) => entry.origin === "shoe")).toBe(true);
   });
 
   it("does not consume a second Night Queen while already armed", () => {
@@ -545,6 +586,7 @@ describe("legal action safety property", () => {
         expect(next.roulette.opponent.bullets).toBeGreaterThanOrEqual(0);
         expect(next.roulette.player.bullets).toBeLessThanOrEqual(next.roulette.player.capacity);
         expect(next.roulette.opponent.bullets).toBeLessThanOrEqual(next.roulette.opponent.capacity);
+        expect(next.shoe.cards.every((card) => card.origin === "shoe")).toBe(true);
         state = next;
         executed += 1;
       }

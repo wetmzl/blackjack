@@ -1,4 +1,5 @@
 import { cardValue } from "./card";
+import { isPhysicalCard } from "./card";
 import type { Card, Hand } from "./types";
 
 export function createHand(cards: readonly Card[] = []): Hand {
@@ -25,7 +26,7 @@ export function handValue(hand: Hand): number {
 }
 
 export function isBlackjack(hand: Hand): boolean {
-  return hand.cards.length === 2 && handValue(hand) === 21;
+  return hand.cards.length === 2 && hand.cards.every(isPhysicalCard) && handValue(hand) === 21;
 }
 
 export function isBust(hand: Hand): boolean {

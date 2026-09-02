@@ -4,7 +4,7 @@
 
 ## 1. 先确认范围与参考职责
 
-1. 阅读 `AGENT.md`、`tools/art/README.md`、`src/content/characters/types.ts`、`character.schema.json`、`catalog.json` 和 W 的角色数据。
+1. 阅读 `AGENTS.md`、`docs/game-design.md`、`tools/art/README.md`、`src/content/characters/types.ts`、`character.schema.json`、`catalog.json` 和 W 的角色数据。
 2. 检查工作区已有修改；未提交内容一律视为用户工作，不覆盖、不回滚。
 3. 给每张参考图指定唯一职责：
    - 用户角色图：锁定身份、发型、策展人指定服装、配色、饰品和身体标记。

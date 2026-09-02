@@ -3,7 +3,7 @@ dist/
 output/
 .DS_Store
 *.log
-
+.workdump/
 # Local environment variables and credentials
 .env.local
 .env.*.local

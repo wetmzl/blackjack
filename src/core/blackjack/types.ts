@@ -4,17 +4,27 @@ export type Suit = (typeof SUITS)[number];
 export const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"] as const;
 export type Rank = (typeof RANKS)[number];
 
-export interface Card {
+export type CardOrigin = "shoe" | "derived";
+
+interface CardFace {
   readonly suit: Suit;
   readonly rank: Rank;
 }
+
+/** A finite physical card owned by the shoe/discard lifecycle. */
+export interface PhysicalCard extends CardFace { readonly origin: "shoe"; }
+
+/** A temporary card that exists only while it remains in the current hand. */
+export interface DerivedCard extends CardFace { readonly origin: "derived"; }
+
+export type Card = PhysicalCard | DerivedCard;
 
 export interface Hand {
   readonly cards: readonly Card[];
 }
 
 export interface ShoeState {
-  readonly cards: readonly Card[];
+  readonly cards: readonly PhysicalCard[];
   readonly cursor: number;
   /** Number of times this shoe has been shuffled; useful for save/debug output. */
   readonly shuffleIndex: number;
