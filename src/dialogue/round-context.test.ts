@@ -38,14 +38,14 @@ describe("special round dialogue", () => {
       .toBe("SPECIAL_TWENTY_ONE_PUSH");
   });
 
-  it("recognizes one-point finishes near 21", () => {
+  it("falls back to the ordinary winner pool for one-point finishes near 21", () => {
     expect(roundOverrideDialogueEvent(contextualState([card("7"), card("7", "hearts"), card("7", "clubs")], [card("10"), card("Q")], comparison("player"))))
-      .toBe("SPECIAL_ONE_POINT_FINISH");
+      .toBeNull();
   });
 
-  it("prioritizes a four-card 21 miracle", () => {
+  it("falls back to the ordinary winner pool for a four-card 21", () => {
     expect(roundOverrideDialogueEvent(contextualState([card("2"), card("4"), card("5"), card("10")], [card("10"), card("8")], comparison("player"))))
-      .toBe("SPECIAL_SMALL_HAND_TWENTY_ONE");
+      .toBeNull();
   });
 
   it("recognizes low-value pushes only on the confirmation screen", () => {

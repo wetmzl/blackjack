@@ -26,10 +26,6 @@ export function roundOverrideDialogueEvent(state: MatchState): DialogueEvent | n
   const playerValue = handValue({ cards: playerCards });
   const opponentValue = handValue({ cards: opponentCards });
   if (playerValue === 21 && opponentValue === 21) return "SPECIAL_TWENTY_ONE_PUSH";
-  if ((playerValue === 21 && playerCards.length >= 4 && playerCards.length <= 5)
-    || (opponentValue === 21 && opponentCards.length >= 4 && opponentCards.length <= 5)) return "SPECIAL_SMALL_HAND_TWENTY_ONE";
-  if (resolution.outcome.winner && resolution.outcome.reason === "comparison"
-    && Math.abs(playerValue - opponentValue) === 1 && Math.max(playerValue, opponentValue) >= 20) return "SPECIAL_ONE_POINT_FINISH";
   if (resolution.outcome.winner === null && playerValue === opponentValue && playerValue >= 12 && playerValue <= 16) return "SPECIAL_LOW_PUSH";
   return resolution.outcome.winner === null ? "PUSH_ROUND" : null;
 }

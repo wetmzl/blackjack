@@ -82,7 +82,7 @@ describe("finite dialogue state resolver", () => {
       comparison("player")
     );
     expect(resolveDialogueState(bothTwentyOne).event).toBe("SPECIAL_TWENTY_ONE_PUSH");
-    expect(resolveDialogueState(smallTwentyOneVersusTwenty).event).toBe("SPECIAL_SMALL_HAND_TWENTY_ONE");
+    expect(resolveDialogueState(smallTwentyOneVersusTwenty).event).toBe("PLAYER_WIN_ROUND");
   });
 
   it("uses reason-specific bust and ordinary comparison pools", () => {
@@ -123,7 +123,7 @@ describe("finite dialogue state resolver", () => {
     }
   });
 
-  it("has a reachable, non-overlapping state for every required dialogue pool", () => {
+  it("has a reachable, non-overlapping state for every active dialogue pool", () => {
     const playerBlackjack = findMatch((state) => state.round.outcome?.reason === "blackjack" && state.round.outcome.winner === "player");
     const opponentBlackjack = findMatch((state) => state.round.outcome?.reason === "blackjack" && state.round.outcome.winner === "opponent");
     const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 };
@@ -140,7 +140,6 @@ describe("finite dialogue state resolver", () => {
       reveal([card("10"), card("8")], [card("10", "hearts"), card("9", "hearts"), card("5", "clubs")], { winner: "player", reason: "bust", penaltyTarget: "opponent", bulletsAdded: 1, playerSkillReward: 1 }),
       triggerState("player", false),
       triggerState("opponent", false),
-      reveal([card("10"), card("8")], [card("10", "hearts"), card("7", "hearts")], comparison("player")),
       reveal([card("10"), card("7")], [card("10", "hearts"), card("8", "hearts")], comparison("opponent")),
       reveal([card("10"), card("7")], [card("9", "hearts"), card("8", "hearts")], push),
       rouletteState("roulette-reaction"),
@@ -149,11 +148,12 @@ describe("finite dialogue state resolver", () => {
       triggerState("opponent", true),
       reveal([card("A"), card("K")], [card("A", "hearts"), card("Q", "hearts")], push),
       reveal([card("10"), card("Q")], [card("10", "hearts"), card("9", "hearts")], comparison("player")),
-      reveal([card("2"), card("4"), card("5"), card("10")], [card("10", "hearts"), card("8", "hearts")], comparison("player")),
       reveal([card("10"), card("3")], [card("8", "hearts"), card("5", "hearts")], push)
     ];
     const selected = states.map((state) => resolveDialogueState(state).event);
-    expect(new Set(selected)).toEqual(new Set(DIALOGUE_EVENT_CODES));
-    expect(selected).toHaveLength(DIALOGUE_EVENT_CODES.length);
+    const retiredSpecialPools = new Set(["SPECIAL_ONE_POINT_FINISH", "SPECIAL_SMALL_HAND_TWENTY_ONE"]);
+    const activeDialogueEventCodes = DIALOGUE_EVENT_CODES.filter((event) => !retiredSpecialPools.has(event));
+    expect(new Set(selected)).toEqual(new Set(activeDialogueEventCodes));
+    expect(selected).toHaveLength(activeDialogueEventCodes.length);
   });
 });

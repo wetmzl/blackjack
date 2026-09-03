@@ -100,7 +100,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 ## PWA 与资源缓存
 
-Vite PWA 配置生成 manifest 和 Service Worker。核心应用 shell 由 Workbox 预缓存，图片与音频使用运行时 CacheFirst。大型可选媒体通过构建生成的 `/resource-pack.json` 及 `src/resources/` 下载器并发写入独立 Cache Storage。
+Vite PWA 配置生成 manifest 和 Service Worker。核心应用 shell 由 Workbox 预缓存，图片与音频使用运行时 NetworkFirst：在线时先请求服务器并更新缓存，离线时回退到缓存中的资源，确保同名文件内容更新后不会永久显示旧版本。大型可选媒体通过构建生成的 `/resource-pack.json` 及 `src/resources/` 下载器并发写入独立 Cache Storage。
 
 ## 验证边界
 

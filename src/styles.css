@@ -286,6 +286,8 @@ h2 { font-size: 1.5rem; }
 .unlock-skill strong { color: var(--amber); font-size: .86rem; }
 .unlock-skill span, .unlock-skill small { color: var(--muted); font-size: .7rem; line-height: 1.4; }
 .summary-shell .primary-button, .error-shell .primary-button { width: 100%; margin-top: 20px; }
+.summary-shell .summary-actions { width: 100%; margin-top: 20px; }
+.summary-shell .summary-actions .primary-button, .summary-shell .summary-actions .secondary-button { width: auto; margin-top: 0; }
 .loading-shell { gap: 14px; color: var(--muted); font-size: .78rem; }
 .error-shell p:not(.kicker) { max-width: 330px; color: var(--muted); line-height: 1.5; }
 

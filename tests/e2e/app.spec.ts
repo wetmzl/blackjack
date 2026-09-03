@@ -41,6 +41,18 @@ function playerWinSummary(opponentId = "w"): MatchState {
   };
 }
 
+function playerLossSummary(opponentId = "w"): MatchState {
+  const match = findTurnsMatch(`loss-summary-${opponentId}`);
+  return {
+    ...match,
+    opponentId,
+    status: "finished",
+    view: "match-summary",
+    outcome: { winner: "opponent", reason: "player-killed" },
+    round: { ...match.round, phase: "roulette-result", currentActor: null }
+  };
+}
+
 function opponentPenaltyReveal(): MatchState {
   const match = findTurnsMatch("audio-confirm");
   const outcome = { winner: "player" as const, reason: "comparison" as const, penaltyTarget: "opponent" as const, bulletsAdded: 1, playerSkillReward: 1 };
@@ -171,7 +183,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(dialogue).not.toHaveText("");
   await page.locator("button[data-action*='ESCAPE_MATCH']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
-  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
+  await page.getByRole("button", { name: "返回大厅" }).click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
 });
 
@@ -228,7 +240,7 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
 
   await page.locator("button[data-action*='ESCAPE_MATCH']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
-  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
+  await page.getByRole("button", { name: "返回大厅" }).click();
   await enterCharacterSelection(page);
   await expect(page.locator(".character-card")).toHaveCount(5);
   const ireneRequestedPaths: string[] = [];
@@ -451,13 +463,56 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await expect(page.locator(".summary-character")).toHaveAttribute("src", /w-defeated-summary-chair\.png/);
   await expect(page.locator(".unlock-panel")).toContainText("暗夜女王");
   await expect(page.locator(".presentation")).toHaveCount(0);
+  const summaryButtons = page.locator(".summary-actions button");
+  await expect(summaryButtons).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "前往战利品陈列室" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回大厅" })).toBeVisible();
+  const summaryButtonBoxes = await summaryButtons.evaluateAll((buttons) => buttons.map((button) => {
+    const box = button.getBoundingClientRect();
+    return { width: box.width, height: box.height };
+  }));
+  expect(Math.abs(summaryButtonBoxes[0]!.width - summaryButtonBoxes[1]!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(summaryButtonBoxes[0]!.height - summaryButtonBoxes[1]!.height)).toBeLessThanOrEqual(1);
   let nativeDialogs = 0;
   page.on("dialog", (dialog) => { nativeDialogs += 1; void dialog.dismiss(); });
-  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
+  await page.getByRole("button", { name: "前往战利品陈列室" }).click();
+  await expect(page.locator("main.trophy-shell")).toBeVisible();
+  await expect(page.locator(".trophy-card")).toHaveCount(1);
+  await page.locator("[data-trophy-back]").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   expect(nativeDialogs).toBe(0);
   await page.getByRole("button", { name: "技能管理" }).click();
   await expect(page.locator("#skills input[data-equip-skill='night-queen']")).toBeEnabled();
+});
+
+test("玩家落败结算可回溯并与同一名与会者重开", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  const loss = playerLossSummary();
+  imported.settings.reducedMotion = true;
+  imported.activeMatch = loss;
+  await page.goto("/?debug=1");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "loss-summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await expect(page.getByRole("heading", { name: "策展人落败" })).toBeVisible();
+  const summaryButtons = page.locator(".summary-actions button");
+  await expect(summaryButtons).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "回溯时空（重开一局）" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "返回大厅" })).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  const summaryButtonBoxes = await summaryButtons.evaluateAll((buttons) => buttons.map((button) => {
+    const box = button.getBoundingClientRect();
+    return { width: box.width, height: box.height };
+  }));
+  expect(Math.abs(summaryButtonBoxes[0]!.width - summaryButtonBoxes[1]!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(summaryButtonBoxes[0]!.height - summaryButtonBoxes[1]!.height)).toBeLessThanOrEqual(1);
+
+  await page.getByRole("button", { name: "回溯时空（重开一局）" }).click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  const restarted = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: MatchState };
+  expect(restarted.relevantMatchState.opponentId).toBe(loss.opponentId);
+  expect(restarted.relevantMatchState.id).not.toBe(loss.id);
+  expect(restarted.relevantMatchState.status).toBe("active");
 });
 
 test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡面仍可使用", async ({ page }, testInfo) => {
@@ -961,7 +1016,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   await expect(page.locator("main.summary-shell")).toBeVisible({ timeout: 8_000 });
   expect(sawReveal).toBe(true);
   expect(sawTriggerResult).toBe(true);
-  await page.locator("button[data-action*='ACK_MATCH_RESULT']").click();
+  await page.getByRole("button", { name: "返回大厅" }).click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await page.locator("[data-open-trophies]").click();
   await expect(page.locator(".trophy-card")).toHaveCount(1);

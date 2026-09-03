@@ -717,10 +717,42 @@ function renderSummary(state: MatchState): void {
   const unlockPanel = newlyUnlocked.length
     ? `<section class="unlock-panel" aria-live="polite"><p class="eyebrow">新技能已解锁</p>${newlyUnlocked.map((id) => { const skill = getSkillDefinition(id); if (!skill) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(skill.name)}</strong><span>${skill.category === "active" ? "主动" : "被动"} · ${escapeHtml(skill.description)}</span><small>${escapeHtml(skill.unlock?.label ?? "胜利奖励")}</small></div>`; }).join("")}</section>`
     : "";
-  root.innerHTML = `<main class="summary-shell"><p class="eyebrow">终局</p><img class="summary-character" src="${image}" alt="${imageAlt}" /><p class="kicker">${escaped ? "策展人提前离席" : playerWon ? "死亡确认" : "干员拿下了这一局"}</p><h1>${escaped ? "已离席" : playerWon ? "策展人胜利" : "策展人落败"}</h1><p class="summary-copy">${escapeHtml(summaryCopy)}</p>${unlockPanel}${actionButton("返回大厅", { type: "ACK_MATCH_RESULT" }, state, "primary-button")}</main>`;
-  wireActions(root, (action) => { requestDispatch(action); if (action.type === "ACK_MATCH_RESULT") void returnToLobby(); });
+  const summaryButton = (label: string, destination: "trophy" | "rewind" | "lobby", className: string): string => {
+    const action: Action = { type: "ACK_MATCH_RESULT" };
+    return `<button class="${className}" data-action='${JSON.stringify(action)}' data-summary-action="${destination}" ${legal(state, action) ? "" : "disabled"}>${label}</button>`;
+  };
+  const summaryActions = escaped
+    ? summaryButton("返回大厅", "lobby", "primary-button")
+    : playerWon
+      ? `<div class="controls action-dock summary-actions">${summaryButton("前往战利品陈列室", "trophy", "primary-button")}${summaryButton("返回大厅", "lobby", "secondary-button")}</div>`
+      : `<div class="controls action-dock summary-actions">${summaryButton("回溯时空（重开一局）", "rewind", "primary-button")}${summaryButton("返回大厅", "lobby", "secondary-button")}</div>`;
+  root.innerHTML = `<main class="summary-shell"><p class="eyebrow">终局</p><img class="summary-character" src="${image}" alt="${imageAlt}" /><p class="kicker">${escaped ? "策展人提前离席" : playerWon ? "死亡确认" : "干员拿下了这一局"}</p><h1>${escaped ? "已离席" : playerWon ? "策展人胜利" : "策展人落败"}</h1><p class="summary-copy">${escapeHtml(summaryCopy)}</p>${unlockPanel}${summaryActions}</main>`;
+  let summaryActionInFlight = false;
+  root.querySelectorAll<HTMLButtonElement>("[data-summary-action]").forEach((button) => button.addEventListener("click", () => {
+    if (summaryActionInFlight) return;
+    summaryActionInFlight = true;
+    root.querySelectorAll<HTMLButtonElement>("[data-summary-action]").forEach((candidate) => { candidate.disabled = true; });
+    const destination = button.dataset.summaryAction;
+    requestDispatch({ type: "ACK_MATCH_RESULT" });
+    void completeMatch(destination === "trophy" || destination === "rewind" ? destination : "lobby");
+  }));
 }
-async function returnToLobby(): Promise<void> { if (!autosave) return; await autosave.flush(); save = autosave.getSave(); const match = autosave.getState(); const winner = match.outcome?.winner ?? null; const escaped = match.outcome?.reason === "escaped"; const unlockedSkillIds = addUnlockedSkills(save.profile.unlockedSkillIds, match.opponentId, winner, escaped); save = { ...save, profile: { ...save.profile, matchesPlayed: save.profile.matchesPlayed + 1, wins: save.profile.wins + (winner === "player" && !escaped ? 1 : 0), unlockedSkillIds }, updatedAt: new Date().toISOString() }; await repository.save(save); autosave = null; renderLobby(); }
+async function completeMatch(destination: "trophy" | "rewind" | "lobby"): Promise<void> {
+  if (!autosave) return;
+  await autosave.flush();
+  save = autosave.getSave();
+  const match = autosave.getState();
+  const winner = match.outcome?.winner ?? null;
+  const escaped = match.outcome?.reason === "escaped";
+  const unlockedSkillIds = addUnlockedSkills(save.profile.unlockedSkillIds, match.opponentId, winner, escaped);
+  save = { ...save, profile: { ...save.profile, matchesPlayed: save.profile.matchesPlayed + 1, wins: save.profile.wins + (winner === "player" && !escaped ? 1 : 0), unlockedSkillIds }, updatedAt: new Date().toISOString() };
+  await repository.save(save);
+  const opponentId = match.opponentId;
+  autosave = null;
+  if (destination === "trophy" && winner === "player" && !escaped) renderTrophyRoom();
+  else if (destination === "rewind" && winner !== "player" && !escaped) await startMatch(opponentId);
+  else renderLobby();
+}
 function renderError(error: unknown): void {
   clearAiSchedule();
   clearSkillGainQueue();

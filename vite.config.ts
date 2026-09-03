@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { join, relative, sep } from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { RESOURCE_ASSET_FETCH_OPTIONS, RESOURCE_ASSET_RUNTIME_HANDLER, RESOURCE_ASSET_URL_PATTERN, RESOURCE_PACK_CACHE_NAME } from "./src/resources/cache-policy";
 
 const publicAssetsDirectory = fileURLToPath(new URL("./public/assets", import.meta.url));
 
@@ -63,10 +64,17 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: /\/assets\/(?:audio|backgrounds|characters)\//i,
-            handler: "CacheFirst",
+            urlPattern: RESOURCE_ASSET_URL_PATTERN,
+            // Media paths are intentionally stable, so a CacheFirst route would
+            // keep an older response after a same-name asset is redeployed.
+            // NetworkFirst refreshes the runtime cache whenever the app is
+            // online while still falling back to the cached pack offline.
+            handler: RESOURCE_ASSET_RUNTIME_HANDLER,
             options: {
-              cacheName: "blackjack-resource-pack-v1",
+              cacheName: RESOURCE_PACK_CACHE_NAME,
+              // Node's RequestInit type omits the browser `cache` member;
+              // Workbox forwards this object to the browser Service Worker.
+              fetchOptions: RESOURCE_ASSET_FETCH_OPTIONS as unknown as RequestInit,
               expiration: { maxEntries: 128, maxAgeSeconds: 365 * 24 * 60 * 60 },
               cacheableResponse: { statuses: [0, 200] }
             }

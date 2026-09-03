@@ -1,5 +1,7 @@
+import { RESOURCE_PACK_CACHE_NAME } from "./cache-policy";
+
+export { RESOURCE_PACK_CACHE_NAME } from "./cache-policy";
 export const RESOURCE_PACK_MANIFEST_URL = "/resource-pack.json";
-export const RESOURCE_PACK_CACHE_NAME = "blackjack-resource-pack-v1";
 
 export interface ResourcePackEntry {
   readonly url: string;
