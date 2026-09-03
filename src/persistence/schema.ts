@@ -6,7 +6,7 @@ import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, sup
 import characterCatalog from "../content/characters/catalog.json" with { type: "json" };
 
 export const SAVE_FORMAT = "house-of-chances-save" as const;
-export const CURRENT_SCHEMA_VERSION = 4 as const;
+export const CURRENT_SCHEMA_VERSION = 5 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -133,7 +133,7 @@ export const PlayerProfileSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), matchesPlayed: z.number().int().min(0),
   wins: z.number().int().min(0), unlockedCharacterIds: z.array(CharacterIdSchema),
   unlockedSkillIds: z.array(z.string().min(1)), equippedSkillIds: z.array(z.string().min(1)).max(4)
-}).strict().superRefine((profile, ctx) => { const unlocked = new Set(profile.unlockedSkillIds); if (new Set(profile.unlockedSkillIds).size !== profile.unlockedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate unlocked skill" }); if (new Set(profile.equippedSkillIds).size !== profile.equippedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate equipped skill" }); for (const id of profile.unlockedSkillIds) if (!getSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown unlocked skill" }); for (const id of profile.equippedSkillIds) { if (!unlocked.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "equipped skill must be unlocked" }); const skill = getSkillDefinition(id); if (!skill) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown skill" }); } if (profile.equippedSkillIds.filter((id) => getSkillDefinition(id)?.category === "passive").length > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "at most one passive skill" }); });
+}).strict().superRefine((profile, ctx) => { const unlocked = new Set(profile.unlockedSkillIds); if (new Set(profile.unlockedSkillIds).size !== profile.unlockedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate unlocked skill" }); if (new Set(profile.unlockedCharacterIds).size !== profile.unlockedCharacterIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate unlocked character" }); if (new Set(profile.equippedSkillIds).size !== profile.equippedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate equipped skill" }); for (const id of profile.unlockedSkillIds) if (!getSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown unlocked skill" }); for (const id of profile.equippedSkillIds) { if (!unlocked.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "equipped skill must be unlocked" }); const skill = getSkillDefinition(id); if (!skill) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown skill" }); } if (profile.equippedSkillIds.filter((id) => getSkillDefinition(id)?.category === "passive").length > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "at most one passive skill" }); });
 export const GameSettingsSchema = z.object({ soundEnabled: z.boolean(), reducedMotion: z.boolean() }).strict();
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
 export type GameSettings = z.infer<typeof GameSettingsSchema>;

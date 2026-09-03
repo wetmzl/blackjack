@@ -4,10 +4,19 @@ import { AbilityBindingSchema } from "../../core/abilities/schema";
 import { getAbilityDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "../../core/abilities/registry";
 
 const safeDataFile = z.string().regex(/^[a-z0-9][a-z0-9_-]*\.json$/, "dataFile 必须是安全文件名");
+const portraitScale = z.number().finite().min(0.75).max(1.5).default(1);
+const portraitScales = z.object({ selection: portraitScale, table: portraitScale }).strict().default({ selection: 1, table: 1 });
+const characterTag = z.string().min(1).regex(/^[a-z0-9][a-z0-9:_-]*$/, "角色 tag 必须是安全标识");
+const unlockCondition = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("defeat-any") }).strict(),
+  z.object({ type: z.literal("defeat-any-tag"), tag: characterTag }).strict(),
+  z.object({ type: z.literal("defeat-character"), characterId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("defeat-tag-percentage"), tag: characterTag, percentage: z.number().finite().gt(0).max(100) }).strict()
+]);
 const metadataEntry = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), subtitle: z.string().min(1),
-  tier: z.enum(["D", "C", "B", "A", "S"]),
-  previewImage: z.string().min(1), trophyImage: z.string().min(1), dataFile: safeDataFile
+  tier: z.enum(["D", "C", "B", "A", "S"]), tags: z.array(characterTag).default([]), unlock: unlockCondition.optional(),
+  previewImage: z.string().min(1), trophyImage: z.string().min(1), portraitScales, dataFile: safeDataFile
 }).strict();
 export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().min(1), characters: z.array(metadataEntry).min(1) }).strict().superRefine((catalog, ctx) => {
   const ids = new Set<string>();
@@ -17,8 +26,20 @@ export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().
     if (dataFiles.has(character.dataFile)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["characters", index, "dataFile"], message: `角色数据文件重复：${character.dataFile}` });
     ids.add(character.id);
     dataFiles.add(character.dataFile);
+    if (new Set(character.tags).size !== character.tags.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["characters", index, "tags"], message: "角色 tag 重复" });
+    if (character.tags.some((tag) => tag.startsWith("tier:"))) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["characters", index, "tags"], message: "tier: 命名空间由角色等级自动生成" });
+    const condition = character.unlock;
+    if (condition?.type === "defeat-character" && !catalog.characters.some((entry) => entry.id === condition.characterId)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["characters", index, "unlock", "characterId"], message: "解锁条件引用了未知角色" });
+    }
+    if (condition && (condition.type === "defeat-any-tag" || condition.type === "defeat-tag-percentage")) {
+      const knownTags = new Set(catalog.characters.flatMap((entry) => [`tier:${entry.tier.toLowerCase()}`, ...entry.tags]));
+      if (!knownTags.has(condition.tag)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["characters", index, "unlock", "tag"], message: "解锁条件引用了未知 tag" });
+    }
   }
-  if (!ids.has(catalog.defaultCharacterId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["defaultCharacterId"], message: "默认角色未注册" });
+  const defaultCharacter = catalog.characters.find((character) => character.id === catalog.defaultCharacterId);
+  if (!defaultCharacter) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["defaultCharacterId"], message: "默认角色未注册" });
+  else if (defaultCharacter.unlock) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["defaultCharacterId"], message: "默认角色必须初始解锁" });
 });
 
 const dialoguePool = z.array(z.string().min(1)).min(1);
@@ -51,7 +72,6 @@ export const CharacterDataSchema = z.object({
   profile: z.object({ description: z.string().min(1) }).strict(),
   matchSummary: z.object({ playerVictory: z.string().min(1), playerDefeat: z.string().min(1), escaped: z.string().min(1) }).strict(),
   trophyGallery: trophyGallery.optional(),
-  tablePortraitScale: z.number().finite().min(0.75).max(1.5).default(1),
   revolverPlacement: z.object({ top: z.number().finite(), left: z.number().finite(), mobileTop: z.number().finite(), mobileLeft: z.number().finite() }).strict(),
   ai: z.object({ P: z.number().finite(), A: z.number().finite(), B: z.number().finite(), C: z.number().finite() }).strict(),
   mechanics: z.array(AbilityBindingSchema).default([]).superRefine((mechanics, ctx) => {

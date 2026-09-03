@@ -53,6 +53,19 @@ function playerLossSummary(opponentId = "w"): MatchState {
   };
 }
 
+function victoryRecord(id: string, opponentId: string, timestamp: string): MatchHistoryRecord {
+  return {
+    id,
+    timestamp,
+    opponentId,
+    winner: "player",
+    escaped: false,
+    finalRoulette: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 6 } },
+    busts: { player: 0, opponent: 1 },
+    blackjacks: { player: 0, opponent: 0 }
+  };
+}
+
 function opponentPenaltyReveal(): MatchState {
   const match = findTurnsMatch("audio-confirm");
   const outcome = { winner: "player" as const, reason: "comparison" as const, penaltyTarget: "opponent" as const, bulletsAdded: 1, playerSkillReward: 1 };
@@ -67,6 +80,17 @@ async function enterCharacterSelection(page: Page): Promise<void> {
   const entry = page.locator("[data-enter-duel]");
   if (await entry.isVisible()) await entry.click();
   await expect(page.locator("main.lobby-character-shell")).toBeVisible();
+}
+
+async function inviteCharacter(page: Page, id: string): Promise<void> {
+  await page.locator(`[data-invite-character='${id}']`).click();
+  await expect(page.locator("#profile")).toBeVisible();
+}
+
+async function startCharacter(page: Page, id: string): Promise<void> {
+  await inviteCharacter(page, id);
+  await page.locator("[data-profile-start]").click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
 }
 
 async function openLobbySettings(page: Page): Promise<void> {
@@ -122,14 +146,37 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await page.locator("#rules [data-close]").click();
   await enterCharacterSelection(page);
   await expect(page.locator("button.lobby-settings-button")).toHaveCount(0);
-  await expect(page.locator(".character-card")).toHaveCount(5);
-  await page.getByRole("button", { name: "查看档案" }).first().click();
+  await expect(page.getByRole("heading", { name: "候场宾客" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "已击败宾客" })).toBeVisible();
+  await expect(page.locator(".guest-section:not(.defeated-section) .character-card")).toHaveCount(3);
+  await expect(page.locator(".defeated-section .character-card")).toHaveCount(0);
+  await expect(page.locator("[data-character-id='w'], [data-character-id='nian']")).toHaveCount(0);
+  await expect(page.locator("[data-character-id='texas'], [data-character-id='irene'], [data-character-id='plume']")).toHaveCount(3);
+  await inviteCharacter(page, "texas");
   const profile = page.locator("#profile");
-  await expect(profile).toContainText("W");
-  await expect(profile.locator(".profile-ability")).toHaveCount(2);
-  await expect(profile.locator(".profile-ability summary").first()).toContainText("炸弹狂人");
-  await expect(profile.locator(".profile-ability summary").first()).toContainText("当W的手牌张数领先玩家N张时");
+  await expect(profile).toContainText("德克萨斯");
+  await expect(profile.locator(".profile-ability")).toHaveCount(1);
+  await expect(profile.locator(".profile-ability summary").first()).toContainText("细雨无声");
+  await expect(profile.locator(".profile-ability summary").first()).toContainText("主动选择 Stand 后");
   await expect(profile.locator(".profile-ability[open]")).toHaveCount(0);
+  expect(await profile.locator("#profile-content").evaluate((content) => {
+    const abilities = content.querySelector(".profile-abilities");
+    const description = content.querySelector(".profile-description");
+    return Boolean(abilities && description && (abilities.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING));
+  })).toBe(true);
+  const profileStartBox = await profile.locator("[data-profile-start]").boundingBox();
+  const profileContentBox = await profile.locator("#profile-content").boundingBox();
+  expect(profileStartBox).not.toBeNull();
+  expect(profileContentBox).not.toBeNull();
+  expect(profileStartBox!.height).toBeGreaterThanOrEqual(60);
+  expect(Math.abs(profileStartBox!.width - profileContentBox!.width)).toBeLessThanOrEqual(1);
+  const texasCard = page.locator("[data-character-id='texas']");
+  const portraitBox = await texasCard.locator(".portrait").boundingBox();
+  const inviteBox = await texasCard.locator("[data-invite-character]").boundingBox();
+  expect(portraitBox).not.toBeNull();
+  expect(inviteBox).not.toBeNull();
+  expect(Math.abs((portraitBox!.y + portraitBox!.height) - (inviteBox!.y + inviteBox!.height))).toBeLessThanOrEqual(2);
+  await expect(texasCard.locator(".card-invite")).toHaveCount(1);
   await page.setViewportSize({ width: 320, height: 720 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   expect(await profile.evaluate((element) => element.getBoundingClientRect().right <= window.innerWidth)).toBe(true);
@@ -201,8 +248,7 @@ test("新对局逐张展示早有准备带来的两张技能牌", async ({ page 
   });
   await page.goto("/?debug=1");
   await enterCharacterSelection(page);
-  await page.locator("[data-start-character='w']").click();
-  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await startCharacter(page, "texas");
   const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[]; equippedSkillIds: string[] }; history: Array<{ type: string; actor?: string }> } };
   const playerBlackjack = initialMatchDebug.relevantMatchState.history.some((event) => event.type === "BLACKJACK" && event.actor === "player");
   const expectedInitialGains = 2 + (playerBlackjack ? 2 : 0);
@@ -224,14 +270,13 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   await page.goto("/");
   await expect(page.locator(".character-card")).toHaveCount(0);
   await enterCharacterSelection(page);
-  await expect(page.locator(".character-card")).toHaveCount(5);
+  await expect(page.locator(".character-card")).toHaveCount(3);
   expect(requestedPaths.some((path) => path.includes("/content/characters/data/"))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /texas-(conflicted|mocking|threatened|unconscious|defeated-summary)/.test(path))).toBe(false);
-  await page.locator("[data-start-character='texas']").click();
-  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await startCharacter(page, "texas");
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/texas\.json|\/assets\/texas-[^/]+\.js)(?:\?|$)/.test(path))).toBe(true);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/w\.json|\/assets\/w-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
@@ -242,23 +287,92 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
   await page.getByRole("button", { name: "返回大厅" }).click();
   await enterCharacterSelection(page);
-  await expect(page.locator(".character-card")).toHaveCount(5);
+  await expect(page.locator(".character-card")).toHaveCount(3);
   const ireneRequestedPaths: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     ireneRequestedPaths.push(decodeURIComponent(`${url.pathname}${url.search}`));
   });
-  await page.locator("[data-start-character='irene']").click();
-  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await startCharacter(page, "irene");
   expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(true);
   expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|nian|plume)\.json|\/assets\/(?:w|texas|nian|plume)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
 });
 
-test("年作为第四角色显示解离式档案并按需载入", async ({ page }) => {
+test("击败 A 级角色会显示 S 级解锁，刷新候场时确保换人", async ({ page }, testInfo) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.settings.reducedMotion = true;
+  imported.activeMatch = playerWinSummary("texas");
   await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "character-unlock-summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+
+  const unlockPanel = page.locator(".character-unlock-panel");
+  await expect(unlockPanel).toContainText("新角色已解锁");
+  await expect(unlockPanel).toContainText("W");
+  await expect(unlockPanel).toContainText("年");
+  await expect(unlockPanel).toContainText("击败一名A级角色");
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.screenshot({ path: testInfo.outputPath("character-unlock-summary-320.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "返回大厅" }).click();
+  await enterCharacterSelection(page);
+
+  const candidates = page.locator(".guest-section:not(.defeated-section) .character-card");
+  const defeated = page.locator(".defeated-section .character-card");
+  await expect(candidates).toHaveCount(3);
+  await expect(defeated).toHaveCount(1);
+  await expect(defeated).toHaveAttribute("data-character-id", "texas");
+  await expect(defeated.locator("[data-invite-character]")).toHaveCount(1);
+  const before = (await candidates.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId ?? ""))).sort();
+  await page.getByRole("button", { name: "刷新候场宾客" }).click();
+  const after = (await candidates.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId ?? ""))).sort();
+  expect(after).not.toEqual(before);
+  expect(new Set([...before, ...after])).toEqual(new Set(["w", "irene", "nian", "plume"]));
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.screenshot({ path: testInfo.outputPath("guest-selection-unlocked-320.png"), fullPage: true });
+});
+
+test("已击败宾客按首次胜利时间去重排列且可以再次邀请", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.history = [
+    victoryRecord("irene-late", "irene", "2026-08-30T12:00:00.000Z"),
+    victoryRecord("texas-first", "texas", "2026-08-29T12:00:00.000Z"),
+    victoryRecord("texas-repeat", "texas", "2026-08-31T12:00:00.000Z")
+  ];
+  imported.profile = { ...imported.profile, matchesPlayed: 3, wins: 3, unlockedCharacterIds: ["w", "texas", "irene", "nian", "plume"] };
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "defeated-guests.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await enterCharacterSelection(page);
+
+  const candidateIds = await page.locator(".guest-section:not(.defeated-section) .character-card").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId));
+  expect(new Set(candidateIds)).toEqual(new Set(["w", "nian", "plume"]));
+  const defeatedCards = page.locator(".defeated-section .character-card");
+  await expect(defeatedCards).toHaveCount(2);
+  expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual(["texas", "irene"]);
+  await expect(defeatedCards.locator("[data-invite-character]")).toHaveCount(2);
+  await defeatedCards.first().locator("[data-invite-character='texas']").click();
+  await expect(page.locator("#profile")).toContainText("已击败");
+  await expect(page.locator("#profile [data-profile-start]")).toHaveCount(1);
+  await page.locator("#profile [data-profile-start]").click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+});
+
+test("年作为第四角色显示解离式档案并按需载入", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.history = [
+    victoryRecord("unlock-texas", "texas", "2026-08-28T00:00:00.000Z"),
+    victoryRecord("unlock-irene", "irene", "2026-08-29T00:00:00.000Z")
+  ];
+  imported.profile = { ...imported.profile, matchesPlayed: 2, wins: 2, unlockedCharacterIds: ["w", "texas", "irene", "nian", "plume"] };
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "unlocked-nian.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await enterCharacterSelection(page);
   await expect(page.locator(".character-card")).toHaveCount(5);
-  await page.locator("[data-profile-id='nian']").click();
+  await inviteCharacter(page, "nian");
   const profile = page.locator("#profile");
   await expect(profile).toContainText("年");
   await expect(profile.locator(".profile-ability")).toHaveCount(2);
@@ -274,7 +388,7 @@ test("正式角色档案显示各自已启用技能", async ({ page }) => {
   await page.goto("/");
   await enterCharacterSelection(page);
   for (const [id, names] of [["texas", ["细雨无声"]], ["irene", ["剑与手炮"]]] as const) {
-    await page.locator(`[data-profile-id='${id}']`).click();
+    await inviteCharacter(page, id);
     const profile = page.locator("#profile");
     await expect(profile.locator(".profile-ability")).toHaveCount(1);
     await expect(profile.locator(".profile-ability summary")).toContainText(names[0]);
@@ -282,22 +396,35 @@ test("正式角色档案显示各自已启用技能", async ({ page }) => {
   }
 });
 
-test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ page }) => {
+test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ page }, testInfo) => {
   const requestedPaths: string[] = [];
   page.on("request", (request) => requestedPaths.push(decodeURIComponent(new URL(request.url()).pathname)));
   await page.goto("/");
   await enterCharacterSelection(page);
-  await page.locator("[data-profile-id='plume']").click();
+  const card = page.locator("[data-character-id='plume']");
+  const previewFrame = card.locator(".portrait");
+  const preview = previewFrame.locator("img.scaled-character-art");
+  await expect(preview).toHaveCSS("--character-art-scale", "1.3");
+  await expect(previewFrame).toHaveCSS("overflow", "hidden");
+  await card.scrollIntoViewIfNeeded();
+  await expect.poll(() => preview.evaluate((image) => image.complete && image.naturalWidth > 0)).toBe(true);
+  await card.screenshot({ path: testInfo.outputPath("plume-selection-390.png") });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await card.screenshot({ path: testInfo.outputPath("plume-selection-320.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await inviteCharacter(page, "plume");
   const profile = page.locator("#profile");
   await expect(profile).toContainText("翎羽");
   await expect(profile).toContainText("B级");
   await expect(profile.locator(".profile-ability")).toHaveCount(0);
-  await expect(profile).toContainText("安全归途");
+  await expect(profile).toContainText("再也不必眼睁睁看着珍视的人从身边消失");
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)$/.test(path))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-strip .eyebrow")).toContainText("翎羽 // B级");
-  await expect(page.locator("#dialogue-text")).toContainText("台词占位", { timeout: 3_000 });
+  await expect(page.locator("#dialogue-text")).toHaveAttribute("data-typing", "false", { timeout: 5_000 });
+  await expect(page.locator("#dialogue-text")).not.toContainText("台词占位");
 });
 
 test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => {
@@ -487,7 +614,7 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
 
 test("玩家落败结算可回溯并与同一名与会者重开", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
-  const loss = playerLossSummary();
+  const loss = playerLossSummary("texas");
   imported.settings.reducedMotion = true;
   imported.activeMatch = loss;
   await page.goto("/?debug=1");
@@ -769,8 +896,7 @@ test("牌桌全屏按钮安全切换并同步状态", async ({ page }) => {
   });
   await page.goto("/");
   await enterCharacterSelection(page);
-  await page.locator("[data-start-character='w']").click();
-  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await startCharacter(page, "texas");
   const fullscreen = page.locator("[data-fullscreen]");
   await expect(fullscreen).toHaveAttribute("aria-label", "进入全屏");
   await fullscreen.click();
@@ -934,8 +1060,7 @@ test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ p
 test("开发者面板显示确定性诊断字段", async ({ page }) => {
   await page.goto("/?debug=1");
   await enterCharacterSelection(page);
-  await page.locator(".card-start").first().click();
-  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await startCharacter(page, "texas");
   const hud = page.locator(".dev-hud");
   await expect(hud).toBeVisible();
   for (const label of ["种子", "轮次 / 阶段", "牌库剩余", "玩家真实手牌", "对手真实手牌", "AI 参数 P / A / B / C", "Rmatch / Rplay", "上次手牌值 / 阈值 T", "上次行动", "上次领域事件"])
@@ -1137,7 +1262,7 @@ test("翎羽受罚时保持严肃紧张立绘并校准共享左轮", async ({ pa
   const portrait = strip.locator("img.character-portrait");
   const revolver = strip.locator("img.trigger-prop");
   await expect(portrait).toHaveAttribute("src", /plume-threatened\.png/);
-  await expect(portrait).toHaveCSS("--table-portrait-scale", "1.3");
+  await expect(portrait).toHaveCSS("--character-art-scale", "1.3");
   await expect(revolver).toBeVisible();
   await expect(revolver).toHaveAttribute("src", /staff-revolver-7mm\.png/);
   await expect(revolver).toHaveCSS("z-index", "6");

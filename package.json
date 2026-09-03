@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "preview": "vite preview",
     "systemd:install": "bash systemd/install.sh",
-    "deploy": "bash scripts/deploy.sh"
+    "deploy": "bash scripts/deploy.sh",
+    "deploy:pages": "bash scripts/deploy-pages.sh"
   },
   "dependencies": {
     "dexie": "^4.0.11",

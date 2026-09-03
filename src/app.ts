@@ -7,12 +7,12 @@ import { abilityWorld, createMatch, getLegalActions } from "./core/match/reducer
 import type { Action, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
 import { getSkillDefinition, SKILL_DEFINITIONS, isActiveSkill, isPassiveSkill } from "./core/skills/definitions";
-import { addUnlockedSkills, skillsUnlockedForVictory, validateLoadout } from "./core/skills/skills";
+import { skillsUnlockedForVictory, validateLoadout } from "./core/skills/skills";
 import { getAbilityDefinition } from "./core/abilities/registry";
 import { isAbilityBlockedByStatus } from "./core/abilities/engine";
 import { chooseDialogue } from "./dialogue/types";
 import { resolveDialogueState } from "./dialogue/state";
-import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, getCharacterMetadata, loadCharacter, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint } from "./content/characters";
+import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstVictory, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForVictory, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
 import { bootLoad, resetSave } from "./persistence/boot";
 import { createAutosaveController, type AutosaveController } from "./persistence/autosave";
 import { downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
@@ -53,8 +53,9 @@ let skillGainTimer: number | undefined;
 let fullscreenChangeAttached = false;
 type LobbyLayer = "menu" | "characters";
 let lobbyLayer: LobbyLayer = "menu";
+let guestSelectionIds: string[] = [];
 const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
-const RESET_CONFIRM_MESSAGE = "清理当前数据将删除战绩、历史、技能解锁和未完成对局，确定继续吗？";
+const RESET_CONFIRM_MESSAGE = "清理当前数据将删除战绩、历史、角色与技能解锁和未完成对局，确定继续吗？";
 
 function secureSeed(): string {
   const bytes = new Uint32Array(4);
@@ -440,6 +441,45 @@ function lobbyDialogsMarkup(): string {
   return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>两张牌正好 21 点是黑杰克；入场会获得技能牌，普通胜利获得 1 张，黑杰克获得 2 张。技能牌只来自本轮携带的主动技能。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的牌组</p><h2>技能管理</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>清理当前数据</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
 }
 
+function randomUnit(): number {
+  const bytes = new Uint32Array(1);
+  if (globalThis.crypto?.getRandomValues) return globalThis.crypto.getRandomValues(bytes)[0] / 0x100000000;
+  return Math.random();
+}
+
+function eligibleGuestIds(): string[] {
+  const defeated = new Set(defeatedCharacterIdsByFirstVictory(save.history));
+  const unlocked = new Set(save.profile.unlockedCharacterIds);
+  return CHARACTER_CATALOG
+    .filter((character) => unlocked.has(character.id) && isCharacterUnlocked(character, save.history) && !defeated.has(character.id))
+    .map((character) => character.id);
+}
+
+function selectGuestIds(): string[] {
+  const available = eligibleGuestIds().map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
+  const shuffled = [...available];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(randomUnit() * (index + 1));
+    [shuffled[index], shuffled[swap]] = [shuffled[swap], shuffled[index]];
+  }
+  const next = shuffled.slice(0, 3).map((character) => character.id);
+  if (available.length > 3 && guestSelectionIds.length > 0) {
+    const current = new Set(guestSelectionIds);
+    if (next.every((id) => current.has(id))) {
+      const replacement = shuffled.find((character) => !current.has(character.id));
+      if (replacement) next[Math.floor(randomUnit() * next.length)] = replacement.id;
+    }
+  } else if (next.length > 1 && next.join(",") === guestSelectionIds.join(",")) {
+    [next[0], next[1]] = [next[1], next[0]];
+  }
+  return next;
+}
+
+function characterCardMarkup(character: (typeof CHARACTER_CATALOG)[number], options: { defeated?: boolean } = {}): string {
+  const defeated = options.defeated === true;
+  return `<article class="character-card ${defeated ? "is-defeated" : "is-guest"}" data-character-id="${escapeHtml(character.id)}"><div class="portrait"><img class="scaled-character-art" style="--character-art-scale:${character.portraitScales.selection}" src="${escapeHtml(character.previewImage)}" alt="${escapeHtml(character.name)}" loading="lazy" decoding="async" /></div><div class="character-copy"><p class="eyebrow">与会者 // ${escapeHtml(character.tier)}级</p><h2>${escapeHtml(character.name)}</h2><p>${escapeHtml(character.subtitle)}</p><button class="card-invite" data-invite-character="${escapeHtml(character.id)}">邀请 <span>→</span></button></div></article>`;
+}
+
 function renderLobby(layer: LobbyLayer = "menu"): void {
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer);
   gameAudio.stopHeartbeat();
@@ -448,17 +488,26 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   lastDialogueKey = null;
   autosave = null;
   lobbyLayer = layer;
-  const characterCards = CHARACTER_CATALOG.map((character) => `<article class="character-card"><div class="portrait"><img src="${character.previewImage}" alt="${character.name}" loading="lazy" decoding="async" /></div><div class="character-copy"><p class="eyebrow">与会者 // ${character.tier}级</p><h2>${character.name}</h2><p>${character.subtitle}</p><button class="text-button" data-profile-id="${character.id}">查看档案 <span>→</span></button></div><button class="card-start" data-start-character="${character.id}">开始对局</button></article>`).join("");
+  if (layer === "characters") {
+    const eligible = new Set(eligibleGuestIds());
+    const expectedCount = Math.min(3, eligible.size);
+    if (guestSelectionIds.length !== expectedCount || guestSelectionIds.some((id) => !eligible.has(id))) guestSelectionIds = selectGuestIds();
+  }
+  const guestCharacters = guestSelectionIds.map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
+  const defeatedIds = defeatedCharacterIdsByFirstVictory(save.history);
+  const defeatedCharacters = defeatedIds.map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
+  const characterCards = guestCharacters.map((character) => characterCardMarkup(character)).join("");
+  const defeatedCards = defeatedCharacters.map((character) => characterCardMarkup(character, { defeated: true })).join("");
   root.innerHTML = layer === "menu"
-    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>策展人的邀请</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.history.length} 局</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
-    : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">他们带着未竟的执念走进古堡，<br>换上指定的服装，等待终焉赌局开场。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="character-list">${characterCards}</section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${CHARACTER_CATALOG.length} 名与会者</span></footer>${lobbyDialogsMarkup()}</main>`;
-  root.querySelector<HTMLButtonElement>("[data-enter-duel]")?.addEventListener("click", () => renderLobby("characters"));
+    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>Blackjack & Roulette</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.history.length} 局</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
+    : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">他们带着未竟的执念走进古堡，<br>换上指定的服装，等待终焉赌局开场。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="guest-section" aria-labelledby="guest-title"><div class="guest-heading"><div><p class="kicker">等待入场</p><h2 id="guest-title">候场宾客</h2></div><button type="button" class="quiet-button" data-refresh-guests aria-label="刷新候场宾客">刷新</button></div><section class="character-list">${characterCards || `<div class="empty-history"><span>◇</span><p>暂时没有可赴约的宾客。</p></div>`}</section></section><section class="guest-section defeated-section" aria-labelledby="defeated-title"><div class="guest-heading"><div><p class="kicker">回想</p><h2 id="defeated-title">已死亡宾客</h2></div></div><section class="character-list">${defeatedCards || `<div class="empty-history"><span>◇</span><p>完成胜利后，宾客会按首次击败时间记录在这里。</p></div>`}</section></section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${defeatedCharacters.length} 名已击败宾客</span></footer>${lobbyDialogsMarkup()}</main>`;
+  root.querySelector<HTMLButtonElement>("[data-enter-duel]")?.addEventListener("click", () => { guestSelectionIds = []; renderLobby("characters"); });
   root.querySelector<HTMLButtonElement>("[data-lobby-home]")?.addEventListener("click", () => renderLobby("menu"));
+  root.querySelector<HTMLButtonElement>("[data-refresh-guests]")?.addEventListener("click", () => { guestSelectionIds = selectGuestIds(); renderLobby("characters"); });
   root.querySelectorAll<HTMLButtonElement>("[data-open]:not([data-open=skills])").forEach((button) => button.addEventListener("click", () => document.querySelector<HTMLDialogElement>(`#${button.dataset.open}`)?.showModal()));
   root.querySelector<HTMLButtonElement>("[data-open=skills]")?.addEventListener("click", openSkillManagement);
   root.querySelectorAll<HTMLButtonElement>("[data-close]").forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
-  root.querySelectorAll<HTMLButtonElement>("[data-start-character]").forEach((button) => button.addEventListener("click", () => void startMatch(button.dataset.startCharacter)));
-  root.querySelectorAll<HTMLButtonElement>("[data-profile-id]").forEach((button) => button.addEventListener("click", () => void openProfile(button.dataset.profileId ?? "")));
+  root.querySelectorAll<HTMLButtonElement>("[data-invite-character]").forEach((button) => button.addEventListener("click", () => void openProfile(button.dataset.inviteCharacter ?? "")));
   root.querySelector<HTMLButtonElement>("[data-open-trophies]")?.addEventListener("click", renderTrophyRoom);
   root.querySelectorAll<HTMLInputElement>("[data-setting]").forEach((input) => input.addEventListener("change", updateSettings));
   root.querySelector<HTMLButtonElement>("[data-export]")?.addEventListener("click", () => void exportSave());
@@ -506,7 +555,7 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
   const content = root.querySelector<HTMLDivElement>("#trophy-gallery-content");
   if (!dialog || !content) return;
   const hotspots = gallery.closeups.map((point, index) => `<button type="button" class="trophy-hotspot" data-closeup-id="${escapeHtml(point.id)}" style="--hotspot-x:${point.x}%;--hotspot-y:${point.y}%" aria-label="查看特写：${escapeHtml(point.name)}" aria-pressed="false"><span>${index + 1}</span></button>`).join("");
-  content.innerHTML = `<div class="trophy-gallery-viewer"><header class="trophy-gallery-header"><div><p class="eyebrow">战利品鉴赏 // ${escapeHtml(character.name)}</p><h1>昏迷记录</h1></div><button class="trophy-gallery-close" data-gallery-close aria-label="关闭全屏鉴赏">×</button></header><div class="trophy-gallery-canvas"><figure class="trophy-gallery-stage"><img src="${escapeHtml(gallery.fullBody)}" alt="昏迷中的${escapeHtml(character.name)}竖屏全身鉴赏" />${hotspots}<figcaption>点按圆环标记查看局部特写</figcaption></figure><aside id="trophy-closeup-panel" class="trophy-closeup-panel" aria-live="polite"><p>选择画面中的特写点。</p></aside></div></div>`;
+  content.innerHTML = `<div class="trophy-gallery-viewer"><header class="trophy-gallery-header"><div><p class="eyebrow">战利品鉴赏 // ${escapeHtml(character.name)}</p><h1>死体展示</h1></div><button class="trophy-gallery-close" data-gallery-close aria-label="关闭全屏鉴赏">×</button></header><div class="trophy-gallery-canvas"><figure class="trophy-gallery-stage"><img src="${escapeHtml(gallery.fullBody)}" alt="昏迷中的${escapeHtml(character.name)}竖屏全身鉴赏" />${hotspots}<figcaption>点按圆环标记查看局部特写</figcaption></figure><aside id="trophy-closeup-panel" class="trophy-closeup-panel" aria-live="polite"><p>选择画面中的特写点。</p></aside></div></div>`;
   const panel = content.querySelector<HTMLElement>("#trophy-closeup-panel");
   const buttons = [...content.querySelectorAll<HTMLButtonElement>("[data-closeup-id]")];
   const hideCloseup = (): void => {
@@ -554,11 +603,29 @@ async function openProfile(id: string): Promise<void> {
         .map((binding) => getAbilityDefinition(binding.definitionId))
         .filter((definition): definition is NonNullable<ReturnType<typeof getAbilityDefinition>> => Boolean(definition));
       const abilityMarkup = abilities.length === 0 ? "" : `<section class="profile-abilities" aria-label="角色技能"><h3>技能</h3>${abilities.map((ability) => `<details class="profile-ability"><summary><strong>${escapeHtml(ability.name)}</strong><span>：${escapeHtml(ability.description)}</span></summary><p>${escapeHtml(ability.profileLore ?? ability.description)}</p></details>`).join("")}</section>`;
-      content.innerHTML = `<img src="${escapeHtml(character.previewImage)}" alt="${escapeHtml(character.name)}" loading="lazy" decoding="async" /><p class="eyebrow">角色档案 // ${escapeHtml(character.tier)}级</p><h2>${escapeHtml(character.name)}</h2><p>${escapeHtml(character.profile.description)}</p>${abilityMarkup}<button class="primary-button" data-profile-start="${escapeHtml(character.id)}">开始对局 <span>→</span></button>`;
+      const defeated = defeatedCharacterIdsByFirstVictory(save.history).includes(character.id);
+      const unlocked = save.profile.unlockedCharacterIds.includes(character.id) && isCharacterUnlocked(character, save.history);
+      const actionMarkup = defeated
+        ? `<p class="status-line">她已经成为了一具尸体，但不妨碍你和她继续对局。</p><button class="primary-button profile-start" data-profile-start="${escapeHtml(character.id)}">开始对局 <span>→</span></button>`
+        : unlocked
+          ? `<button class="primary-button profile-start" data-profile-start="${escapeHtml(character.id)}">开始对局 <span>→</span></button>`
+          : `<p class="status-line">尚未解锁：${escapeHtml(unlockConditionLabel(character.unlock))}</p>`;
+      content.innerHTML = `<img src="${escapeHtml(character.previewImage)}" alt="${escapeHtml(character.name)}" loading="lazy" decoding="async" /><p class="eyebrow">角色档案 // ${escapeHtml(character.tier)}级</p><h2>${escapeHtml(character.name)}</h2>${abilityMarkup}<p class="profile-description">${escapeHtml(character.profile.description)}</p>${actionMarkup}`;
     }
     content?.querySelector<HTMLButtonElement>("[data-profile-start]")?.addEventListener("click", () => { document.querySelector<HTMLDialogElement>("#profile")?.close(); void startMatch(character.id); });
     document.querySelector<HTMLDialogElement>("#profile")?.showModal();
   } catch (error) { renderError(error); }
+}
+function unlockConditionLabel(condition: CharacterUnlockCondition | undefined): string {
+  if (!condition) return "完成条件后";
+  if (condition.type === "defeat-any") return "击败任意角色";
+  const tagLabel = (tag: string): string => {
+    const tier = /^tier:([dcbas])$/.exec(tag)?.[1];
+    return tier ? `${tier.toUpperCase()}级` : `带有「${tag}」标签的`;
+  };
+  if (condition.type === "defeat-any-tag") return `击败一名${tagLabel(condition.tag)}角色`;
+  if (condition.type === "defeat-character") return `击败指定角色 ${getCharacterMetadata(condition.characterId)?.name ?? condition.characterId}`;
+  return `击败${tagLabel(condition.tag)}角色的 ${condition.percentage}%`;
 }
 async function updateSettings(event: Event): Promise<void> { const input = event.target as HTMLInputElement; const setting = input.dataset.setting === "reducedMotion" ? "reducedMotion" : "soundEnabled"; save = { ...save, settings: { ...save.settings, [setting]: input.checked }, updatedAt: new Date().toISOString() }; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); if (setting === "soundEnabled") { gameAudio.unlock(); gameAudio.configure(input.checked); } const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = "设置已保存。"; await repository.save(save); }
 async function exportSave(): Promise<void> { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); try { const method = await downloadSave(autosave?.getSave() ?? save); if (status) status.textContent = method === "file-system-access" ? "存档已写入。" : "已开始下载存档。"; } catch (error) { if (status) status.textContent = uiError(error, "导出失败。"); } }
@@ -574,10 +641,12 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
   gameAudio.play("shuffle");
   const requestToken = ++characterLoadToken;
   characterLoadInFlight = true;
-  root.querySelectorAll<HTMLButtonElement>("[data-start-character], [data-profile-start]").forEach((button) => { button.disabled = true; });
+  root.querySelectorAll<HTMLButtonElement>("[data-invite-character], [data-profile-start]").forEach((button) => { button.disabled = true; });
   try {
     const metadata = getCharacterMetadata(characterId);
     if (!metadata) throw new Error("所选对手不可用。");
+    const defeated = defeatedCharacterIdsByFirstVictory(save.history).includes(metadata.id);
+    if (!defeated && (!save.profile.unlockedCharacterIds.includes(metadata.id) || !isCharacterUnlocked(metadata, save.history))) throw new Error("该角色尚未解锁。");
     const character = await loadCharacter(metadata.id);
     if (requestToken !== characterLoadToken) return;
     currentCharacter = character;
@@ -590,8 +659,12 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
     if (openingAbilityNotice) present(openingAbilityNotice, "gold", 2200);
     enqueueSkillGains(match.history);
     presentOpeningMatchAudio(gameAudio, match);
-  } catch (error) { renderError(error); }
-  finally { if (requestToken === characterLoadToken) characterLoadInFlight = false; }
+  } catch (error) {
+    if (error instanceof Error && /尚未解锁|已经败北/.test(error.message)) {
+      const status = root.querySelector<HTMLParagraphElement>("#lobby-status");
+      if (status) status.textContent = error.message;
+    } else renderError(error);
+  } finally { if (requestToken === characterLoadToken) characterLoadInFlight = false; }
 }
 async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinition): Promise<void> {
   clearAiSchedule();
@@ -654,7 +727,7 @@ function renderMatch(state: MatchState): void {
   const notice = state.round.phase === "round-reveal" ? roundResultText(state, character.name) : "";
   const gunStatuses = `<section class="roulette-status" aria-label="轮盘弹巢状态">${gunStatusMarkup(character.name, state.roulette.opponent.bullets, state.roulette.opponent.capacity)}${gunStatusMarkup("策展人", state.roulette.player.bullets, state.roulette.player.capacity)}</section>`;
   const skillDrawerMarkup = `<aside class="skill-sidebar ${skillDrawerOpen ? "is-open" : ""}" aria-label="技能抽屉"><button class="skill-drawer-toggle" type="button" aria-expanded="${skillDrawerOpen}" aria-label="${skillDrawerOpen ? "收起" : "展开"}技能抽屉，共 ${totalSkills} 张"><span class="skill-drawer-arrow" aria-hidden="true">${skillDrawerOpen ? ">" : "<"}</span><span class="skill-drawer-badge"${skillDrawerOpen ? " hidden" : ""}>${totalSkills}</span></button><div class="skill-drawer-content">${skills || "<span class='empty-skills'>暂无技能卡</span>"}</div></aside>`;
-  root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait portrait-${portraitState(state)}" style="--table-portrait-scale:${character.tablePortraitScale}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${shouldType ? "" : escapeHtml(dialogue)}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} <strong>${reveal ? handValue(state.opponent.hand) : observation.opponent.value ?? "?"}</strong></span><div class="cards">${opponentCards}</div></div></section><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 <strong>${handValue(state.player.hand)}</strong></span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${devHud(state)}</main>${skillDrawerMarkup}`;
+  root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${shouldType ? "" : escapeHtml(dialogue)}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} <strong>${reveal ? handValue(state.opponent.hand) : observation.opponent.value ?? "?"}</strong></span><div class="cards">${opponentCards}</div></div></section><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 <strong>${handValue(state.player.hand)}</strong></span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${devHud(state)}</main>${skillDrawerMarkup}`;
   wireActions(root, requestDispatch); root.querySelector<HTMLButtonElement>("[data-copy-debug]")?.addEventListener("click", () => { const text = root.querySelector<HTMLTextAreaElement>("#debug-json")?.value ?? ""; void navigator.clipboard?.writeText(text); });
   root.querySelectorAll<HTMLButtonElement>("[data-skill-blocked]").forEach((button) => button.addEventListener("click", () => present("技能被禁用", "danger")));
   attachFullscreenListener(); syncFullscreenButton();
@@ -714,6 +787,10 @@ function renderSummary(state: MatchState): void {
   const newlyUnlocked = playerWon && !escaped
     ? skillsUnlockedForVictory(state.opponentId, winner, escaped).filter((id) => !alreadyUnlocked.has(id))
     : [];
+  const newlyUnlockedCharacters = playerWon && !escaped ? newlyUnlockedForVictory(save.history, state.opponentId) : [];
+  const characterUnlockPanel = newlyUnlockedCharacters.length
+    ? `<section class="unlock-panel character-unlock-panel" aria-live="polite"><p class="eyebrow">新角色已解锁</p>${newlyUnlockedCharacters.map((id) => { const character = getCharacterMetadata(id); if (!character) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(character.name)}</strong><span>${escapeHtml(character.tier)}级与会者 · 已可在候场宾客中邀请</span><small>${escapeHtml(unlockConditionLabel(character.unlock))}</small></div>`; }).join("")}</section>`
+    : "";
   const unlockPanel = newlyUnlocked.length
     ? `<section class="unlock-panel" aria-live="polite"><p class="eyebrow">新技能已解锁</p>${newlyUnlocked.map((id) => { const skill = getSkillDefinition(id); if (!skill) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(skill.name)}</strong><span>${skill.category === "active" ? "主动" : "被动"} · ${escapeHtml(skill.description)}</span><small>${escapeHtml(skill.unlock?.label ?? "胜利奖励")}</small></div>`; }).join("")}</section>`
     : "";
@@ -726,7 +803,7 @@ function renderSummary(state: MatchState): void {
     : playerWon
       ? `<div class="controls action-dock summary-actions">${summaryButton("前往战利品陈列室", "trophy", "primary-button")}${summaryButton("返回大厅", "lobby", "secondary-button")}</div>`
       : `<div class="controls action-dock summary-actions">${summaryButton("回溯时空（重开一局）", "rewind", "primary-button")}${summaryButton("返回大厅", "lobby", "secondary-button")}</div>`;
-  root.innerHTML = `<main class="summary-shell"><p class="eyebrow">终局</p><img class="summary-character" src="${image}" alt="${imageAlt}" /><p class="kicker">${escaped ? "策展人提前离席" : playerWon ? "死亡确认" : "干员拿下了这一局"}</p><h1>${escaped ? "已离席" : playerWon ? "策展人胜利" : "策展人落败"}</h1><p class="summary-copy">${escapeHtml(summaryCopy)}</p>${unlockPanel}${summaryActions}</main>`;
+  root.innerHTML = `<main class="summary-shell"><p class="eyebrow">终局</p><img class="summary-character" src="${image}" alt="${imageAlt}" /><p class="kicker">${escaped ? "策展人提前离席" : playerWon ? "死亡确认" : "干员拿下了这一局"}</p><h1>${escaped ? "已离席" : playerWon ? "策展人胜利" : "策展人落败"}</h1><p class="summary-copy">${escapeHtml(summaryCopy)}</p>${characterUnlockPanel}${unlockPanel}${summaryActions}</main>`;
   let summaryActionInFlight = false;
   root.querySelectorAll<HTMLButtonElement>("[data-summary-action]").forEach((button) => button.addEventListener("click", () => {
     if (summaryActionInFlight) return;
@@ -744,9 +821,6 @@ async function completeMatch(destination: "trophy" | "rewind" | "lobby"): Promis
   const match = autosave.getState();
   const winner = match.outcome?.winner ?? null;
   const escaped = match.outcome?.reason === "escaped";
-  const unlockedSkillIds = addUnlockedSkills(save.profile.unlockedSkillIds, match.opponentId, winner, escaped);
-  save = { ...save, profile: { ...save.profile, matchesPlayed: save.profile.matchesPlayed + 1, wins: save.profile.wins + (winner === "player" && !escaped ? 1 : 0), unlockedSkillIds }, updatedAt: new Date().toISOString() };
-  await repository.save(save);
   const opponentId = match.opponentId;
   autosave = null;
   if (destination === "trophy" && winner === "player" && !escaped) renderTrophyRoom();

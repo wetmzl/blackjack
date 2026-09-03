@@ -1,4 +1,4 @@
-import rawCatalog from "./catalog.json";
+import rawCatalog from "./catalog.json" with { type: "json" };
 import { CharacterCatalogSchema } from "./schema";
 import type { CharacterMetadata } from "./types";
 
@@ -15,7 +15,12 @@ function createCatalog(entries: readonly CharacterMetadata[]): readonly Characte
     ids.add(entry.id);
     dataFiles.add(entry.dataFile);
   }
-  return Object.freeze(entries.map((entry) => Object.freeze({ ...entry })));
+  return Object.freeze(entries.map((entry) => Object.freeze({
+    ...entry,
+    tags: Object.freeze([...entry.tags]),
+    unlock: entry.unlock ? Object.freeze({ ...entry.unlock }) : undefined,
+    portraitScales: Object.freeze({ ...entry.portraitScales })
+  })));
 }
 
 export const CHARACTER_CATALOG = createCatalog(RAW_CHARACTER_CATALOG);
@@ -30,4 +35,13 @@ if (!CHARACTER_METADATA_BY_ID[DEFAULT_CHARACTER_ID]) {
 
 export function getCharacterMetadata(id: string): CharacterMetadata | undefined {
   return CHARACTER_METADATA_BY_ID[id];
+}
+
+/** Returns custom tags plus a namespaced, lower-case tier tag. */
+export function getCharacterTags(character: Pick<CharacterMetadata, "tier" | "tags">): readonly string[] {
+  return Object.freeze([...new Set([`tier:${character.tier.toLowerCase()}`, ...character.tags])]);
+}
+
+export function characterHasTag(character: Pick<CharacterMetadata, "tier" | "tags">, tag: string): boolean {
+  return getCharacterTags(character).includes(tag.toLowerCase());
 }

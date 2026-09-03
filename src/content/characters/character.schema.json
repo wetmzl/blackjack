@@ -72,13 +72,6 @@
         }
       }
     },
-    "tablePortraitScale": {
-      "type": "number",
-      "minimum": 0.75,
-      "maximum": 1.5,
-      "default": 1,
-      "description": "仅用于牌局内全部状态立绘的展示倍率；基线为 1。不得用它补救错误画布或构图。"
-    },
     "revolverPlacement": {
       "type": "object",
       "description": "发牌员左轮相对受罚与会者立绘的位置，单位为 CSS 像素；策展人朝天花板的枪击不使用这组坐标。",

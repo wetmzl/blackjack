@@ -9,6 +9,7 @@ import type { SaveRepository } from "./repository";
 import { requestPersistentStorage } from "./storage";
 import { createCard, createDerivedCard } from "../core/blackjack/card";
 import { addCard, createHand } from "../core/blackjack/hand";
+import type { MatchState } from "../core/match/types";
 
 const NOW = "2026-08-30T00:00:00.000Z";
 
@@ -137,6 +138,7 @@ describe("boot and repositories", () => {
     expect(reset.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
+    expect(reset.profile.unlockedCharacterIds).toEqual(["texas", "irene", "plume"]);
     expect(reset.profile.unlockedSkillIds).toEqual(reset.profile.equippedSkillIds);
     expect(reset.activeMatch).toBeNull();
     expect(reset.history).toEqual([]);
@@ -177,6 +179,28 @@ describe("boot and repositories", () => {
     expect(acknowledgedSave.history).toHaveLength(1);
     expect(acknowledgedSave.history[0]).toMatchObject({ id: match.id, opponentId: match.opponentId, escaped: true, winner: null, timestamp: NOW });
   });
+
+  it("atomically records victory progression and does not grant it twice", () => {
+    const base = createMatch("character-unlock", { opponentId: "texas" });
+    const acknowledged: MatchState = {
+      ...base,
+      status: "finished",
+      scene: "lobby",
+      view: "match-summary",
+      outcome: { winner: "player", reason: "opponent-killed" }
+    };
+    const first = acknowledgeMatchResult(saveActiveMatch(createDefaultSave(NOW), acknowledged, NOW), NOW);
+    expect(first.activeMatch).toBeNull();
+    expect(first.history).toHaveLength(1);
+    expect(first.profile.matchesPlayed).toBe(1);
+    expect(first.profile.wins).toBe(1);
+    expect(first.profile.unlockedCharacterIds).toEqual(["w", "texas", "irene", "nian", "plume"]);
+    expect(first.profile.unlockedSkillIds).toContain("blueberry-and-dark-chocolate");
+
+    const repeated = acknowledgeMatchResult(saveActiveMatch(first, acknowledged, NOW), NOW);
+    expect(repeated.history).toHaveLength(1);
+    expect(repeated.profile).toEqual(first.profile);
+  });
 });
 
 describe("serial autosave", () => {
@@ -206,6 +230,7 @@ describe("serial autosave", () => {
     expect(repository.writes[1].activeMatch?.status).toBe("finished");
     expect(repository.writes[1].activeMatch?.scene).toBe("match");
     expect(repository.writes[2].activeMatch).toBeNull();
+    expect(repository.writes[2].profile.matchesPlayed).toBe(1);
     expect(controller.getSave().activeMatch).toBeNull();
   });
 });

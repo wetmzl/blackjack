@@ -61,6 +61,8 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 `src/content/characters/catalog.json` 只保存大厅和历史索引所需的元数据与安全 `dataFile`。`catalog.ts` 校验并冻结目录；`loader.ts` 通过 `import.meta.glob("./data/*.json")` 按需加载完整角色并缓存结果。
 
+目录元数据包含自定义 `tags`；角色 tier 由 `getCharacterTags` 暴露为 `tier:s`、`tier:a` 等查询标签。`unlock` 使用通用条件引擎，支持击败任意角色、击败带标签角色、击败指定角色和按标签击败百分比。解锁集合由完成对局历史计算，并在确认结算时与历史记录、胜场和技能奖励一起原子写入 profile；历史中策展人胜利且未离席的角色视为已击败，首次击败时间决定大厅收藏顺序。
+
 完整角色 JSON 由 `character.schema.json` 和运行时 Zod Schema 校验，包含档案、结算文案、资源、瞄准点、AI、机制和完整有限状态对白。未知 ID、不安全文件名、目录/数据不一致、非法机制绑定或缺少对白都会失败。新增角色的操作步骤见 [新增与会者工作流](adding-a-character.md)。
 
 ## 能力底座
@@ -96,7 +98,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 - 能力实例、状态来源、参数、目录版本和卡牌实例一致性；
 - 历史摘要结构。
 
-不兼容或损坏的本地存档在启动时被视为不可恢复，界面会明确引导玩家删除/清理后重新开始，不自动迁移或覆盖旧档。JSON 导入会明确报错；导出优先使用 File System Access API，缺失时退回 Blob 下载。
+不兼容或损坏的本地存档在启动时被视为不可恢复，界面会明确引导玩家删除/清理后重新开始，不自动迁移或覆盖旧档。角色解锁契约变更将提升 Save Schema 版本（当前为 5）；JSON 导入会明确报错；导出优先使用 File System Access API，缺失时退回 Blob 下载。
 
 ## PWA 与资源缓存
 

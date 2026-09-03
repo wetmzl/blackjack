@@ -52,5 +52,5 @@ boots（1:1）：使用与 `fullBody` 完全一致的正上方俯视镜头。人
 - 棋盘格背景使用 `tools/art/remove-checkerboard.mjs` 提取透明通道。
 - 横幅透明源图以 `0,121,1973,555` 受控裁切并缩放为 1600×450。
 - 头肩像从严格 5:7 的 1060×1484 等比缩放为 1000×1400。
-- 翎羽的牌局内展示倍率为 `tablePortraitScale: 1.3`；所有源图仍保持 1536×1024 基线，不对 PNG 做破坏性放大。
+- 翎羽通过轻量目录的通用 `portraitScales` 配置，在角色选择页与牌局内均以 1.3 倍展示；所有源图仍保持 1536×1024 基线，不对 PNG 做破坏性放大。
 - 最终 Web 资源均位于 `public/assets/characters/plume-*.png`；角色数据见 `src/content/characters/data/plume.json`。

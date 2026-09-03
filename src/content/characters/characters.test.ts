@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHARACTER_CATALOG, CHARACTER_METADATA_BY_ID, DEFAULT_CHARACTER_ID, getCharacterMetadata, loadCharacter, clearCharacterCache, TABLE_ART_BASELINE } from ".";
+import { CHARACTER_CATALOG, CHARACTER_METADATA_BY_ID, DEFAULT_CHARACTER_ID, getCharacterMetadata, getCharacterTags, loadCharacter, clearCharacterCache, TABLE_ART_BASELINE } from ".";
 import standardSchema from "./character.schema.json";
 import wData from "./data/w.json";
 import texasData from "./data/texas.json";
@@ -17,7 +17,11 @@ describe("data-driven character registry", () => {
     expect(CHARACTER_METADATA_BY_ID.irene).toBe(CHARACTER_CATALOG[2]);
     expect(CHARACTER_METADATA_BY_ID.nian).toBe(CHARACTER_CATALOG[3]);
     expect(CHARACTER_METADATA_BY_ID.plume).toBe(CHARACTER_CATALOG[4]);
-    expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("w");
+    expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("texas");
+    expect(getCharacterTags(CHARACTER_METADATA_BY_ID.w)).toEqual(expect.arrayContaining(["tier:s", "explosive", "chaotic"]));
+    expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.tags)).toBe(true);
+    expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.unlock)).toBe(true);
+    expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.portraitScales)).toBe(true);
     expect(TABLE_ART_BASELINE.referenceCharacterId).toBe("w");
     expect(TABLE_ART_BASELINE.referenceCanvas).toEqual({ width: 1536, height: 1024 });
     expect(TABLE_ART_BASELINE.normalSittingScale).toBe(1);
@@ -39,6 +43,13 @@ describe("data-driven character registry", () => {
       "/assets/characters/irene-trophy-defeated.png",
       "/assets/characters/nian-trophy-defeated.png",
       "/assets/characters/plume-trophy-defeated.png"
+    ]);
+    expect(CHARACTER_CATALOG.map((character) => character.portraitScales)).toEqual([
+      { selection: 1, table: 1 },
+      { selection: 1, table: 1 },
+      { selection: 1, table: 1 },
+      { selection: 1, table: 1 },
+      { selection: 1.3, table: 1.3 }
     ]);
   });
 
@@ -137,7 +148,7 @@ describe("data-driven character registry", () => {
       closeups: [
         expect.objectContaining({ id: "face", name: "凝住的警觉", x: 50, y: 16, image: "/assets/characters/plume-trophy-detail-face.png" }),
         expect.objectContaining({ id: "skirt", name: "层叠裙摆", x: 50, y: 46, image: "/assets/characters/plume-trophy-detail-skirt.png" }),
-        expect.objectContaining({ id: "stockings", name: "透肤黑色长袜", x: 50, y: 69, image: "/assets/characters/plume-trophy-detail-stockings.png" }),
+        expect.objectContaining({ id: "stockings", name: "透肉黑色丝袜", x: 50, y: 69, image: "/assets/characters/plume-trophy-detail-stockings.png" }),
         expect.objectContaining({ id: "boots", name: "平置短靴", x: 50, y: 88, image: "/assets/characters/plume-trophy-detail-boots.png" })
       ]
     });
@@ -151,7 +162,8 @@ describe("data-driven character registry", () => {
     expect("portraitScale" in irene).toBe(false);
     expect("portraitScale" in nian).toBe(false);
     expect("portraitScale" in plume).toBe(false);
-    expect([w.tablePortraitScale, texas.tablePortraitScale, irene.tablePortraitScale, nian.tablePortraitScale, plume.tablePortraitScale]).toEqual([1, 1, 1, 1, 1.3]);
+    expect([w, texas, irene, nian, plume].every((character) => !("tablePortraitScale" in character))).toBe(true);
+    expect([w, texas, irene, nian, plume].map((character) => character.portraitScales.table)).toEqual([1, 1, 1, 1, 1.3]);
     expect(w.profile.description.length).toBeGreaterThan(0);
     expect(w.matchSummary.playerVictory.length).toBeGreaterThan(0);
     expect(w.matchSummary.playerDefeat.length).toBeGreaterThan(0);
@@ -201,7 +213,7 @@ describe("data-driven character registry", () => {
     expect(Object.keys(nian.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.keys(plume.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.values(irene.dialogue).every((pool) => pool.length > 0)).toBe(true);
-    expect(Object.values(plume.dialogue).every((pool) => pool.length === 1 && pool[0].includes("台词占位"))).toBe(true);
+    expect(Object.values(plume.dialogue).every((pool) => pool.length > 0 && pool.every((line) => !line.includes("台词占位")))).toBe(true);
     expect(w.id).toBe(getCharacterMetadata(w.id)?.id);
     expect(texas.id).toBe(getCharacterMetadata(texas.id)?.id);
     expect(irene.id).toBe(getCharacterMetadata(irene.id)?.id);
@@ -239,11 +251,15 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse({ ...wData, ai: { ...wData.ai, unknown: 1 } }).success).toBe(false);
   });
 
-  it("defaults table portrait scale to one and validates explicit presentation overrides", () => {
-    expect(CharacterDataSchema.parse(wData).tablePortraitScale).toBe(1);
-    expect(CharacterDataSchema.parse(plumeData).tablePortraitScale).toBe(1.3);
-    expect(CharacterDataSchema.safeParse({ ...plumeData, tablePortraitScale: 0.74 }).success).toBe(false);
-    expect(CharacterDataSchema.safeParse({ ...plumeData, tablePortraitScale: 1.51 }).success).toBe(false);
+  it("defaults portrait scales by surface and validates lightweight presentation overrides", () => {
+    const base = { id: "sample", name: "样例", subtitle: "样例", tier: "B", previewImage: "/sample.png", trophyImage: "/sample-trophy.png", dataFile: "sample.json" } as const;
+    const parse = (character: object) => CharacterCatalogSchema.parse({ defaultCharacterId: "sample", characters: [character] }).characters[0].portraitScales;
+    expect(parse(base)).toEqual({ selection: 1, table: 1 });
+    expect(parse({ ...base, portraitScales: { selection: 1.3 } })).toEqual({ selection: 1.3, table: 1 });
+    expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "sample", characters: [{ ...base, portraitScales: { selection: 0.74 } }] }).success).toBe(false);
+    expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "sample", characters: [{ ...base, portraitScales: { selection: 1, table: 1.51 } }] }).success).toBe(false);
+    expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "sample", characters: [{ ...base, portraitScales: { selection: 1, unknown: 1 } }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...plumeData, tablePortraitScale: 1.3 }).success).toBe(false);
   });
 
   it("strictly validates declarative mechanic bindings", () => {
@@ -275,5 +291,21 @@ describe("data-driven character registry", () => {
     expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "w", characters: [base, { ...base }] }).success).toBe(false);
     expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "w", characters: [base, { ...base, id: "texas" }] }).success).toBe(false);
     expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "missing", characters: [base] }).success).toBe(false);
+  });
+
+  it("strictly validates character tags and unlock references", () => {
+    const base = { id: "base", name: "基础角色", subtitle: "样例", tier: "A", tags: ["group-a"], previewImage: "/base.png", trophyImage: "/base-trophy.png", dataFile: "base.json" } as const;
+    const locked = { id: "locked", name: "待解锁角色", subtitle: "样例", tier: "S", tags: ["group-s"], previewImage: "/locked.png", trophyImage: "/locked-trophy.png", dataFile: "locked.json" } as const;
+    const parse = (unlock: object) => CharacterCatalogSchema.safeParse({ defaultCharacterId: "base", characters: [base, { ...locked, unlock }] }).success;
+    expect(parse({ type: "defeat-any" })).toBe(true);
+    expect(parse({ type: "defeat-any-tag", tag: "tier:a" })).toBe(true);
+    expect(parse({ type: "defeat-character", characterId: "base" })).toBe(true);
+    expect(parse({ type: "defeat-tag-percentage", tag: "group-a", percentage: 50 })).toBe(true);
+    expect(parse({ type: "defeat-any-tag", tag: "missing" })).toBe(false);
+    expect(parse({ type: "defeat-character", characterId: "missing" })).toBe(false);
+    expect(parse({ type: "defeat-tag-percentage", tag: "group-a", percentage: 0 })).toBe(false);
+    expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "base", characters: [{ ...base, tags: ["group-a", "group-a"] }] }).success).toBe(false);
+    expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "base", characters: [{ ...base, tags: ["tier:s"] }] }).success).toBe(false);
+    expect(CharacterCatalogSchema.safeParse({ defaultCharacterId: "locked", characters: [base, { ...locked, unlock: { type: "defeat-any" } }] }).success).toBe(false);
   });
 });

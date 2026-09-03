@@ -28,11 +28,13 @@ npm run test:e2e
 从仓库根目录执行：
 
 ```bash
-set -a
-source ./.env.local
-set +a
-npm run build
-npx --yes wrangler@4.128.0 pages deploy dist --project-name blackjack --branch main
+npm run deploy:pages
+```
+
+该脚本会在本地自动读取被 Git 忽略的 `.env.local`，在 CI 中则直接使用托管平台注入的 Secret。它会构建项目、发布 `dist/`，并验证生产地址返回 `200`。功能分支可将分支名作为参数传入，以创建预览部署：
+
+```bash
+bash scripts/deploy-pages.sh feature/my-branch
 ```
 
 `blackjack` 项目已经存在，常规发布不要运行 `pages project create`。只有构建成功后才发布 `main`；功能分支可传实际分支名创建预览部署。
@@ -52,8 +54,7 @@ curl --fail --silent --show-error --location --output /dev/null \
 
 ```bash
 npm ci
-npm run build
-npx --yes wrangler@4.128.0 pages deploy dist --project-name blackjack --branch main
+npm run deploy:pages
 ```
 
 ## 本地 systemd 服务

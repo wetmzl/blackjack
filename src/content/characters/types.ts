@@ -4,14 +4,30 @@ import type { AbilityBinding } from "../../core/abilities/types";
 
 export type Tier = "D" | "C" | "B" | "A" | "S";
 
+/** Data-driven prerequisites for inviting an attendee to the table. */
+export type CharacterUnlockCondition =
+  | { readonly type: "defeat-any" }
+  | { readonly type: "defeat-any-tag"; readonly tag: string }
+  | { readonly type: "defeat-character"; readonly characterId: string }
+  | { readonly type: "defeat-tag-percentage"; readonly tag: string; readonly percentage: number };
+
+export type CharacterPortraitSurface = "selection" | "table";
+
+/** Presentation-only scales shared by every UI surface that renders attendee portrait art. */
+export type CharacterPortraitScales = Readonly<Record<CharacterPortraitSurface, number>>;
+
 /** Lightweight attendee data used to build the castle lobby and collection-history index. */
 export interface CharacterMetadata {
   readonly id: string;
   readonly name: string;
   readonly subtitle: string;
   readonly tier: Tier;
+  /** Custom discovery tags. The tier itself is also queryable as `tier:s`, `tier:a`, etc. */
+  readonly tags: readonly string[];
+  readonly unlock?: CharacterUnlockCondition;
   readonly previewImage: string;
   readonly trophyImage: string;
+  readonly portraitScales: CharacterPortraitScales;
   readonly dataFile: string;
 }
 
@@ -76,8 +92,6 @@ export interface CharacterData {
   readonly profile: CharacterProfile;
   readonly matchSummary: CharacterMatchSummary;
   readonly trophyGallery?: CharacterTrophyGallery;
-  /** Presentation-only multiplier applied to every in-match portrait; defaults to the scale-1 baseline. */
-  readonly tablePortraitScale: number;
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;
   readonly mechanics: readonly AbilityBinding[];

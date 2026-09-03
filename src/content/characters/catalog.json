@@ -1,11 +1,13 @@
 {
-  "defaultCharacterId": "w",
+  "defaultCharacterId": "texas",
   "characters": [
     {
       "id": "w",
       "name": "W",
       "subtitle": "预告犯罪的暗夜女王，幸好门口的安检搜出了她藏在小穴里的炸药。",
       "tier": "S",
+      "tags": ["explosive", "chaotic"],
+      "unlock": { "type": "defeat-any-tag", "tag": "tier:a" },
       "previewImage": "/assets/characters/w-relaxed.png",
       "trophyImage": "/assets/characters/w-trophy-defeated.png",
       "dataFile": "w.json"
@@ -15,6 +17,7 @@
       "name": "德克萨斯",
       "subtitle": "最后的'德克萨斯'，这一次，她想救下一个本该被她留在过去的人。",
       "tier": "A",
+      "tags": ["rhodes-island", "lupo"],
       "previewImage": "/assets/characters/texas-relaxed.png",
       "trophyImage": "/assets/characters/texas-trophy-defeated.png",
       "dataFile": "texas.json"
@@ -24,6 +27,7 @@
       "name": "艾丽妮",
       "subtitle": "前伊比利亚审判官，若经文没有答案，她就拿命去找自己的答案",
       "tier": "A",
+      "tags": ["iberia", "judge"],
       "previewImage": "/assets/characters/irene-relaxed.png",
       "trophyImage": "/assets/characters/irene-trophy-defeated.png",
       "dataFile": "irene.json"
@@ -33,6 +37,8 @@
       "name": "年",
       "subtitle": "岁家老九，活得太久的人，也会拿命去赌一场不会散的团圆",
       "tier": "S",
+      "tags": ["sui", "craft"],
+      "unlock": { "type": "defeat-any-tag", "tag": "tier:a" },
       "previewImage": "/assets/characters/nian-relaxed.png",
       "trophyImage": "/assets/characters/nian-trophy-defeated.png",
       "dataFile": "nian.json"
@@ -42,8 +48,13 @@
       "name": "翎羽",
       "subtitle": "来自拉特兰的前戍卫队成员,只要她仍然站着，就不会再有人死在她身后。",
       "tier": "B",
+      "tags": ["laterano", "guard"],
       "previewImage": "/assets/characters/plume-relaxed.png",
       "trophyImage": "/assets/characters/plume-trophy-defeated.png",
+      "portraitScales": {
+        "selection": 1.3,
+        "table": 1.3
+      },
       "dataFile": "plume.json"
     }
   ]

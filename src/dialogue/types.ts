@@ -1,5 +1,5 @@
 import type { SeededRng, RngSnapshot } from "../core/rng/seeded";
-import eventDefinitions from "./events.json";
+import eventDefinitions from "./events.json" with { type: "json" };
 
 export type DialogueEvent =
   | "MATCH_START" | "PLAYER_HIT" | "PLAYER_STAND" | "PLAYER_BLACKJACK" | "OPPONENT_BLACKJACK"
