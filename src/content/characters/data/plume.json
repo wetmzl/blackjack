@@ -90,8 +90,6 @@
     "PLAYER_TRIGGER_HIT": ["（翎羽台词占位：策展人命中）"],
     "OPPONENT_TRIGGER_HIT": ["（翎羽台词占位：翎羽命中）"],
     "SPECIAL_TWENTY_ONE_PUSH": ["（翎羽台词占位：二十一点平局）"],
-    "SPECIAL_ONE_POINT_FINISH": ["（翎羽台词占位：一分之差）"],
-    "SPECIAL_SMALL_HAND_TWENTY_ONE": ["（翎羽台词占位：多张牌二十一点）"],
     "SPECIAL_LOW_PUSH": ["（翎羽台词占位：低点数平局）"]
   }
 }

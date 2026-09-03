@@ -19,7 +19,5 @@
   { "code": "PLAYER_TRIGGER_HIT", "label": "玩家被命中" },
   { "code": "OPPONENT_TRIGGER_HIT", "label": "对手被命中" },
   { "code": "SPECIAL_TWENTY_ONE_PUSH", "label": "特殊牌面：21 对 21" },
-  { "code": "SPECIAL_ONE_POINT_FINISH", "label": "特殊牌面：一点击杀" },
-  { "code": "SPECIAL_SMALL_HAND_TWENTY_ONE", "label": "特殊牌面：多张小牌凑 21" },
   { "code": "SPECIAL_LOW_PUSH", "label": "特殊牌面：低点数平局" }
 ]

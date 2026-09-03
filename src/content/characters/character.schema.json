@@ -119,7 +119,7 @@
         "PLAYER_SURVIVED_TRIGGER", "OPPONENT_SURVIVED_TRIGGER",
         "PLAYER_WIN_ROUND", "OPPONENT_WIN_ROUND", "PUSH_ROUND",
         "PLAYER_TRIGGER_READY", "OPPONENT_TRIGGER_READY", "PLAYER_TRIGGER_HIT", "OPPONENT_TRIGGER_HIT",
-        "SPECIAL_TWENTY_ONE_PUSH", "SPECIAL_ONE_POINT_FINISH", "SPECIAL_SMALL_HAND_TWENTY_ONE", "SPECIAL_LOW_PUSH"
+        "SPECIAL_TWENTY_ONE_PUSH", "SPECIAL_LOW_PUSH"
       ],
       "properties": {
         "MATCH_START": { "$ref": "#/$defs/dialoguePool", "description": "本轮尚无行动时；可体现与会者的执念和古堡牌局氛围。" },
@@ -142,8 +142,6 @@
         "PLAYER_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "策展人的左轮朝天花板击发；策展人不死，公开结果为与会者赢得愿望，隐藏时间线随后回溯。" },
         "OPPONENT_TRIGGER_HIT": { "$ref": "#/$defs/dialoguePool", "description": "发牌员对准与会者头部击发实弹，与会者当场死亡。" },
         "SPECIAL_TWENTY_ONE_PUSH": { "$ref": "#/$defs/dialoguePool", "description": "双方都是 21；优先于其他 21 类特殊牌型。" },
-        "SPECIAL_ONE_POINT_FINISH": { "$ref": "#/$defs/dialoguePool", "description": "普通比较中 21:20 或 20:19 的一分胜负；多张牌 21 优先。" },
-        "SPECIAL_SMALL_HAND_TWENTY_ONE": { "$ref": "#/$defs/dialoguePool", "description": "任一方用 4 至 5 张牌凑到 21；仅双方 21 的优先级更高。" },
         "SPECIAL_LOW_PUSH": { "$ref": "#/$defs/dialoguePool", "description": "双方以相同的 12 至 16 点形成低点数平局。" }
       }
     }

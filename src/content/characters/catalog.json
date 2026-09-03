@@ -4,7 +4,7 @@
     {
       "id": "w",
       "name": "W",
-      "subtitle": "舞会牌桌上的危险戏谑者",
+      "subtitle": "预告犯罪的暗夜女王，幸好门口的安检搜出了她藏在小穴里的炸药。",
       "tier": "S",
       "previewImage": "/assets/characters/w-relaxed.png",
       "trophyImage": "/assets/characters/w-trophy-defeated.png",
@@ -13,7 +13,7 @@
     {
       "id": "texas",
       "name": "德克萨斯",
-      "subtitle": "沉稳寡言的舞会对手",
+      "subtitle": "最后的'德克萨斯'，这一次，她想救下一个本该被她留在过去的人。",
       "tier": "A",
       "previewImage": "/assets/characters/texas-relaxed.png",
       "trophyImage": "/assets/characters/texas-trophy-defeated.png",
@@ -22,7 +22,7 @@
     {
       "id": "irene",
       "name": "艾丽妮",
-      "subtitle": "假面余兴中的审判官",
+      "subtitle": "前伊比利亚审判官，若经文没有答案，她就拿命去找自己的答案",
       "tier": "A",
       "previewImage": "/assets/characters/irene-relaxed.png",
       "trophyImage": "/assets/characters/irene-trophy-defeated.png",
@@ -31,7 +31,7 @@
     {
       "id": "nian",
       "name": "年",
-      "subtitle": "把赌命当烂片看的造物者",
+      "subtitle": "岁家老九，活得太久的人，也会拿命去赌一场不会散的团圆",
       "tier": "S",
       "previewImage": "/assets/characters/nian-relaxed.png",
       "trophyImage": "/assets/characters/nian-trophy-defeated.png",
@@ -40,7 +40,7 @@
     {
       "id": "plume",
       "name": "翎羽",
-      "subtitle": "严守归途的羽族先锋",
+      "subtitle": "来自拉特兰的前戍卫队成员,只要她仍然站着，就不会再有人死在她身后。",
       "tier": "B",
       "previewImage": "/assets/characters/plume-relaxed.png",
       "trophyImage": "/assets/characters/plume-trophy-defeated.png",

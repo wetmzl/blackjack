@@ -7,7 +7,7 @@ export type DialogueEvent =
   | "PLAYER_BUST" | "OPPONENT_BUST" | "PLAYER_SURVIVED_TRIGGER" | "OPPONENT_SURVIVED_TRIGGER"
   | "PLAYER_WIN_ROUND" | "OPPONENT_WIN_ROUND" | "PUSH_ROUND"
   | "PLAYER_TRIGGER_READY" | "OPPONENT_TRIGGER_READY" | "PLAYER_TRIGGER_HIT" | "OPPONENT_TRIGGER_HIT"
-  | "SPECIAL_TWENTY_ONE_PUSH" | "SPECIAL_ONE_POINT_FINISH" | "SPECIAL_SMALL_HAND_TWENTY_ONE" | "SPECIAL_LOW_PUSH";
+  | "SPECIAL_TWENTY_ONE_PUSH" | "SPECIAL_LOW_PUSH";
 
 export const DIALOGUE_EVENT_CODES = eventDefinitions.map((event) => event.code) as readonly DialogueEvent[];
 export const DIALOGUE_EVENT_LABELS: Readonly<Record<DialogueEvent, string>> = Object.fromEntries(eventDefinitions.map((event) => [event.code, event.label])) as Record<DialogueEvent, string>;

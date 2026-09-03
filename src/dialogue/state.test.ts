@@ -151,9 +151,7 @@ describe("finite dialogue state resolver", () => {
       reveal([card("10"), card("3")], [card("8", "hearts"), card("5", "hearts")], push)
     ];
     const selected = states.map((state) => resolveDialogueState(state).event);
-    const retiredSpecialPools = new Set(["SPECIAL_ONE_POINT_FINISH", "SPECIAL_SMALL_HAND_TWENTY_ONE"]);
-    const activeDialogueEventCodes = DIALOGUE_EVENT_CODES.filter((event) => !retiredSpecialPools.has(event));
-    expect(new Set(selected)).toEqual(new Set(activeDialogueEventCodes));
-    expect(selected).toHaveLength(activeDialogueEventCodes.length);
+    expect(new Set(selected)).toEqual(new Set(DIALOGUE_EVENT_CODES));
+    expect(selected).toHaveLength(DIALOGUE_EVENT_CODES.length);
   });
 });
