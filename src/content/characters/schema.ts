@@ -15,7 +15,7 @@ const unlockCondition = z.discriminatedUnion("type", [
 ]);
 const metadataEntry = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), subtitle: z.string().min(1),
-  tier: z.enum(["D", "C", "B", "A", "S"]), tags: z.array(characterTag).default([]), unlock: unlockCondition.optional(),
+  tier: z.enum(["D", "C", "B", "A", "S", "SS"]), tags: z.array(characterTag).default([]), unlock: unlockCondition.optional(),
   previewImage: z.string().min(1), trophyImage: z.string().min(1), portraitScales, dataFile: safeDataFile
 }).strict();
 export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().min(1), characters: z.array(metadataEntry).min(1) }).strict().superRefine((catalog, ctx) => {
@@ -48,6 +48,11 @@ const dialogue = z.object(dialogueShape).strict();
 const trophyGallery = z.object({
   headshot: z.string().min(1),
   fullBody: z.string().min(1),
+  poses: z.array(z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+    name: z.string().min(1),
+    image: z.string().min(1)
+  }).strict()).min(1).optional(),
   closeups: z.array(z.object({
     id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
     name: z.string().min(1),
@@ -61,6 +66,11 @@ const trophyGallery = z.object({
   for (const [index, point] of gallery.closeups.entries()) {
     if (ids.has(point.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["closeups", index, "id"], message: `特写点 ID 重复：${point.id}` });
     ids.add(point.id);
+  }
+  const poseIds = new Set<string>();
+  for (const [index, pose] of (gallery.poses ?? []).entries()) {
+    if (poseIds.has(pose.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["poses", index, "id"], message: `陈列姿势 ID 重复：${pose.id}` });
+    poseIds.add(pose.id);
   }
 });
 export const CharacterDataSchema = z.object({

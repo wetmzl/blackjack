@@ -2,7 +2,7 @@ import type { AiProfile } from "../../core/ai/types";
 import type { CharacterDialogue } from "../../dialogue/types";
 import type { AbilityBinding } from "../../core/abilities/types";
 
-export type Tier = "D" | "C" | "B" | "A" | "S";
+export type Tier = "D" | "C" | "B" | "A" | "S" | "SS";
 
 /** Data-driven prerequisites for inviting an attendee to the table. */
 export type CharacterUnlockCondition =
@@ -58,7 +58,7 @@ export interface CharacterMatchSummary {
   readonly escaped: string;
 }
 
-/** Percentage coordinates are relative to the attendee's portrait collection artwork. */
+/** Percentage coordinates are relative to the shared coffin plus the attendee's default fullBody layer. */
 export interface TrophyCloseupPoint {
   readonly id: string;
   readonly name: string;
@@ -68,11 +68,20 @@ export interface TrophyCloseupPoint {
   readonly description: string;
 }
 
+export interface TrophyGalleryPose {
+  readonly id: string;
+  readonly name: string;
+  /** 2:3 transparent character layer aligned to the shared coffin canvas. */
+  readonly image: string;
+}
+
 export interface CharacterTrophyGallery {
   /** 5:7 archival head-and-shoulders view of the deceased attendee. */
   readonly headshot: string;
-  /** 2:3 full-body collection record used as the inspection stage. */
+  /** Default 2:3 transparent character layer used as the annotated inspection stage. */
   readonly fullBody: string;
+  /** Optional alternate transparent layers; closeup coordinates only apply to fullBody. */
+  readonly poses?: readonly TrophyGalleryPose[];
   /** No upper limit: attendees can define as many archival details as needed. */
   readonly closeups: readonly TrophyCloseupPoint[];
 }

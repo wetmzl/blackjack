@@ -19,7 +19,24 @@
   },
   "trophyGallery": {
     "headshot": "/assets/characters/nian-trophy-gallery-headshot.png",
-    "fullBody": "/assets/characters/nian-trophy-gallery-full.png",
+    "fullBody": "/assets/characters/nian-trophy-gallery-full-subject.png",
+    "poses": [
+      {
+        "id": "left",
+        "name": "左侧",
+        "image": "/assets/characters/nian-trophy-gallery-left-subject.png"
+      },
+      {
+        "id": "prone",
+        "name": "俯卧",
+        "image": "/assets/characters/nian-trophy-gallery-prone-subject.png"
+      },
+      {
+        "id": "right",
+        "name": "右侧",
+        "image": "/assets/characters/nian-trophy-gallery-right-subject.png"
+      }
+    ],
     "closeups": [
       {
         "id": "hand",

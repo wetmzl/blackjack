@@ -28,6 +28,15 @@ describe("data-driven character registry", () => {
     expect(TABLE_ART_BASELINE.composition).toBe("horizontal-seated");
   });
 
+  it("reserves SS as a catalog tier and exposes its unlock tag", () => {
+    const catalog = CharacterCatalogSchema.parse({
+      defaultCharacterId: "future",
+      characters: [{ id: "future", name: "未来角色", subtitle: "尚未实装", tier: "SS", tags: [], previewImage: "/future.png", trophyImage: "/future-trophy.png", dataFile: "future.json" }]
+    });
+    expect(catalog.characters[0]?.tier).toBe("SS");
+    expect(getCharacterTags(catalog.characters[0]!)).toContain("tier:ss");
+  });
+
   it("gives every character dedicated table, summary, and trophy artwork", () => {
     expect(CHARACTER_CATALOG.every((character) => !("ai" in character))).toBe(true);
     expect(CHARACTER_CATALOG.map((character) => character.previewImage)).toEqual([
@@ -105,7 +114,12 @@ describe("data-driven character registry", () => {
     });
     expect(w.trophyGallery).toEqual({
       headshot: "/assets/characters/w-trophy-gallery-headshot.png",
-      fullBody: "/assets/characters/w-trophy-gallery-full.png",
+      fullBody: "/assets/characters/w-trophy-gallery-full-subject.png",
+      poses: [
+        { id: "left", name: "左侧", image: "/assets/characters/w-trophy-gallery-left-subject.png" },
+        { id: "prone", name: "俯卧", image: "/assets/characters/w-trophy-gallery-prone-subject.png" },
+        { id: "right", name: "右侧", image: "/assets/characters/w-trophy-gallery-right-subject.png" }
+      ],
       closeups: [
         expect.objectContaining({ id: "face-dazed", name: "失焦的脸", x: 50, y: 17, image: "/assets/characters/w-trophy-detail-face-dazed.png" }),
         expect.objectContaining({ id: "chest-costume", name: "束带领口", x: 50, y: 29, image: "/assets/characters/w-trophy-detail-chest-costume.png" }),
@@ -115,7 +129,12 @@ describe("data-driven character registry", () => {
     });
     expect(texas.trophyGallery).toEqual({
       headshot: "/assets/characters/texas-trophy-gallery-headshot.png",
-      fullBody: "/assets/characters/texas-trophy-gallery-full.png",
+      fullBody: "/assets/characters/texas-trophy-gallery-full-subject.png",
+      poses: [
+        { id: "left", name: "左侧", image: "/assets/characters/texas-trophy-gallery-left-subject.png" },
+        { id: "prone", name: "俯卧", image: "/assets/characters/texas-trophy-gallery-prone-subject.png" },
+        { id: "right", name: "右侧", image: "/assets/characters/texas-trophy-gallery-right-subject.png" }
+      ],
       closeups: [
         expect.objectContaining({ id: "face-dazed", name: "失焦的脸", x: 50, y: 17, image: "/assets/characters/texas-trophy-detail-face-dazed.png" }),
         expect.objectContaining({ id: "boots", name: "制服短靴", x: 46, y: 85, image: "/assets/characters/texas-trophy-detail-boots.png" }),
@@ -124,7 +143,12 @@ describe("data-driven character registry", () => {
     });
     expect(irene.trophyGallery).toEqual({
       headshot: "/assets/characters/irene-trophy-gallery-headshot.png",
-      fullBody: "/assets/characters/irene-trophy-gallery-full.png",
+      fullBody: "/assets/characters/irene-trophy-gallery-full-subject.png",
+      poses: [
+        { id: "left", name: "左侧", image: "/assets/characters/irene-trophy-gallery-left-subject.png" },
+        { id: "prone", name: "俯卧", image: "/assets/characters/irene-trophy-gallery-prone-subject.png" },
+        { id: "right", name: "右侧", image: "/assets/characters/irene-trophy-gallery-right-subject.png" }
+      ],
       closeups: [
         expect.objectContaining({ id: "face-unwilling", name: "未散的不甘", x: 50, y: 17, image: "/assets/characters/irene-trophy-detail-face-unwilling.png" }),
         expect.objectContaining({ id: "hand", name: "松开的手", x: 34, y: 45, image: "/assets/characters/irene-trophy-detail-hand.png" }),
@@ -134,7 +158,12 @@ describe("data-driven character registry", () => {
     });
     expect(nian.trophyGallery).toEqual({
       headshot: "/assets/characters/nian-trophy-gallery-headshot.png",
-      fullBody: "/assets/characters/nian-trophy-gallery-full.png",
+      fullBody: "/assets/characters/nian-trophy-gallery-full-subject.png",
+      poses: [
+        { id: "left", name: "左侧", image: "/assets/characters/nian-trophy-gallery-left-subject.png" },
+        { id: "prone", name: "俯卧", image: "/assets/characters/nian-trophy-gallery-prone-subject.png" },
+        { id: "right", name: "右侧", image: "/assets/characters/nian-trophy-gallery-right-subject.png" }
+      ],
       closeups: [
         expect.objectContaining({ id: "hand", name: "松开的手", x: 31, y: 44, image: "/assets/characters/nian-trophy-detail-hand.png" }),
         expect.objectContaining({ id: "tail-root", name: "龙尾根部", x: 65, y: 47, image: "/assets/characters/nian-trophy-detail-tail-root.png" }),
@@ -144,7 +173,12 @@ describe("data-driven character registry", () => {
     });
     expect(plume.trophyGallery).toEqual({
       headshot: "/assets/characters/plume-trophy-gallery-headshot.png",
-      fullBody: "/assets/characters/plume-trophy-gallery-full.png",
+      fullBody: "/assets/characters/plume-trophy-gallery-full-subject.png",
+      poses: [
+        { id: "left", name: "左侧", image: "/assets/characters/plume-trophy-gallery-left-subject.png" },
+        { id: "prone", name: "俯卧", image: "/assets/characters/plume-trophy-gallery-prone-subject.png" },
+        { id: "right", name: "右侧", image: "/assets/characters/plume-trophy-gallery-right-subject.png" }
+      ],
       closeups: [
         expect.objectContaining({ id: "face", name: "凝住的警觉", x: 50, y: 16, image: "/assets/characters/plume-trophy-detail-face.png" }),
         expect.objectContaining({ id: "skirt", name: "层叠裙摆", x: 50, y: 46, image: "/assets/characters/plume-trophy-detail-skirt.png" }),
@@ -279,6 +313,19 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [] } }).success).toBe(true);
     expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [...gallery.closeups, gallery.closeups[0]] } }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [{ ...gallery.closeups[0], x: 101 }] } }).success).toBe(false);
+  });
+
+  it("supports uniquely identified transparent trophy pose layers", () => {
+    const gallery = wData.trophyGallery;
+    expect(gallery.poses).toEqual([
+      { id: "left", name: "左侧", image: "/assets/characters/w-trophy-gallery-left-subject.png" },
+      { id: "prone", name: "俯卧", image: "/assets/characters/w-trophy-gallery-prone-subject.png" },
+      { id: "right", name: "右侧", image: "/assets/characters/w-trophy-gallery-right-subject.png" }
+    ]);
+    expect([wData, texasData, ireneData, nianData, plumeData].every((data) => data.trophyGallery.poses.length === 3)).toBe(true);
+    expect(CharacterDataSchema.safeParse(wData).success).toBe(true);
+    expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [...gallery.poses, gallery.poses[0]] } }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [{ ...gallery.poses[0], unknown: true }] } }).success).toBe(false);
   });
 
   it("rejects unknown characters", async () => {

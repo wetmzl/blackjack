@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../rng/seeded";
-import { drawRandomSkill, addUnlockedSkills, skillsUnlockedForVictory, validateLoadout } from "./skills";
+import { drawRandomSkill, addUnlockedSkills, skillsUnlockedForVictory, unlockedSkillIdsForDefeats, validateLoadout } from "./skills";
 import { INITIAL_SKILL_IDS, SKILL_DEFINITIONS } from "./definitions";
 import { ABILITY_DEFINITIONS, getAbilityDefinition } from "../abilities/registry";
 import { createMatch } from "../match/reducer";
@@ -47,5 +47,10 @@ describe("skill inventory helpers", () => {
       expect(skillsUnlockedForVictory(opponentId, null, true)).toEqual([]);
     }
     expect(addUnlockedSkills(["night-queen"], "w", "player")).toEqual(["night-queen"]);
+  });
+
+  it("rebuilds persistent unlocks from durable defeat facts", () => {
+    expect(unlockedSkillIdsForDefeats([])).toEqual(INITIAL_SKILL_IDS);
+    expect(unlockedSkillIdsForDefeats([{ opponentId: "texas", timestamp: "2026-01-01T00:00:00.000Z" }])).toContain("blueberry-and-dark-chocolate");
   });
 });

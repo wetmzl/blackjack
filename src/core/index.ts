@@ -16,3 +16,4 @@ export * from "./ai/types";
 export * from "./match/reducer";
 export * from "./match/types";
 export * from "./match/history";
+export * from "./progression/defeats";

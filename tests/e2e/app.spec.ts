@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { createDefaultSave } from "../../src/persistence/boot";
+import { createDefaultSave, createRuntimeSave } from "../../src/persistence/boot";
 import { createMatch } from "../../src/core/match/reducer";
 import type { MatchHistoryRecord } from "../../src/core/match/history";
 import type { MatchState } from "../../src/core/match/types";
@@ -104,6 +104,38 @@ async function returnToLobbyMenu(page: Page): Promise<void> {
   await expect(page.locator("main.lobby-menu-shell")).toBeVisible();
 }
 
+async function swipeTrophyGallery(page: Page, direction: "left" | "right"): Promise<void> {
+  const box = await page.locator(".trophy-gallery-stage").boundingBox();
+  if (!box) throw new Error("Trophy gallery stage is not visible");
+  const startX = box.x + box.width * (direction === "left" ? .72 : .28);
+  const endX = box.x + box.width * (direction === "left" ? .28 : .72);
+  const y = box.y + box.height * .62;
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  await page.mouse.move(endX, y, { steps: 5 });
+  await page.mouse.up();
+}
+
+async function putSaveRecord(page: Page, id: "long-term" | "runtime", data: unknown): Promise<void> {
+  await page.evaluate(async ({ id: recordId, data: recordData }) => {
+    const request = indexedDB.open("house-of-chances");
+    await new Promise<void>((resolve, reject) => {
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const transaction = request.result.transaction("saves", "readwrite");
+        transaction.objectStore("saves").put({ id: recordId, data: recordData });
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  }, { id, data });
+}
+
+async function installRuntimeSave(page: Page, match: MatchState): Promise<void> {
+  await putSaveRecord(page, "runtime", createRuntimeSave(match, "2026-08-30T00:00:00.000Z"));
+  await page.reload();
+}
+
 test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, testInfo) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "绝命之夜" })).toBeVisible();
@@ -147,7 +179,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await enterCharacterSelection(page);
   await expect(page.locator("button.lobby-settings-button")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "候场宾客" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "已击败宾客" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "已死亡宾客" })).toBeVisible();
   await expect(page.locator(".guest-section:not(.defeated-section) .character-card")).toHaveCount(3);
   await expect(page.locator(".defeated-section .character-card")).toHaveCount(0);
   await expect(page.locator("[data-character-id='w'], [data-character-id='nian']")).toHaveCount(0);
@@ -301,10 +333,11 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
 test("击败 A 级角色会显示 S 级解锁，刷新候场时确保换人", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = playerWinSummary("texas");
+  const activeMatch = playerWinSummary("texas");
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "character-unlock-summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
 
   const unlockPanel = page.locator(".character-unlock-panel");
   await expect(unlockPanel).toContainText("新角色已解锁");
@@ -341,7 +374,11 @@ test("已击败宾客按首次胜利时间去重排列且可以再次邀请", as
     victoryRecord("texas-first", "texas", "2026-08-29T12:00:00.000Z"),
     victoryRecord("texas-repeat", "texas", "2026-08-31T12:00:00.000Z")
   ];
-  imported.profile = { ...imported.profile, matchesPlayed: 3, wins: 3, unlockedCharacterIds: ["w", "texas", "irene", "nian", "plume"] };
+  imported.defeats = [
+    { opponentId: "irene", timestamp: "2026-08-30T12:00:00.000Z" },
+    { opponentId: "texas", timestamp: "2026-08-29T12:00:00.000Z" }
+  ];
+  imported.profile = { ...imported.profile, matchesPlayed: 3, wins: 3 };
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "defeated-guests.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
@@ -354,7 +391,7 @@ test("已击败宾客按首次胜利时间去重排列且可以再次邀请", as
   expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual(["texas", "irene"]);
   await expect(defeatedCards.locator("[data-invite-character]")).toHaveCount(2);
   await defeatedCards.first().locator("[data-invite-character='texas']").click();
-  await expect(page.locator("#profile")).toContainText("已击败");
+  await expect(page.locator("#profile")).toContainText("已经成为了一具尸体");
   await expect(page.locator("#profile [data-profile-start]")).toHaveCount(1);
   await page.locator("#profile [data-profile-start]").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
@@ -366,7 +403,11 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
     victoryRecord("unlock-texas", "texas", "2026-08-28T00:00:00.000Z"),
     victoryRecord("unlock-irene", "irene", "2026-08-29T00:00:00.000Z")
   ];
-  imported.profile = { ...imported.profile, matchesPlayed: 2, wins: 2, unlockedCharacterIds: ["w", "texas", "irene", "nian", "plume"] };
+  imported.defeats = [
+    { opponentId: "texas", timestamp: "2026-08-28T00:00:00.000Z" },
+    { opponentId: "irene", timestamp: "2026-08-29T00:00:00.000Z" }
+  ];
+  imported.profile = { ...imported.profile, matchesPlayed: 2, wins: 2 };
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "unlocked-nian.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
@@ -432,10 +473,11 @@ test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => 
   imported.settings.reducedMotion = true;
   const source = findTurnsMatch("derived-card-visibility");
   const opponent = { ...source.opponent, hand: { cards: [source.opponent.hand.cards[0]!, createDerivedCard("hearts", "K")] } };
-  imported.activeMatch = { ...source, opponent, round: { ...source.round, opponent } };
+  const activeMatch = { ...source, opponent, round: { ...source.round, opponent } };
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "derived.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   const hidden = page.locator(".opponent-zone .cards .card").nth(1);
   await expect(hidden).toHaveClass(/card-back/);
   await expect(hidden).toHaveAttribute("data-card-origin", "derived");
@@ -455,6 +497,11 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
   const [download] = await Promise.all([page.waitForEvent("download"), settings.locator("[data-export]").click()]);
   expect(download.suggestedFilename()).toBe("house-of-chances-save.json");
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  const exported = JSON.parse(readFileSync(downloadPath!, "utf8")) as Record<string, unknown>;
+  expect(exported.skipTutorial).toBe(false);
+  expect(exported.activeMatch).toBeUndefined();
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.profile.matchesPlayed = 7;
   await settings.locator("#save-file").setInputFiles({ name: "存档.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
@@ -539,26 +586,20 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 0");
   await returnToLobbyMenu(page);
-  await expect(page.locator("[data-open-trophies]")).toContainText("0 局");
+  await expect(page.locator("[data-open-trophies]")).toContainText("0 件");
 });
 
-test("旧版 IndexedDB 存档不会自动迁移并会引导清理", async ({ page }) => {
+test("不兼容长期存档必须手动点击并确认删除", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("main.lobby-shell")).toBeVisible();
-  await page.evaluate(async () => {
-    const request = indexedDB.open("house-of-chances");
-    await new Promise<void>((resolve, reject) => {
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const transaction = request.result.transaction("saves", "readwrite");
-        transaction.objectStore("saves").put({ id: "current", data: { marker: "outdated-save", schemaVersion: 99 } });
-        transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error);
-      };
-    });
-  });
+  await putSaveRecord(page, "long-term", { marker: "outdated-save", schemaVersion: 99 });
   await page.reload();
   await expect(page.locator("main.error-shell")).toBeVisible();
-  await expect(page.locator("main.error-shell")).toContainText("不兼容");
+  await expect(page.locator("main.error-shell")).toContainText("长期存档");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("不会删除未完成牌局");
+    await dialog.accept();
+  });
   await page.locator("[data-reset-invalid-save]").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   const stored = await page.evaluate(async () => {
@@ -567,25 +608,57 @@ test("旧版 IndexedDB 存档不会自动迁移并会引导清理", async ({ pag
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         const transaction = request.result.transaction("saves", "readonly");
-        const get = transaction.objectStore("saves").get("current");
+        const get = transaction.objectStore("saves").get("long-term");
         get.onsuccess = () => resolve((get.result as { data: Record<string, unknown> }).data);
         get.onerror = () => reject(get.error);
       };
     });
   });
   expect(stored.schemaVersion).toBe(createDefaultSave().schemaVersion);
+  expect(stored.skipTutorial).toBe(false);
   expect(stored.marker).toBeUndefined();
   await page.reload();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
 });
 
+test("不兼容运行时存档经一次确认后单独舍弃", async ({ page }) => {
+  const durable = createDefaultSave("2026-08-30T00:00:00.000Z");
+  durable.profile.matchesPlayed = 4;
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "durable.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(durable)) });
+  await putSaveRecord(page, "runtime", { format: "house-of-chances-runtime", schemaVersion: 99, marker: "outdated-runtime" });
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("只舍弃这局牌");
+    expect(dialog.message()).toContain("长期战绩与解锁不会受到影响");
+    await dialog.accept();
+  });
+  await page.reload();
+  await expect(page.locator("main.lobby-shell")).toBeVisible();
+  await expect(page.locator("main.error-shell")).toHaveCount(0);
+  await enterCharacterSelection(page);
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 4");
+  expect(await page.evaluate(async () => {
+    const request = indexedDB.open("house-of-chances");
+    return new Promise<boolean>((resolve, reject) => {
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const get = request.result.transaction("saves", "readonly").objectStore("saves").get("runtime");
+        get.onsuccess = () => resolve(Boolean(get.result));
+        get.onerror = () => reject(get.error);
+      };
+    });
+  })).toBe(false);
+});
+
 test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = playerWinSummary();
+  const activeMatch = playerWinSummary();
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.getByRole("heading", { name: "策展人胜利" })).toBeVisible();
   await expect(page.locator(".summary-character")).toHaveAttribute("src", /w-defeated-summary-chair\.png/);
   await expect(page.locator(".unlock-panel")).toContainText("暗夜女王");
@@ -616,10 +689,10 @@ test("玩家落败结算可回溯并与同一名与会者重开", async ({ page 
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const loss = playerLossSummary("texas");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = loss;
   await page.goto("/?debug=1");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "loss-summary.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, loss);
   await expect(page.getByRole("heading", { name: "策展人落败" })).toBeVisible();
   const summaryButtons = page.locator(".summary-actions button");
   await expect(summaryButtons).toHaveCount(2);
@@ -649,7 +722,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-hunter-instinct" };
   const hunterSequence = source.abilities.sequence + 1;
   imported.settings.reducedMotion = true;
-  imported.activeMatch = {
+  const activeMatch: MatchState = {
     ...source,
     round: { ...source.round, currentActor: "player" },
     skills: { ...source.skills, cards: [hunterCard] },
@@ -660,9 +733,10 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
     }
   };
   await page.goto("/?debug=1");
-  await page.addStyleTag({ content: ".dev-hud { display: none !important; }" });
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "compact-skills.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
+  await page.addStyleTag({ content: ".dev-hud { display: none !important; }" });
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
   await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(4);
@@ -825,7 +899,7 @@ test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => 
   const opponent = { ...source.opponent, hand: createHand([createCard("clubs", "10"), createCard("hearts", "6")]), stood: true, busted: false };
   const scentCard = { kind: "player-skill" as const, definitionId: "scent-of-a-woman", owner: "player" as const, instanceId: "scent-ui-card" };
   const sequence = source.abilities.sequence + 1;
-  imported.activeMatch = {
+  const activeMatch: MatchState = {
     ...source, player, opponent,
     round: { ...source.round, phase: "turns", currentActor: "player", player, opponent },
     skills: { ...source.skills, equippedSkillIds: ["scent-of-a-woman"], cards: [scentCard] },
@@ -834,6 +908,7 @@ test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => 
   await page.goto("/?debug=1");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "scent.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toBeVisible();
   await page.locator(".skill-drawer-toggle").click();
   const scentButton = page.locator(".skill-sidebar button.skill-card").filter({ hasText: "闻香识女人" });
@@ -860,7 +935,7 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
   const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
   const opponent = { ...base.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
   imported.settings.reducedMotion = true;
-  imported.activeMatch = {
+  const activeMatch: MatchState = {
     ...base,
     player,
     opponent,
@@ -873,6 +948,7 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "silent-drizzle.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("#presentation")).toContainText("德克萨斯发动了技能「细雨无声」", { timeout: 8_000 });
   await expect(page.locator("#presentation")).toContainText("玩家下一手牌期间无法使用主动技能");
 
@@ -908,40 +984,55 @@ test("牌桌全屏按钮安全切换并同步状态", async ({ page }) => {
 test("玩家 Blackjack 只使用 Blackjack 对话池", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = findPlayerBlackjackMatch();
+  const activeMatch = findPlayerBlackjackMatch();
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "blackjack-dialogue.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
   const line = await page.locator("#dialogue-text").textContent();
   expect(wDialogue.PLAYER_BLACKJACK).toContain(line);
   expect(wDialogue.PLAYER_WIN_ROUND).not.toContain(line);
 });
 
-test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏", async ({ page }, testInfo) => {
+test("战利品陈列室只显示首次击败藏品，并可进入和清理独立对局记录", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const records: MatchHistoryRecord[] = [
     { id: "history-win", timestamp: "2026-08-29T20:10:00.000Z", opponentId: "nian", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 5, capacity: 6 } }, busts: { player: 1, opponent: 2 }, blackjacks: { player: 2, opponent: 1 } },
     { id: "history-loss", timestamp: "2026-08-30T20:10:00.000Z", opponentId: "texas", winner: "opponent", escaped: false, finalRoulette: { player: { bullets: 6, capacity: 6 }, opponent: { bullets: 2, capacity: 6 } }, busts: { player: 3, opponent: 0 }, blackjacks: { player: 0, opponent: 1 } }
   ];
   imported.history = records;
+  imported.defeats = [
+    { opponentId: "plume", timestamp: "2026-08-26T20:10:00.000Z" },
+    { opponentId: "texas", timestamp: "2026-08-27T20:10:00.000Z" },
+    { opponentId: "nian", timestamp: records[0].timestamp }
+  ];
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "history.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
   await returnToLobbyMenu(page);
   await page.locator("[data-open-trophies]").click();
   await expect(page.locator("main.trophy-shell")).toBeVisible();
-  await expect(page.locator(".trophy-card")).toHaveCount(2);
+  await expect(page.locator(".trophy-card")).toHaveCount(3);
+  expect(await page.locator("[data-trophy-character-id]").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.trophyCharacterId))).toEqual(["nian", "texas", "plume"]);
   const trophyBox = await page.locator(".trophy-card").first().boundingBox();
   expect(trophyBox).not.toBeNull();
   expect(trophyBox!.width / trophyBox!.height).toBeCloseTo(16 / 4.5, 1);
-  await expect(page.locator("[data-history-id='history-win'] .trophy-visual img")).toHaveAttribute("src", /nian-trophy-defeated\.png/);
-  await expect(page.locator("[data-history-id='history-loss'] .transparent-history-image")).toHaveAttribute("src", /^data:image\/gif/);
-  await page.locator("[data-history-id='history-win']").click();
+  const trophy = page.locator("[data-trophy-character-id='nian']");
+  await expect(trophy.locator(".trophy-visual img")).toHaveAttribute("src", /nian-trophy-defeated\.png/);
+  await expect(trophy.locator(".trophy-meta small")).toHaveText("S级战利品");
+  await expect(trophy.locator(".trophy-meta strong")).toHaveText("年");
+  await expect(trophy).not.toContainText("策展人胜利");
+  for (const [id, label, color] of [["plume", "B级战利品", "rgb(80, 169, 255)"], ["texas", "A级战利品", "rgb(189, 120, 255)"], ["nian", "S级战利品", "rgb(242, 196, 107)"]] as const) {
+    const card = page.locator(`[data-trophy-character-id='${id}']`);
+    await expect(card.locator(".trophy-meta small")).toHaveText(label);
+    expect(await card.evaluate((node) => ({ border: getComputedStyle(node).borderTopColor, label: getComputedStyle(node.querySelector("small")!).color }))).toEqual({ border: color, label: color });
+  }
+  await page.screenshot({ path: testInfo.outputPath("trophy-collection-390.png"), fullPage: true });
+  await trophy.click();
   const detail = page.locator("#history-detail");
   await expect(detail).toBeVisible();
-  await expect(detail).toContainText("策展人最终左轮");
-  await expect(detail).toContainText("3 / 6");
+  await expect(detail).toContainText("首次击败");
   await expect(detail.locator(".history-trophy-preview > img")).toHaveAttribute("src", /nian-trophy-gallery-headshot\.png/);
   await expect(detail.locator(".history-trophy-preview")).toContainText("战利品等级：S");
   await expect(detail.locator(".history-trophy-preview")).toContainText("年的死体展示");
@@ -951,22 +1042,13 @@ test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏",
   expect(headshotBox).not.toBeNull();
   expect(headshotBox!.width / headshotBox!.height).toBeCloseTo(5 / 7, 2);
   await detail.screenshot({ path: testInfo.outputPath("nian-trophy-history.png") });
-  await expect(detail).toContainText("年最终左轮");
-  await expect(detail).toContainText("5 / 6");
-  await expect(detail).toContainText("策展人爆牌");
-  await expect(detail).toContainText("1 次");
-  await expect(detail).toContainText("年爆牌");
-  await expect(detail).toContainText("2 次");
-  await expect(detail).toContainText("策展人黑杰克");
-  await expect(detail).toContainText("2 次");
-  await expect(detail).toContainText("年黑杰克");
-  expect(await detail.locator(".history-stats dd").allTextContents()).toEqual(["3 / 6", "5 / 6", "1 次", "2 次", "2 次", "1 次"]);
   await detail.locator("[data-open-trophy-gallery]").click();
   const gallery = page.locator("#trophy-gallery");
   await expect(gallery).toBeVisible();
-  await expect(gallery.locator(".trophy-gallery-stage > img")).toHaveAttribute("src", /nian-trophy-gallery-full\.png/);
+  await expect(gallery.locator(".trophy-gallery-background")).toHaveAttribute("src", /trophy-gallery-coffin\.png/);
+  await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", /nian-trophy-gallery-full-subject\.png/);
   await expect(gallery.locator(".trophy-hotspot")).toHaveCount(4);
-  await expect(gallery.locator(".trophy-gallery-stage figcaption")).toHaveText("点按圆环标记查看局部特写");
+  await expect(gallery.locator(".trophy-gallery-stage figcaption")).toHaveText("正面 · 左右滑动或点按箭头翻转 · 点按圆环查看特写");
   const markerStyle = await gallery.locator(".trophy-hotspot").first().evaluate((marker) => {
     const ring = getComputedStyle(marker, "::before");
     const number = marker.querySelector("span");
@@ -1004,19 +1086,52 @@ test("战利品陈列室显示胜利美术、统计和年的全屏特写鉴赏",
   await gallery.locator("[data-gallery-close]").click();
   await expect(gallery).not.toBeVisible();
   await expect(detail).toBeVisible();
+  await detail.locator("[data-history-close]").click();
+
+  await page.getByRole("button", { name: "查看历史记录" }).click();
+  await expect(page.locator("main.history-shell")).toBeVisible();
+  await expect(page.locator(".trophy-card")).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("match-history-320.png"), fullPage: true });
+  await expect(page.locator("[data-history-id='history-loss'] .transparent-history-image")).toHaveAttribute("src", /^data:image\/gif/);
+  await page.locator("[data-history-id='history-win']").click();
+  await expect(detail).toContainText("策展人最终左轮");
+  expect(await detail.locator(".history-stats dd").allTextContents()).toEqual(["3 / 6", "5 / 6", "1 次", "2 次", "2 次", "1 次"]);
+  await detail.locator("[data-history-close]").click();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("战利品、角色与技能解锁不会受到影响");
+    await dialog.accept();
+  });
+  await page.getByRole("button", { name: "清理对局记录" }).click();
+  await expect(page.locator("main.history-shell .trophy-card")).toHaveCount(0);
+  await page.getByRole("button", { name: "返回战利品陈列室" }).click();
+  await expect(page.locator("[data-trophy-character-id]")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "查看历史记录" })).toContainText("0");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ page }, testInfo) => {
+test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人物层", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.history = [
     { id: "gallery-w", timestamp: "2026-08-27T20:10:00.000Z", opponentId: "w", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 1, opponent: 0 } },
     { id: "gallery-texas", timestamp: "2026-08-28T20:10:00.000Z", opponentId: "texas", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
-    { id: "gallery-irene", timestamp: "2026-08-29T20:10:00.000Z", opponentId: "irene", winner: "player", escaped: false, finalRoulette: { player: { bullets: 4, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 2 }, blackjacks: { player: 0, opponent: 1 } }
+    { id: "gallery-irene", timestamp: "2026-08-29T20:10:00.000Z", opponentId: "irene", winner: "player", escaped: false, finalRoulette: { player: { bullets: 4, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 2 }, blackjacks: { player: 0, opponent: 1 } },
+    { id: "gallery-nian", timestamp: "2026-08-30T20:10:00.000Z", opponentId: "nian", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
+    { id: "gallery-plume", timestamp: "2026-08-31T20:10:00.000Z", opponentId: "plume", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 0 }, blackjacks: { player: 1, opponent: 0 } }
+  ];
+  imported.defeats = [
+    { opponentId: "w", timestamp: "2026-08-27T20:10:00.000Z" },
+    { opponentId: "texas", timestamp: "2026-08-28T20:10:00.000Z" },
+    { opponentId: "irene", timestamp: "2026-08-29T20:10:00.000Z" },
+    { opponentId: "nian", timestamp: "2026-08-30T20:10:00.000Z" },
+    { opponentId: "plume", timestamp: "2026-08-31T20:10:00.000Z" }
   ];
   const cases = [
     { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
     { id: "gallery-texas", slug: "texas", name: "德克萨斯", tier: "A", closeupCount: 3, closeupId: "boots-removed", closeupName: "卸下的短靴", closeupAsset: "texas-trophy-detail-boots-removed.png" },
-    { id: "gallery-irene", slug: "irene", name: "艾丽妮", tier: "A", closeupCount: 4, closeupId: "hand", closeupName: "松开的手", closeupAsset: "irene-trophy-detail-hand.png" }
+    { id: "gallery-irene", slug: "irene", name: "艾丽妮", tier: "A", closeupCount: 4, closeupId: "hand", closeupName: "松开的手", closeupAsset: "irene-trophy-detail-hand.png" },
+    { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 4, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
+    { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" }
   ] as const;
 
   await page.goto("/");
@@ -1026,7 +1141,7 @@ test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ p
   await page.locator("[data-open-trophies]").click();
 
   for (const character of cases) {
-    await page.locator(`[data-history-id='${character.id}']`).click();
+    await page.locator(`[data-trophy-character-id='${character.slug}']`).click();
     const detail = page.locator("#history-detail");
     await expect(detail).toBeVisible();
     await expect(detail.locator(".history-trophy-preview > img")).toHaveAttribute("src", new RegExp(`${character.slug}-trophy-gallery-headshot\\.png`));
@@ -1036,18 +1151,45 @@ test("W、德克萨斯和艾丽妮使用各自的深度鉴赏资源", async ({ p
 
     const gallery = page.locator("#trophy-gallery");
     await expect(gallery).toBeVisible();
-    await expect(gallery.locator(".trophy-gallery-stage > img")).toHaveAttribute("src", new RegExp(`${character.slug}-trophy-gallery-full\\.png`));
+    await expect(gallery.locator(".trophy-gallery-background")).toHaveAttribute("src", /trophy-gallery-coffin\.png/);
+    await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", new RegExp(`${character.slug}-trophy-gallery-full-subject\\.png`));
     await expect(gallery.locator(".trophy-hotspot")).toHaveCount(character.closeupCount);
     await gallery.locator(`[data-closeup-id='${character.closeupId}']`).click();
     await expect(gallery.locator("#trophy-closeup-panel")).toContainText(character.closeupName);
     await expect(gallery.locator("#trophy-closeup-panel > img")).toHaveAttribute("src", new RegExp(character.closeupAsset.replace(".", "\\.")));
+    await expect(gallery.locator("[data-gallery-pose-id]")).toHaveCount(0);
+    await expect(gallery.locator("[data-gallery-turn]")).toHaveCount(2);
+    await expect(gallery.locator("[data-gallery-turn='-1']")).toHaveAttribute("aria-label", "向右翻转到右侧");
+    await expect(gallery.locator("[data-gallery-turn='1']")).toHaveAttribute("aria-label", "向左翻转到左侧");
+    if (character.slug === "w") {
+      await swipeTrophyGallery(page, "left");
+      await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", /w-trophy-gallery-left-subject\.png/);
+      await expect(gallery.locator("#trophy-closeup-panel")).not.toHaveClass(/is-open/);
+      await expect(gallery.locator(".trophy-hotspot").first()).toBeHidden();
+      await swipeTrophyGallery(page, "right");
+      await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", /w-trophy-gallery-full-subject\.png/);
+      await expect(gallery.locator(".trophy-hotspot").first()).toBeVisible();
+    }
+    for (const pose of ["left", "prone", "right"] as const) {
+      await gallery.locator("[data-gallery-turn='1']").click();
+      await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", new RegExp(`${character.slug}-trophy-gallery-${pose}-subject\\.png`));
+      await expect(gallery.locator(".trophy-hotspot").first()).toBeHidden();
+      await expect(gallery.locator("[data-gallery-caption]")).toContainText(`左右滑动或点按箭头翻转`);
+      await gallery.screenshot({ path: testInfo.outputPath(`${character.slug}-trophy-gallery-${pose}-390.png`) });
+    }
+    await gallery.locator("[data-gallery-turn='1']").click();
+    await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", new RegExp(`${character.slug}-trophy-gallery-full-subject\\.png`));
+    await expect(gallery.locator(".trophy-hotspot").first()).toBeVisible();
+    await gallery.locator("[data-gallery-turn='-1']").click();
+    await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", new RegExp(`${character.slug}-trophy-gallery-right-subject\\.png`));
+    await gallery.locator("[data-gallery-turn='1']").click();
     await gallery.screenshot({ path: testInfo.outputPath(`${character.slug}-trophy-gallery-390.png`) });
     await gallery.locator("[data-gallery-close]").click();
     await detail.locator("[data-history-close]").click();
   }
 
   await page.setViewportSize({ width: 320, height: 720 });
-  await page.locator("[data-history-id='gallery-irene']").click();
+  await page.locator("[data-trophy-character-id='irene']").click();
   const detail = page.locator("#history-detail");
   await detail.locator("[data-open-trophy-gallery]").click();
   const gallery = page.locator("#trophy-gallery");
@@ -1070,12 +1212,13 @@ test("开发者面板显示确定性诊断字段", async ({ page }) => {
 test("AI 发牌后强制等待并只在中点切换一次展示动作", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = findTurnsMatch("e2e-ai-wait");
-  const historyLength = imported.activeMatch.history.length;
-  const delay = getAiTurnDelayMs(imported.activeMatch);
+  const activeMatch = findTurnsMatch("e2e-ai-wait");
+  const historyLength = activeMatch.history.length;
+  const delay = getAiTurnDelayMs(activeMatch);
   await page.goto("/?debug=1");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "ai-wait.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   const waiting = page.locator("#ai-wait");
   await expect(waiting).toBeVisible();
   await expect(waiting).toContainText("正在观察牌面");
@@ -1097,10 +1240,11 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   });
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = createMatch("e2e-full-match");
+  const activeMatch = createMatch("e2e-full-match");
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "active-match.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator(".dialogue")).not.toHaveText("“”");
   await expect(page.locator(".character-portrait")).not.toHaveClass(/character-shake/);
@@ -1141,9 +1285,12 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   await expect(page.locator("main.summary-shell")).toBeVisible({ timeout: 8_000 });
   expect(sawReveal).toBe(true);
   expect(sawTriggerResult).toBe(true);
+  const playerWon = await page.getByRole("heading", { name: "策展人胜利" }).isVisible();
   await page.getByRole("button", { name: "返回大厅" }).click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await page.locator("[data-open-trophies]").click();
+  await expect(page.locator(".trophy-card")).toHaveCount(playerWon ? 1 : 0);
+  await page.getByRole("button", { name: "查看历史记录" }).click();
   await expect(page.locator(".trophy-card")).toHaveCount(1);
 });
 
@@ -1173,10 +1320,11 @@ test("确认结果启动循环心跳且扣扳机立即切换为击发音效", as
   });
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = false;
-  imported.activeMatch = opponentPenaltyReveal();
+  const activeMatch = opponentPenaltyReveal();
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "audio-reveal.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 
   await page.getByRole("button", { name: "确认结果" }).click();
@@ -1200,10 +1348,11 @@ test("确认结果启动循环心跳且扣扳机立即切换为击发音效", as
 test("艾丽妮受罚时显示受胁迫立绘与工作人员左轮", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = { ...opponentPenaltyReveal(), opponentId: "irene" };
+  const activeMatch = { ...opponentPenaltyReveal(), opponentId: "irene" };
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "irene-trigger.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 
   await page.getByRole("button", { name: "确认结果" }).click();
@@ -1227,10 +1376,11 @@ test("艾丽妮受罚时显示受胁迫立绘与工作人员左轮", async ({ pa
 test("年受罚时只切换紧张立绘并叠加共享左轮", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = { ...opponentPenaltyReveal(), opponentId: "nian" };
+  const activeMatch = { ...opponentPenaltyReveal(), opponentId: "nian" };
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "nian-trigger.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 
   await page.getByRole("button", { name: "确认结果" }).click();
@@ -1250,10 +1400,11 @@ test("年受罚时只切换紧张立绘并叠加共享左轮", async ({ page }, 
 test("翎羽受罚时保持严肃紧张立绘并校准共享左轮", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-09-02T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  imported.activeMatch = { ...opponentPenaltyReveal(), opponentId: "plume" };
+  const activeMatch = { ...opponentPenaltyReveal(), opponentId: "plume" };
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "plume-trigger.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
 
   await page.getByRole("button", { name: "确认结果" }).click();

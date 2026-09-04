@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { CHARACTER_CATALOG } from "./catalog";
-import { defeatedCharacterIdsByFirstVictory, isCharacterUnlocked, newlyUnlockedCharacterIds, unlockedCharacterIdsForHistory } from "./unlocks";
+import { defeatedCharacterIdsByFirstDefeat, isCharacterUnlocked, newlyUnlockedCharacterIds, unlockedCharacterIdsForDefeats } from "./unlocks";
 
-const victory = (opponentId: string, timestamp = "2026-01-01T00:00:00.000Z") => ({ opponentId, timestamp, winner: "player" as const, escaped: false });
+const defeat = (opponentId: string, timestamp = "2026-01-01T00:00:00.000Z") => ({ opponentId, timestamp });
 
 describe("character unlock conditions", () => {
   it("starts with every non-S attendee and gates both S attendees behind an A victory", () => {
-    expect(unlockedCharacterIdsForHistory([])).toEqual(["texas", "irene", "plume"]);
-    expect(unlockedCharacterIdsForHistory([victory("plume")])).toEqual(["texas", "irene", "plume"]);
-    const afterA = unlockedCharacterIdsForHistory([victory("texas")]);
+    expect(unlockedCharacterIdsForDefeats([])).toEqual(["texas", "irene", "plume"]);
+    expect(unlockedCharacterIdsForDefeats([defeat("plume")])).toEqual(["texas", "irene", "plume"]);
+    const afterA = unlockedCharacterIdsForDefeats([defeat("texas")]);
     expect(afterA).toEqual(["w", "texas", "irene", "nian", "plume"]);
   });
 
@@ -16,33 +16,31 @@ describe("character unlock conditions", () => {
     const w = CHARACTER_CATALOG.find((character) => character.id === "w")!;
     const nian = CHARACTER_CATALOG.find((character) => character.id === "nian")!;
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [])).toBe(false);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [victory("plume")])).toBe(true);
-    expect(isCharacterUnlocked(w, [victory("texas")])).toBe(true);
-    expect(isCharacterUnlocked(nian, [victory("texas")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [defeat("plume")])).toBe(true);
+    expect(isCharacterUnlocked(w, [defeat("texas")])).toBe(true);
+    expect(isCharacterUnlocked(nian, [defeat("texas")])).toBe(true);
     expect(isCharacterUnlocked(w, [])).toBe(false);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any-tag", tag: "tier:s" } }, [victory("w")])).toBe(true);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-character", characterId: "irene" } }, [victory("texas")])).toBe(false);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-character", characterId: "irene" } }, [victory("irene")])).toBe(true);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 50 } }, [victory("texas")])).toBe(true);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [victory("texas"), victory("texas")])).toBe(false);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [victory("texas"), victory("irene")])).toBe(true);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [{ ...victory("plume"), winner: "opponent" }])).toBe(false);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [{ ...victory("plume"), escaped: true }])).toBe(false);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any-tag", tag: "tier:s" } }, [defeat("w")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-character", characterId: "irene" } }, [defeat("texas")])).toBe(false);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-character", characterId: "irene" } }, [defeat("irene")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 50 } }, [defeat("texas")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [defeat("texas"), defeat("texas")])).toBe(false);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [defeat("texas"), defeat("irene")])).toBe(true);
   });
 
   it("deduplicates defeated attendees and keeps first victory order", () => {
-    expect(defeatedCharacterIdsByFirstVictory([
-      victory("irene", "2026-01-03T00:00:00.000Z"),
-      victory("texas", "2026-01-01T00:00:00.000Z"),
-      victory("texas", "2026-01-02T00:00:00.000Z")
+    expect(defeatedCharacterIdsByFirstDefeat([
+      defeat("irene", "2026-01-03T00:00:00.000Z"),
+      defeat("texas", "2026-01-01T00:00:00.000Z"),
+      defeat("texas", "2026-01-02T00:00:00.000Z")
     ])).toEqual(["texas", "irene"]);
-    expect(defeatedCharacterIdsByFirstVictory([
-      victory("texas", "2026-01-01T00:30:00+01:00"),
-      victory("irene", "2025-12-31T23:45:00.000Z")
+    expect(defeatedCharacterIdsByFirstDefeat([
+      defeat("texas", "2026-01-01T00:30:00+01:00"),
+      defeat("irene", "2025-12-31T23:45:00.000Z")
     ])).toEqual(["texas", "irene"]);
   });
 
   it("reports only newly satisfied conditions", () => {
-    expect(newlyUnlockedCharacterIds([], [victory("texas")])).toEqual(["w", "nian"]);
+    expect(newlyUnlockedCharacterIds([], [defeat("texas")])).toEqual(["w", "nian"]);
   });
 });

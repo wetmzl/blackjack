@@ -1,14 +1,14 @@
 import type { Action, MatchState } from "../core/match/types";
 import { gameReducer } from "../core/match/reducer";
-import { acknowledgeMatchResult, saveActiveMatch } from "./boot";
-import type { SaveFile } from "./schema";
+import { acknowledgeMatchResult, createRuntimeSave } from "./boot";
+import type { LongTermSave } from "./schema";
 import type { SaveRepository } from "./repository";
 
 export interface AutosaveController {
   dispatch(action: Action): MatchState;
   flush(): Promise<void>;
   getState(): MatchState;
-  getSave(): SaveFile;
+  getSave(): LongTermSave;
 }
 
 export interface AutosaveOptions {
@@ -16,23 +16,25 @@ export interface AutosaveOptions {
 }
 
 /** Dispatches through the pure reducer and serializes each resulting domain state in order. */
-export function createAutosaveController(repository: SaveRepository, save: SaveFile, initialMatch: MatchState, options: AutosaveOptions = {}): AutosaveController {
+export function createAutosaveController(repository: SaveRepository, save: LongTermSave, initialMatch: MatchState, options: AutosaveOptions = {}): AutosaveController {
   const now = options.now ?? (() => new Date().toISOString());
   let state = initialMatch;
-  let currentSave = saveActiveMatch(save, state, now());
-  const initialSnapshot = currentSave;
-  let queue: Promise<void> = Promise.resolve().then(() => repository.save(initialSnapshot));
+  let currentSave = save;
+  const initialSnapshot = createRuntimeSave(state, now());
+  let queue: Promise<void> = Promise.resolve().then(() => repository.saveRuntime(initialSnapshot));
 
   const dispatch = (action: Action): MatchState => {
     const next = gameReducer(state, action);
     if (next === state) return state;
     state = next;
-    const nextSave = saveActiveMatch(currentSave, next, now());
-    currentSave = next.status === "finished" && next.scene === "lobby"
-      ? acknowledgeMatchResult(nextSave, now())
-      : nextSave;
-    const snapshot = currentSave;
-    queue = queue.catch(() => undefined).then(() => repository.save(snapshot));
+    if (next.status === "finished" && next.scene === "lobby") {
+      currentSave = acknowledgeMatchResult(currentSave, next, now());
+      const snapshot = currentSave;
+      queue = queue.catch(() => undefined).then(() => repository.commitMatchResult(snapshot));
+    } else {
+      const snapshot = createRuntimeSave(next, now());
+      queue = queue.catch(() => undefined).then(() => repository.saveRuntime(snapshot));
+    }
     return state;
   };
 

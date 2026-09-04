@@ -1,17 +1,14 @@
-import type { MatchHistoryRecord } from "../../core/match/history";
+import type { CharacterDefeatRecord } from "../../core/progression/defeats";
 import { CHARACTER_CATALOG, characterHasTag, getCharacterMetadata } from "./catalog";
 import type { CharacterMetadata, CharacterUnlockCondition } from "./types";
 
-type DefeatHistoryEntry = Pick<MatchHistoryRecord, "opponentId" | "winner" | "escaped">;
-type TimestampedDefeatHistoryEntry = DefeatHistoryEntry & Pick<MatchHistoryRecord, "timestamp">;
-
-/** A defeated attendee is a completed, non-escaped match won by the curator. */
-export function defeatedCharacterIds(history: readonly DefeatHistoryEntry[]): ReadonlySet<string> {
-  return new Set(history.filter((record) => record.winner === "player" && !record.escaped).map((record) => record.opponentId));
+/** Character IDs recorded by the durable first-defeat collection. */
+export function defeatedCharacterIds(defeats: readonly CharacterDefeatRecord[]): ReadonlySet<string> {
+  return new Set(defeats.map((record) => record.opponentId));
 }
 
-function conditionMet(condition: CharacterUnlockCondition, history: readonly DefeatHistoryEntry[]): boolean {
-  const defeated = defeatedCharacterIds(history);
+function conditionMet(condition: CharacterUnlockCondition, defeats: readonly CharacterDefeatRecord[]): boolean {
+  const defeated = defeatedCharacterIds(defeats);
   switch (condition.type) {
     case "defeat-any":
       return defeated.size > 0;
@@ -28,34 +25,33 @@ function conditionMet(condition: CharacterUnlockCondition, history: readonly Def
   }
 }
 
-export function isCharacterUnlocked(character: CharacterMetadata, history: readonly DefeatHistoryEntry[]): boolean {
-  return !character.unlock || conditionMet(character.unlock, history);
+export function isCharacterUnlocked(character: CharacterMetadata, defeats: readonly CharacterDefeatRecord[]): boolean {
+  return !character.unlock || conditionMet(character.unlock, defeats);
 }
 
-/** Computes the canonical set of unlocked attendees from the completed-match history. */
-export function unlockedCharacterIdsForHistory(history: readonly DefeatHistoryEntry[]): readonly string[] {
-  return CHARACTER_CATALOG.filter((character) => isCharacterUnlocked(character, history)).map((character) => character.id);
+/** Computes the canonical set of unlocked attendees from durable defeat facts. */
+export function unlockedCharacterIdsForDefeats(defeats: readonly CharacterDefeatRecord[]): readonly string[] {
+  return CHARACTER_CATALOG.filter((character) => isCharacterUnlocked(character, defeats)).map((character) => character.id);
 }
 
 export function newlyUnlockedCharacterIds(
-  before: readonly DefeatHistoryEntry[],
-  after: readonly DefeatHistoryEntry[]
+  before: readonly CharacterDefeatRecord[],
+  after: readonly CharacterDefeatRecord[]
 ): readonly string[] {
-  const previous = new Set(unlockedCharacterIdsForHistory(before));
-  return unlockedCharacterIdsForHistory(after).filter((id) => !previous.has(id));
+  const previous = new Set(unlockedCharacterIdsForDefeats(before));
+  return unlockedCharacterIdsForDefeats(after).filter((id) => !previous.has(id));
 }
 
-export function newlyUnlockedForVictory(history: readonly DefeatHistoryEntry[], opponentId: string): readonly string[] {
-  const projected = [...history, { opponentId, winner: "player" as const, escaped: false }];
-  return newlyUnlockedCharacterIds(history, projected);
+export function newlyUnlockedForDefeat(defeats: readonly CharacterDefeatRecord[], opponentId: string): readonly string[] {
+  const projected = [...defeats, { opponentId, timestamp: new Date(0).toISOString() }];
+  return newlyUnlockedCharacterIds(defeats, projected);
 }
 
-/** First-victory order used by the lobby's defeated-attendee collection. */
-export function defeatedCharacterIdsByFirstVictory(history: readonly TimestampedDefeatHistoryEntry[]): readonly string[] {
+/** Acquisition order used by the lobby and trophy-room collection. */
+export function defeatedCharacterIdsByFirstDefeat(defeats: readonly CharacterDefeatRecord[]): readonly string[] {
   const seen = new Set<string>();
-  return [...history]
+  return [...defeats]
     .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
-    .filter((record) => record.winner === "player" && !record.escaped)
     .map((record) => record.opponentId)
     .filter((id) => {
       if (seen.has(id)) return false;

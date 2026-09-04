@@ -1,12 +1,16 @@
 import { z } from "zod";
 import type { MatchHistoryRecord } from "../core/match/history";
 import type { MatchState } from "../core/match/types";
+import type { CharacterDefeatRecord } from "../core/progression/defeats";
 import { getSkillDefinition } from "../core/skills/definitions";
+import { unlockedSkillIdsForDefeats } from "../core/skills/skills";
 import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "../core/abilities/registry";
 import characterCatalog from "../content/characters/catalog.json" with { type: "json" };
 
-export const SAVE_FORMAT = "house-of-chances-save" as const;
-export const CURRENT_SCHEMA_VERSION = 5 as const;
+export const LONG_TERM_SAVE_FORMAT = "house-of-chances-save" as const;
+export const RUNTIME_SAVE_FORMAT = "house-of-chances-runtime" as const;
+export const CURRENT_LONG_TERM_SCHEMA_VERSION = 7 as const;
+export const CURRENT_RUNTIME_SCHEMA_VERSION = 1 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -131,9 +135,8 @@ export const MatchStateSchema = z.object({
 
 export const PlayerProfileSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), matchesPlayed: z.number().int().min(0),
-  wins: z.number().int().min(0), unlockedCharacterIds: z.array(CharacterIdSchema),
-  unlockedSkillIds: z.array(z.string().min(1)), equippedSkillIds: z.array(z.string().min(1)).max(4)
-}).strict().superRefine((profile, ctx) => { const unlocked = new Set(profile.unlockedSkillIds); if (new Set(profile.unlockedSkillIds).size !== profile.unlockedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate unlocked skill" }); if (new Set(profile.unlockedCharacterIds).size !== profile.unlockedCharacterIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate unlocked character" }); if (new Set(profile.equippedSkillIds).size !== profile.equippedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate equipped skill" }); for (const id of profile.unlockedSkillIds) if (!getSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown unlocked skill" }); for (const id of profile.equippedSkillIds) { if (!unlocked.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "equipped skill must be unlocked" }); const skill = getSkillDefinition(id); if (!skill) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown skill" }); } if (profile.equippedSkillIds.filter((id) => getSkillDefinition(id)?.category === "passive").length > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "at most one passive skill" }); });
+  wins: z.number().int().min(0), equippedSkillIds: z.array(z.string().min(1)).max(4)
+}).strict().superRefine((profile, ctx) => { if (new Set(profile.equippedSkillIds).size !== profile.equippedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate equipped skill" }); for (const id of profile.equippedSkillIds) if (!getSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown skill" }); if (profile.equippedSkillIds.filter((id) => getSkillDefinition(id)?.category === "passive").length > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "at most one passive skill" }); });
 export const GameSettingsSchema = z.object({ soundEnabled: z.boolean(), reducedMotion: z.boolean() }).strict();
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
 export type GameSettings = z.infer<typeof GameSettingsSchema>;
@@ -146,28 +149,58 @@ export const MatchHistoryRecordSchema = z.object({
   finalRoulette: z.object({ player: HistoryGunSchema, opponent: HistoryGunSchema }).strict(),
   busts: HistoryCountsSchema, blackjacks: HistoryCountsSchema
 }).strict();
-export type { MatchHistoryRecord } from "../core/match/history";
-export const SaveFileSchema = z.object({
-  format: z.literal(SAVE_FORMAT), schemaVersion: z.literal(CURRENT_SCHEMA_VERSION), gameVersion: z.string().min(1),
-  createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }),
-  profile: PlayerProfileSchema, activeMatch: MatchStateSchema.nullable(), settings: GameSettingsSchema,
-  history: z.array(MatchHistoryRecordSchema)
+export const CharacterDefeatRecordSchema = z.object({
+  opponentId: CharacterIdSchema,
+  timestamp: z.string().datetime({ offset: true })
 }).strict();
+export type { MatchHistoryRecord } from "../core/match/history";
+export type { CharacterDefeatRecord } from "../core/progression/defeats";
+export const LongTermSaveSchema = z.object({
+  format: z.literal(LONG_TERM_SAVE_FORMAT), schemaVersion: z.literal(CURRENT_LONG_TERM_SCHEMA_VERSION), gameVersion: z.string().min(1),
+  createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }),
+  profile: PlayerProfileSchema, settings: GameSettingsSchema, skipTutorial: z.boolean(),
+  history: z.array(MatchHistoryRecordSchema),
+  defeats: z.array(CharacterDefeatRecordSchema)
+}).strict().superRefine((save, ctx) => {
+  const opponentIds = new Set<string>();
+  save.defeats.forEach((record, index) => {
+    if (opponentIds.has(record.opponentId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["defeats", index, "opponentId"], message: "duplicate defeated character" });
+    opponentIds.add(record.opponentId);
+  });
+  const unlockedSkills = new Set(unlockedSkillIdsForDefeats(save.defeats as CharacterDefeatRecord[]));
+  save.profile.equippedSkillIds.forEach((id, index) => {
+    if (!unlockedSkills.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["profile", "equippedSkillIds", index], message: "equipped skill must be unlocked by a recorded defeat" });
+  });
+});
+
+export const RuntimeSaveSchema = z.object({
+  format: z.literal(RUNTIME_SAVE_FORMAT), schemaVersion: z.literal(CURRENT_RUNTIME_SCHEMA_VERSION), gameVersion: z.string().min(1),
+  updatedAt: z.string().datetime({ offset: true }), activeMatch: MatchStateSchema
+}).strict();
+
+export type LongTermSave = Omit<z.infer<typeof LongTermSaveSchema>, "history" | "defeats"> & { history: MatchHistoryRecord[]; defeats: CharacterDefeatRecord[] };
 /** Runtime schema uses mutable arrays; the domain-facing save type preserves MatchState immutability. */
-export type SaveFile = Omit<z.infer<typeof SaveFileSchema>, "activeMatch" | "history"> & { activeMatch: MatchState | null; history: MatchHistoryRecord[] };
+export type RuntimeSave = Omit<z.infer<typeof RuntimeSaveSchema>, "activeMatch"> & { activeMatch: MatchState };
+export type SaveKind = "long-term" | "runtime";
 
 export class SaveValidationError extends Error {
-  constructor(message: string) { super(message); this.name = "SaveValidationError"; }
+  constructor(readonly kind: SaveKind, message: string) { super(message); this.name = "SaveValidationError"; }
 }
 
-export function validateSave(input: unknown): SaveFile {
-  const parsed = SaveFileSchema.safeParse(input);
-  if (!parsed.success) throw new SaveValidationError(`Invalid save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`);
-  return parsed.data as SaveFile;
+export function validateLongTermSave(input: unknown): LongTermSave {
+  const parsed = LongTermSaveSchema.safeParse(input);
+  if (!parsed.success) throw new SaveValidationError("long-term", `Invalid long-term save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`);
+  return parsed.data as LongTermSave;
+}
+
+export function validateRuntimeSave(input: unknown): RuntimeSave {
+  const parsed = RuntimeSaveSchema.safeParse(input);
+  if (!parsed.success) throw new SaveValidationError("runtime", `Invalid runtime save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`);
+  return parsed.data as RuntimeSave;
 }
 
 export function assertMatchStateForSave(match: MatchState): MatchState {
   const result = MatchStateSchema.safeParse(match);
-  if (!result.success) throw new SaveValidationError(`Cannot save invalid match state: ${result.error.issues[0]?.path.join(".") || "root"}`);
+  if (!result.success) throw new SaveValidationError("runtime", `Cannot save invalid match state: ${result.error.issues[0]?.path.join(".") || "root"}`);
   return match;
 }

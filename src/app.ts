@@ -7,18 +7,18 @@ import { abilityWorld, createMatch, getLegalActions } from "./core/match/reducer
 import type { Action, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
 import { getSkillDefinition, SKILL_DEFINITIONS, isActiveSkill, isPassiveSkill } from "./core/skills/definitions";
-import { skillsUnlockedForVictory, validateLoadout } from "./core/skills/skills";
+import { skillsUnlockedForVictory, unlockedSkillIdsForDefeats, validateLoadout } from "./core/skills/skills";
 import { getAbilityDefinition } from "./core/abilities/registry";
 import { isAbilityBlockedByStatus } from "./core/abilities/engine";
 import { chooseDialogue } from "./dialogue/types";
 import { resolveDialogueState } from "./dialogue/state";
-import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstVictory, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForVictory, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
-import { bootLoad, resetSave } from "./persistence/boot";
+import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstDefeat, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForDefeat, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
+import { bootLoad, clearMatchHistory, resetSave, restoreActiveMatch } from "./persistence/boot";
 import { createAutosaveController, type AutosaveController } from "./persistence/autosave";
 import { downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
 import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
-import { SaveValidationError, type SaveFile } from "./persistence/schema";
+import { SaveValidationError, type CharacterDefeatRecord, type LongTermSave } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { abilityTriggerNotice } from "./presentation/ability-notices";
 import { presentMatchHaptics } from "./presentation/haptics";
@@ -30,7 +30,7 @@ const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) throw new Error("App root is missing");
 const root: HTMLDivElement = appRoot;
 const repository = new IndexedDbSaveRepository();
-let save: SaveFile;
+let save: LongTermSave;
 let autosave: AutosaveController | null = null;
 let currentCharacter!: CharacterDefinition;
 let selectedCharacterId = DEFAULT_CHARACTER_ID;
@@ -55,7 +55,10 @@ type LobbyLayer = "menu" | "characters";
 let lobbyLayer: LobbyLayer = "menu";
 let guestSelectionIds: string[] = [];
 const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
-const RESET_CONFIRM_MESSAGE = "清理当前数据将删除战绩、历史、角色与技能解锁和未完成对局，确定继续吗？";
+const TROPHY_GALLERY_COFFIN_IMAGE = "/assets/characters/trophy-gallery-coffin.png";
+const RESET_CONFIRM_MESSAGE = "删除长期存档将清除战绩、历史、角色与技能解锁及设置，但不会删除未完成牌局。确定继续吗？";
+const RESET_RUNTIME_CONFIRM_MESSAGE = "未完成牌局与当前版本不兼容。确认后将只舍弃这局牌，长期战绩与解锁不会受到影响。";
+const CLEAR_HISTORY_CONFIRM_MESSAGE = "清理全部对局记录？战利品、角色与技能解锁不会受到影响。";
 
 function secureSeed(): string {
   const bytes = new Uint32Array(4);
@@ -175,7 +178,7 @@ function historyResultLabel(record: MatchHistoryRecord): string { return record.
 function historyDate(timestamp: string): string { return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp)); }
 
 function renderSkillList(): string {
-  const unlocked = new Set(save.profile.unlockedSkillIds);
+  const unlocked = new Set(unlockedSkillIdsForDefeats(save.defeats));
   const equipped = new Set(save.profile.equippedSkillIds);
   const activeCount = [...equipped].filter(isActiveSkill).length;
   const passiveCount = [...equipped].filter(isPassiveSkill).length;
@@ -201,13 +204,14 @@ async function updateLoadout(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const id = input.dataset.equipSkill;
   if (!id) return;
-  const unlocked = new Set(save.profile.unlockedSkillIds);
+  const unlockedSkillIds = unlockedSkillIdsForDefeats(save.defeats);
+  const unlocked = new Set(unlockedSkillIds);
   const equipped = new Set(save.profile.equippedSkillIds);
   if (!unlocked.has(id)) { input.checked = false; return; }
   if (input.checked) equipped.add(id); else equipped.delete(id);
   const ids = [...equipped];
   const status = root.querySelector<HTMLParagraphElement>("#skill-status");
-  const validation = validateLoadout(save.profile.unlockedSkillIds, ids);
+  const validation = validateLoadout(unlockedSkillIds, ids);
   if (!validation.valid) {
     input.checked = !input.checked;
     refreshLoadoutCount();
@@ -215,7 +219,7 @@ async function updateLoadout(event: Event): Promise<void> {
     return;
   }
   save = { ...save, profile: { ...save.profile, equippedSkillIds: [...validation.equippedSkillIds] }, updatedAt: new Date().toISOString() };
-  await repository.save(save);
+  await repository.saveLongTerm(save);
   refreshLoadoutCount();
   if (status) status.textContent = "技能配置已保存。";
 }
@@ -438,7 +442,7 @@ async function startResourcePackDownload(button: HTMLButtonElement): Promise<voi
 }
 
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>两张牌正好 21 点是黑杰克；入场会获得技能牌，普通胜利获得 1 张，黑杰克获得 2 张。技能牌只来自本轮携带的主动技能。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的牌组</p><h2>技能管理</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>清理当前数据</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>两张牌正好 21 点是黑杰克；入场会获得技能牌，普通胜利获得 1 张，黑杰克获得 2 张。技能牌只来自本轮携带的主动技能。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的牌组</p><h2>技能管理</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
 }
 
 function randomUnit(): number {
@@ -448,10 +452,9 @@ function randomUnit(): number {
 }
 
 function eligibleGuestIds(): string[] {
-  const defeated = new Set(defeatedCharacterIdsByFirstVictory(save.history));
-  const unlocked = new Set(save.profile.unlockedCharacterIds);
+  const defeated = new Set(defeatedCharacterIdsByFirstDefeat(save.defeats));
   return CHARACTER_CATALOG
-    .filter((character) => unlocked.has(character.id) && isCharacterUnlocked(character, save.history) && !defeated.has(character.id))
+    .filter((character) => isCharacterUnlocked(character, save.defeats) && !defeated.has(character.id))
     .map((character) => character.id);
 }
 
@@ -494,12 +497,12 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
     if (guestSelectionIds.length !== expectedCount || guestSelectionIds.some((id) => !eligible.has(id))) guestSelectionIds = selectGuestIds();
   }
   const guestCharacters = guestSelectionIds.map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
-  const defeatedIds = defeatedCharacterIdsByFirstVictory(save.history);
+  const defeatedIds = defeatedCharacterIdsByFirstDefeat(save.defeats);
   const defeatedCharacters = defeatedIds.map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
   const characterCards = guestCharacters.map((character) => characterCardMarkup(character)).join("");
   const defeatedCards = defeatedCharacters.map((character) => characterCardMarkup(character, { defeated: true })).join("");
   root.innerHTML = layer === "menu"
-    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>Blackjack & Roulette</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.history.length} 局</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
+    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>Blackjack & Roulette</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.defeats.length} 件</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
     : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">他们带着未竟的执念走进古堡，<br>换上指定的服装，等待终焉赌局开场。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="guest-section" aria-labelledby="guest-title"><div class="guest-heading"><div><p class="kicker">等待入场</p><h2 id="guest-title">候场宾客</h2></div><button type="button" class="quiet-button" data-refresh-guests aria-label="刷新候场宾客">刷新</button></div><section class="character-list">${characterCards || `<div class="empty-history"><span>◇</span><p>暂时没有可赴约的宾客。</p></div>`}</section></section><section class="guest-section defeated-section" aria-labelledby="defeated-title"><div class="guest-heading"><div><p class="kicker">回想</p><h2 id="defeated-title">已死亡宾客</h2></div></div><section class="character-list">${defeatedCards || `<div class="empty-history"><span>◇</span><p>完成胜利后，宾客会按首次击败时间记录在这里。</p></div>`}</section></section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${defeatedCharacters.length} 名已击败宾客</span></footer>${lobbyDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-enter-duel]")?.addEventListener("click", () => { guestSelectionIds = []; renderLobby("characters"); });
   root.querySelector<HTMLButtonElement>("[data-lobby-home]")?.addEventListener("click", () => renderLobby("menu"));
@@ -518,34 +521,68 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
 }
 
 async function resetCurrentData(): Promise<void> {
+  await repository.deleteLongTerm();
   save = resetSave();
   autosave = null;
   clearAiSchedule();
   gameAudio.stopHeartbeat();
   document.body.classList.remove("reduced-motion");
   gameAudio.configure(save.settings.soundEnabled);
-  await repository.save(save);
+  await repository.saveLongTerm(save);
   renderLobby(lobbyLayer);
 }
 function confirmResetCurrentData(): boolean { return window.confirm(RESET_CONFIRM_MESSAGE); }
+
+function showcaseDialogsMarkup(): string {
+  return `<dialog id="history-detail" class="modal history-modal"><button class="modal-close" data-history-close aria-label="关闭">×</button><div id="history-detail-content"></div></dialog><dialog id="trophy-gallery" class="trophy-gallery-dialog" aria-label="角色收藏鉴赏"><div id="trophy-gallery-content"></div></dialog>`;
+}
+
+function historyCardMarkup(record: MatchHistoryRecord): string {
+  const character = getCharacterMetadata(record.opponentId)!;
+  const won = record.winner === "player" && !record.escaped;
+  const image = won
+    ? `<img src="${character.trophyImage}" alt="被策展人战胜后平躺的${escapeHtml(character.name)}" />`
+    : `<img class="transparent-history-image" src="${TRANSPARENT_PIXEL}" alt="本局未获得胜利图像" />`;
+  return `<button class="trophy-card ${won ? "is-victory" : "is-empty"}" data-history-id="${escapeHtml(record.id)}"><span class="trophy-visual">${image}</span><span class="trophy-meta"><small>${historyResultLabel(record)}</small><strong>策展人 VS ${escapeHtml(character.name)}</strong><time datetime="${escapeHtml(record.timestamp)}">${historyDate(record.timestamp)}</time></span></button>`;
+}
+
+function trophyCardMarkup(record: CharacterDefeatRecord): string {
+  const character = getCharacterMetadata(record.opponentId)!;
+  return `<button class="trophy-card is-victory tier-trophy" data-tier="${escapeHtml(character.tier)}" data-trophy-character-id="${escapeHtml(record.opponentId)}"><span class="trophy-visual"><img src="${escapeHtml(character.trophyImage)}" alt="${escapeHtml(character.name)}的战利品收藏记录" /></span><span class="trophy-meta"><small>${escapeHtml(character.tier)}级战利品</small><strong>${escapeHtml(character.name)}</strong><time datetime="${escapeHtml(record.timestamp)}">${historyDate(record.timestamp)}</time></span></button>`;
+}
+
 function renderTrophyRoom(): void {
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer); autosave = null;
-  const records = [...save.history].reverse();
-  const cards = records.map((record) => {
-    const character = getCharacterMetadata(record.opponentId)!;
-    const won = record.winner === "player" && !record.escaped;
-    const image = won
-      ? `<img src="${character.trophyImage}" alt="被策展人战胜后平躺的${escapeHtml(character.name)}" />`
-      : `<img class="transparent-history-image" src="${TRANSPARENT_PIXEL}" alt="本局未获得胜利图像" />`;
-    return `<button class="trophy-card ${won ? "is-victory" : "is-empty"}" data-history-id="${escapeHtml(record.id)}"><span class="trophy-visual">${image}</span><span class="trophy-meta"><small>${historyResultLabel(record)}</small><strong>策展人 VS ${escapeHtml(character.name)}</strong><time datetime="${escapeHtml(record.timestamp)}">${historyDate(record.timestamp)}</time></span></button>`;
-  }).join("");
-  root.innerHTML = `<main class="trophy-shell"><header class="topbar"><button class="icon-button" data-trophy-back aria-label="返回大厅">←</button><span class="eyebrow">历史对局</span><span class="history-count">${records.length}</span></header><section class="trophy-heading"><p class="kicker">策展人的牌桌记录</p><h1>战利品<br><em>陈列室</em></h1><p>胜利留下角色纪念图；未取胜的牌局暂时只保留透明席位与数据。</p></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有历史对局</h2><p>完成一场牌局后，记录会出现在这里。</p></div>`}</section><dialog id="history-detail" class="modal history-modal"><button class="modal-close" data-history-close aria-label="关闭">×</button><div id="history-detail-content"></div></dialog><dialog id="trophy-gallery" class="trophy-gallery-dialog" aria-label="角色昏迷鉴赏"><div id="trophy-gallery-content"></div></dialog></main>`;
+  const records = [...save.defeats].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+  const cards = records.map(trophyCardMarkup).join("");
+  root.innerHTML = `<main class="trophy-shell"><header class="topbar"><button class="icon-button" data-trophy-back aria-label="返回大厅">←</button><span class="eyebrow">独特藏品</span><button type="button" class="history-shortcut" data-open-history><span>查看历史记录</span><small>${save.history.length}</small></button></header><section class="trophy-heading"><p class="kicker">策展人的收藏时间线</p><h1>战利品<br><em>陈列室</em></h1><p>每名被首次击败的与会者只留下一个独特藏品；再次对局不会改变收藏时间。</p></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有战利品</h2><p>首次击败一名与会者后，藏品会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-trophy-back]")?.addEventListener("click", () => renderLobby("menu"));
+  root.querySelector<HTMLButtonElement>("[data-open-history]")?.addEventListener("click", renderMatchHistory);
+  root.querySelector<HTMLButtonElement>("[data-history-close]")?.addEventListener("click", () => {
+    root.querySelector<HTMLDialogElement>("#trophy-gallery")?.close();
+    root.querySelector<HTMLDialogElement>("#history-detail")?.close();
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-trophy-character-id]").forEach((button) => button.addEventListener("click", () => void openTrophyDetail(button.dataset.trophyCharacterId ?? "")));
+}
+
+function renderMatchHistory(): void {
+  const records = [...save.history].reverse();
+  const cards = records.map(historyCardMarkup).join("");
+  root.innerHTML = `<main class="trophy-shell history-shell"><header class="topbar"><button class="icon-button" data-history-back aria-label="返回战利品陈列室">←</button><span class="eyebrow">对局记录</span><span class="history-count">${records.length}</span></header><section class="trophy-heading history-heading"><p class="kicker">策展人的牌桌记录</p><h1>历史<br><em>记录</em></h1><p>这里保留每一局的结果与统计，可随时单独清理，不会移除战利品或影响解锁。</p><button type="button" class="danger-button clear-history-button" data-clear-history ${records.length === 0 ? "disabled" : ""}>清理对局记录</button></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有对局记录</h2><p>完成一场牌局后，统计会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
+  root.querySelector<HTMLButtonElement>("[data-history-back]")?.addEventListener("click", renderTrophyRoom);
+  root.querySelector<HTMLButtonElement>("[data-clear-history]")?.addEventListener("click", () => void clearHistoryFromUi());
   root.querySelector<HTMLButtonElement>("[data-history-close]")?.addEventListener("click", () => {
     root.querySelector<HTMLDialogElement>("#trophy-gallery")?.close();
     root.querySelector<HTMLDialogElement>("#history-detail")?.close();
   });
   root.querySelectorAll<HTMLButtonElement>("[data-history-id]").forEach((button) => button.addEventListener("click", () => void openHistoryDetail(button.dataset.historyId ?? "")));
+}
+
+async function clearHistoryFromUi(): Promise<void> {
+  if (save.history.length === 0 || !window.confirm(CLEAR_HISTORY_CONFIRM_MESSAGE)) return;
+  save = clearMatchHistory(save);
+  await repository.saveLongTerm(save);
+  renderMatchHistory();
 }
 function closeupMarkup(point: TrophyCloseupPoint, index: number): string {
   return `<img src="${escapeHtml(point.image)}" alt="${escapeHtml(point.name)}方形局部特写" /><div><p class="eyebrow">局部特写 // ${String(index + 1).padStart(2, "0")}</p><h2>${escapeHtml(point.name)}</h2><p>${escapeHtml(point.description)}</p></div><button class="trophy-closeup-close" data-close-closeup aria-label="收起局部特写">×</button>`;
@@ -554,10 +591,17 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
   const dialog = root.querySelector<HTMLDialogElement>("#trophy-gallery");
   const content = root.querySelector<HTMLDivElement>("#trophy-gallery-content");
   if (!dialog || !content) return;
+  const poses = [{ id: "default", name: "正面", image: gallery.fullBody }, ...(gallery.poses ?? [])];
   const hotspots = gallery.closeups.map((point, index) => `<button type="button" class="trophy-hotspot" data-closeup-id="${escapeHtml(point.id)}" style="--hotspot-x:${point.x}%;--hotspot-y:${point.y}%" aria-label="查看特写：${escapeHtml(point.name)}" aria-pressed="false"><span>${index + 1}</span></button>`).join("");
-  content.innerHTML = `<div class="trophy-gallery-viewer"><header class="trophy-gallery-header"><div><p class="eyebrow">战利品鉴赏 // ${escapeHtml(character.name)}</p><h1>死体展示</h1></div><button class="trophy-gallery-close" data-gallery-close aria-label="关闭全屏鉴赏">×</button></header><div class="trophy-gallery-canvas"><figure class="trophy-gallery-stage"><img src="${escapeHtml(gallery.fullBody)}" alt="昏迷中的${escapeHtml(character.name)}竖屏全身鉴赏" />${hotspots}<figcaption>点按圆环标记查看局部特写</figcaption></figure><aside id="trophy-closeup-panel" class="trophy-closeup-panel" aria-live="polite"><p>选择画面中的特写点。</p></aside></div></div>`;
+  const turnControls = poses.length > 1 ? `<nav class="trophy-gallery-turn-controls" aria-label="翻转人物视角"><button type="button" class="trophy-gallery-turn is-previous" data-gallery-turn="-1" aria-controls="trophy-gallery-subject"><span aria-hidden="true">‹</span></button><button type="button" class="trophy-gallery-turn is-next" data-gallery-turn="1" aria-controls="trophy-gallery-subject"><span aria-hidden="true">›</span></button></nav>` : "";
+  content.innerHTML = `<div class="trophy-gallery-viewer"><header class="trophy-gallery-header"><div><p class="eyebrow">战利品鉴赏 // ${escapeHtml(character.name)}</p><h1>死体展示</h1></div><button class="trophy-gallery-close" data-gallery-close aria-label="关闭全屏鉴赏">×</button></header><div class="trophy-gallery-canvas"><figure class="trophy-gallery-stage" data-gallery-pose="${escapeHtml(poses[0].id)}"><img class="trophy-gallery-background" src="${TROPHY_GALLERY_COFFIN_IMAGE}" alt="" aria-hidden="true" draggable="false" /><img id="trophy-gallery-subject" class="trophy-gallery-subject" data-gallery-subject src="${escapeHtml(poses[0].image)}" alt="死亡后的${escapeHtml(character.name)}正面竖屏全身鉴赏" draggable="false" />${hotspots}${turnControls}<figcaption data-gallery-caption aria-live="polite" aria-atomic="true">正面 · 左右滑动或点按箭头翻转 · 点按圆环查看特写</figcaption></figure><aside id="trophy-closeup-panel" class="trophy-closeup-panel" aria-live="polite"><p>选择画面中的特写点。</p></aside></div></div>`;
   const panel = content.querySelector<HTMLElement>("#trophy-closeup-panel");
+  const stage = content.querySelector<HTMLElement>(".trophy-gallery-stage");
+  const subject = content.querySelector<HTMLImageElement>("[data-gallery-subject]");
+  const caption = content.querySelector<HTMLElement>("[data-gallery-caption]");
   const buttons = [...content.querySelectorAll<HTMLButtonElement>("[data-closeup-id]")];
+  const turnButtons = [...content.querySelectorAll<HTMLButtonElement>("[data-gallery-turn]")];
+  let currentPoseIndex = 0;
   const hideCloseup = (): void => {
     if (!panel) return;
     panel.classList.remove("is-open");
@@ -573,9 +617,80 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
     buttons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
     panel.querySelector<HTMLButtonElement>("[data-close-closeup]")?.addEventListener("click", hideCloseup);
   }));
+  const showPose = (requestedIndex: number, direction: -1 | 1): void => {
+    if (!subject || !caption || !stage) return;
+    currentPoseIndex = (requestedIndex + poses.length) % poses.length;
+    const pose = poses[currentPoseIndex];
+    const isDefault = currentPoseIndex === 0;
+    hideCloseup();
+    subject.src = pose.image;
+    subject.alt = `死亡后的${character.name}${pose.name}竖屏全身鉴赏`;
+    subject.classList.remove("is-turning-previous", "is-turning-next");
+    void subject.offsetWidth;
+    subject.classList.add(direction < 0 ? "is-turning-previous" : "is-turning-next");
+    stage.dataset.galleryPose = pose.id;
+    buttons.forEach((hotspot) => { hotspot.hidden = !isDefault; });
+    caption.textContent = `${pose.name} · 左右滑动或点按箭头翻转${isDefault ? " · 点按圆环查看特写" : ""}`;
+    const previousPose = poses[(currentPoseIndex - 1 + poses.length) % poses.length];
+    const nextPose = poses[(currentPoseIndex + 1) % poses.length];
+    turnButtons.forEach((button) => {
+      const step = button.dataset.galleryTurn === "-1" ? -1 : 1;
+      const targetPose = step < 0 ? previousPose : nextPose;
+      button.setAttribute("aria-label", `${step < 0 ? "向右" : "向左"}翻转到${targetPose.name}`);
+    });
+  };
+  turnButtons.forEach((button) => button.addEventListener("click", () => {
+    const direction = button.dataset.galleryTurn === "-1" ? -1 : 1;
+    showPose(currentPoseIndex + direction, direction);
+  }));
+  showPose(0, 1);
+  subject?.classList.remove("is-turning-previous", "is-turning-next");
+
+  let swipeStart: { pointerId: number; x: number; y: number } | undefined;
+  stage?.addEventListener("pointerdown", (event) => {
+    if ((event.pointerType === "mouse" && event.button !== 0) || (event.target instanceof Element && event.target.closest("button"))) return;
+    swipeStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    stage.setPointerCapture(event.pointerId);
+  });
+  stage?.addEventListener("pointerup", (event) => {
+    if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
+    const { x, y } = swipeStart;
+    swipeStart = undefined;
+    if (stage.hasPointerCapture(event.pointerId)) stage.releasePointerCapture(event.pointerId);
+    const horizontalDistance = event.clientX - x;
+    const verticalDistance = event.clientY - y;
+    const swipeThreshold = Math.max(36, stage.clientWidth * .1);
+    if (Math.abs(horizontalDistance) < swipeThreshold || Math.abs(horizontalDistance) <= Math.abs(verticalDistance)) return;
+    const direction = horizontalDistance < 0 ? 1 : -1;
+    showPose(currentPoseIndex + direction, direction);
+  });
+  const cancelSwipe = (event: PointerEvent): void => {
+    if (swipeStart?.pointerId !== event.pointerId) return;
+    swipeStart = undefined;
+  };
+  stage?.addEventListener("pointercancel", cancelSwipe);
+  stage?.addEventListener("lostpointercapture", cancelSwipe);
   content.querySelector<HTMLButtonElement>("[data-gallery-close]")?.addEventListener("click", () => dialog.close());
   dialog.showModal();
 }
+
+function trophyGalleryPreviewMarkup(character: CharacterDefinition, gallery: CharacterTrophyGallery): string {
+  return `<section class="history-trophy-preview" data-tier="${escapeHtml(character.tier)}"><img src="${escapeHtml(gallery.headshot)}" alt="死亡后的${escapeHtml(character.name)}头部特写" /><div><p class="eyebrow">战利品等级：${escapeHtml(character.tier)}</p><strong>${escapeHtml(character.name)}的死体展示</strong><button type="button" class="text-button" data-open-trophy-gallery>进入全屏鉴赏 <span>→</span></button></div></section>`;
+}
+
+async function openTrophyDetail(opponentId: string): Promise<void> {
+  const record = save.defeats.find((entry) => entry.opponentId === opponentId);
+  const metadata = getCharacterMetadata(opponentId);
+  const dialog = root.querySelector<HTMLDialogElement>("#history-detail");
+  const content = root.querySelector<HTMLDivElement>("#history-detail-content");
+  if (!record || !metadata || !dialog || !content) return;
+  const character = await loadCharacter(opponentId).catch(() => undefined);
+  const gallery = character?.trophyGallery;
+  content.innerHTML = `<p class="eyebrow">首次击败 // ${historyDate(record.timestamp)}</p><h2>${escapeHtml(metadata.tier)}级战利品</h2><p class="history-opponent">${escapeHtml(metadata.name)}</p>${character && gallery ? trophyGalleryPreviewMarkup(character, gallery) : `<p class="status-line">该藏品暂未配置深度鉴赏记录。</p>`}`;
+  if (character && gallery) content.querySelector<HTMLButtonElement>("[data-open-trophy-gallery]")?.addEventListener("click", () => openTrophyGallery(character, gallery));
+  dialog.showModal();
+}
+
 async function openHistoryDetail(id: string): Promise<void> {
   const record = save.history.find((entry) => entry.id === id);
   const dialog = root.querySelector<HTMLDialogElement>("#history-detail");
@@ -585,7 +700,7 @@ async function openHistoryDetail(id: string): Promise<void> {
   const won = record.winner === "player" && !record.escaped;
   const character = won ? await loadCharacter(metadata.id).catch(() => undefined) : undefined;
   const gallery = character?.trophyGallery;
-  const galleryPreview = gallery ? `<section class="history-trophy-preview"><img src="${escapeHtml(gallery.headshot)}" alt="昏迷中的${escapeHtml(metadata.name)}头部特写" /><div><p class="eyebrow">战利品等级：${metadata.tier}</p><strong>${escapeHtml(metadata.name)}的死体展示</strong><button type="button" class="text-button" data-open-trophy-gallery>进入全屏鉴赏 <span>→</span></button></div></section>` : "";
+  const galleryPreview = character && gallery ? trophyGalleryPreviewMarkup(character, gallery) : "";
   content.innerHTML = `<p class="eyebrow">${historyDate(record.timestamp)}</p><h2>${historyResultLabel(record)}</h2><p class="history-opponent">策展人 VS ${escapeHtml(metadata.name)}</p>${galleryPreview}<dl class="history-stats"><dt>策展人最终左轮</dt><dd>${record.finalRoulette.player.bullets} / ${record.finalRoulette.player.capacity}</dd><dt>${escapeHtml(metadata.name)}最终左轮</dt><dd>${record.finalRoulette.opponent.bullets} / ${record.finalRoulette.opponent.capacity}</dd><dt>策展人爆牌</dt><dd>${record.busts.player} 次</dd><dt>${escapeHtml(metadata.name)}爆牌</dt><dd>${record.busts.opponent} 次</dd><dt>策展人黑杰克</dt><dd>${record.blackjacks.player} 次</dd><dt>${escapeHtml(metadata.name)}黑杰克</dt><dd>${record.blackjacks.opponent} 次</dd></dl>`;
   if (character && gallery) content.querySelector<HTMLButtonElement>("[data-open-trophy-gallery]")?.addEventListener("click", () => openTrophyGallery(character, gallery));
   dialog.showModal();
@@ -603,8 +718,8 @@ async function openProfile(id: string): Promise<void> {
         .map((binding) => getAbilityDefinition(binding.definitionId))
         .filter((definition): definition is NonNullable<ReturnType<typeof getAbilityDefinition>> => Boolean(definition));
       const abilityMarkup = abilities.length === 0 ? "" : `<section class="profile-abilities" aria-label="角色技能"><h3>技能</h3>${abilities.map((ability) => `<details class="profile-ability"><summary><strong>${escapeHtml(ability.name)}</strong><span>：${escapeHtml(ability.description)}</span></summary><p>${escapeHtml(ability.profileLore ?? ability.description)}</p></details>`).join("")}</section>`;
-      const defeated = defeatedCharacterIdsByFirstVictory(save.history).includes(character.id);
-      const unlocked = save.profile.unlockedCharacterIds.includes(character.id) && isCharacterUnlocked(character, save.history);
+      const defeated = defeatedCharacterIdsByFirstDefeat(save.defeats).includes(character.id);
+      const unlocked = isCharacterUnlocked(character, save.defeats);
       const actionMarkup = defeated
         ? `<p class="status-line">她已经成为了一具尸体，但不妨碍你和她继续对局。</p><button class="primary-button profile-start" data-profile-start="${escapeHtml(character.id)}">开始对局 <span>→</span></button>`
         : unlocked
@@ -620,16 +735,16 @@ function unlockConditionLabel(condition: CharacterUnlockCondition | undefined): 
   if (!condition) return "完成条件后";
   if (condition.type === "defeat-any") return "击败任意角色";
   const tagLabel = (tag: string): string => {
-    const tier = /^tier:([dcbas])$/.exec(tag)?.[1];
+    const tier = /^tier:(d|c|b|a|s|ss)$/.exec(tag)?.[1];
     return tier ? `${tier.toUpperCase()}级` : `带有「${tag}」标签的`;
   };
   if (condition.type === "defeat-any-tag") return `击败一名${tagLabel(condition.tag)}角色`;
   if (condition.type === "defeat-character") return `击败指定角色 ${getCharacterMetadata(condition.characterId)?.name ?? condition.characterId}`;
   return `击败${tagLabel(condition.tag)}角色的 ${condition.percentage}%`;
 }
-async function updateSettings(event: Event): Promise<void> { const input = event.target as HTMLInputElement; const setting = input.dataset.setting === "reducedMotion" ? "reducedMotion" : "soundEnabled"; save = { ...save, settings: { ...save.settings, [setting]: input.checked }, updatedAt: new Date().toISOString() }; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); if (setting === "soundEnabled") { gameAudio.unlock(); gameAudio.configure(input.checked); } const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = "设置已保存。"; await repository.save(save); }
+async function updateSettings(event: Event): Promise<void> { const input = event.target as HTMLInputElement; const setting = input.dataset.setting === "reducedMotion" ? "reducedMotion" : "soundEnabled"; save = { ...save, settings: { ...save.settings, [setting]: input.checked }, updatedAt: new Date().toISOString() }; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); if (setting === "soundEnabled") { gameAudio.unlock(); gameAudio.configure(input.checked); } const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = "设置已保存。"; await repository.saveLongTerm(save); }
 async function exportSave(): Promise<void> { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); try { const method = await downloadSave(autosave?.getSave() ?? save); if (status) status.textContent = method === "file-system-access" ? "存档已写入。" : "已开始下载存档。"; } catch (error) { if (status) status.textContent = uiError(error, "导出失败。"); } }
-async function applyImportedSave(next: SaveFile): Promise<void> { try { save = next; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); await repository.save(save); if (save.activeMatch) await resumeMatch(save.activeMatch); else renderLobby(lobbyLayer); } catch (error) { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); } }
+async function applyImportedSave(next: LongTermSave): Promise<void> { try { save = next; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); await repository.saveLongTerm(save); renderLobby(lobbyLayer); } catch (error) { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); } }
 function importFile(event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; void importSave(file).then(applyImportedSave).catch((error: unknown) => { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); }); }
 async function requestImport(): Promise<void> { try { await applyImportedSave(await openSaveWithFileSystemAccess()); } catch (error) { if (error instanceof Error && error.message.includes("unavailable")) root.querySelector<HTMLInputElement>("#save-file")?.click(); else { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); } } }
 async function startMatch(characterId = selectedCharacterId): Promise<void> {
@@ -645,8 +760,8 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
   try {
     const metadata = getCharacterMetadata(characterId);
     if (!metadata) throw new Error("所选对手不可用。");
-    const defeated = defeatedCharacterIdsByFirstVictory(save.history).includes(metadata.id);
-    if (!defeated && (!save.profile.unlockedCharacterIds.includes(metadata.id) || !isCharacterUnlocked(metadata, save.history))) throw new Error("该角色尚未解锁。");
+    const defeated = defeatedCharacterIdsByFirstDefeat(save.defeats).includes(metadata.id);
+    if (!defeated && !isCharacterUnlocked(metadata, save.defeats)) throw new Error("该角色尚未解锁。");
     const character = await loadCharacter(metadata.id);
     if (requestToken !== characterLoadToken) return;
     currentCharacter = character;
@@ -783,11 +898,11 @@ function renderSummary(state: MatchState): void {
   const image = playerWon ? currentCharacter.assets.defeatedSummary : escaped ? currentCharacter.assets.conflicted : currentCharacter.assets.relaxed;
   const imageAlt = playerWon ? `${currentCharacter.name} 全身无力地瘫坐在椅子上` : currentCharacter.name;
   const summaryCopy = escaped ? currentCharacter.matchSummary.escaped : playerWon ? currentCharacter.matchSummary.playerVictory : currentCharacter.matchSummary.playerDefeat;
-  const alreadyUnlocked = new Set(save.profile.unlockedSkillIds);
+  const alreadyUnlocked = new Set(unlockedSkillIdsForDefeats(save.defeats));
   const newlyUnlocked = playerWon && !escaped
     ? skillsUnlockedForVictory(state.opponentId, winner, escaped).filter((id) => !alreadyUnlocked.has(id))
     : [];
-  const newlyUnlockedCharacters = playerWon && !escaped ? newlyUnlockedForVictory(save.history, state.opponentId) : [];
+  const newlyUnlockedCharacters = playerWon && !escaped ? newlyUnlockedForDefeat(save.defeats, state.opponentId) : [];
   const characterUnlockPanel = newlyUnlockedCharacters.length
     ? `<section class="unlock-panel character-unlock-panel" aria-live="polite"><p class="eyebrow">新角色已解锁</p>${newlyUnlockedCharacters.map((id) => { const character = getCharacterMetadata(id); if (!character) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(character.name)}</strong><span>${escapeHtml(character.tier)}级与会者 · 已可在候场宾客中邀请</span><small>${escapeHtml(unlockConditionLabel(character.unlock))}</small></div>`; }).join("")}</section>`
     : "";
@@ -831,15 +946,48 @@ function renderError(error: unknown): void {
   clearAiSchedule();
   clearSkillGainQueue();
   detachFullscreenListener();
-  const incompatibleSave = error instanceof SaveValidationError;
-  const action = incompatibleSave
-    ? `<button class="danger-button" data-reset-invalid-save>删除旧存档并重新开始</button><button class="secondary-button" data-retry>重新检查</button>`
+  const incompatibleLongTerm = error instanceof SaveValidationError && error.kind === "long-term";
+  const incompatibleRuntime = error instanceof SaveValidationError && error.kind === "runtime";
+  const action = incompatibleLongTerm
+    ? `<button class="danger-button" data-reset-invalid-save>删除长期存档并重新开始</button><button class="secondary-button" data-retry>重新检查</button>`
+    : incompatibleRuntime
+      ? `<button class="primary-button" data-reset-invalid-runtime>舍弃未完成牌局</button><button class="secondary-button" data-retry>重新检查</button>`
     : `<button class="primary-button" data-retry>重试</button>`;
-  const message = incompatibleSave ? "当前版本不兼容这份旧存档。请删除旧存档后重新开始。" : uiError(error, "游戏无法启动。");
-  const heading = incompatibleSave ? "需要清理<br><em>旧存档</em>" : "出现了<br><em>意外回合</em>";
+  const message = incompatibleLongTerm
+    ? "当前版本不兼容这份长期存档。只有手动删除并确认后，才会清除战绩与解锁。"
+    : incompatibleRuntime
+      ? "未完成牌局与当前版本不兼容。舍弃它不会影响长期战绩与解锁。"
+      : uiError(error, "游戏无法启动。");
+  const heading = incompatibleLongTerm ? "需要清理<br><em>长期存档</em>" : incompatibleRuntime ? "无法恢复<br><em>未完成牌局</em>" : "出现了<br><em>意外回合</em>";
   root.innerHTML = `<main class="error-shell"><p class="kicker">牌桌暂时离线</p><h1>${heading}</h1><p>${escapeHtml(message)}</p>${action}</main>`;
   root.querySelector("[data-retry]")?.addEventListener("click", () => void boot());
-  root.querySelector("[data-reset-invalid-save]")?.addEventListener("click", () => void resetCurrentData());
+  root.querySelector("[data-reset-invalid-save]")?.addEventListener("click", () => {
+    if (!confirmResetCurrentData()) return;
+    void repository.deleteLongTerm().then(() => boot()).catch(renderError);
+  });
+  root.querySelector("[data-reset-invalid-runtime]")?.addEventListener("click", () => void repository.deleteRuntime().then(() => boot()).catch(renderError));
 }
-async function boot(): Promise<void> { clearAiSchedule(); root.innerHTML = `<main class="loading-shell"><span class="mark">✦</span><p>正在洗牌……</p></main>`; try { save = await bootLoad(repository); document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); gameAudio.preload(); const unlockAudio = () => { gameAudio.unlock(); const state = autosave?.getState(); if (state) syncMatchAudioState(gameAudio, state); }; document.addEventListener("pointerdown", unlockAudio, { capture: true, once: true }); document.addEventListener("keydown", unlockAudio, { capture: true, once: true }); document.addEventListener("visibilitychange", () => { if (document.hidden) gameAudio.pauseBgm(); else gameAudio.restoreBgm(); }); void requestPersistentStorage(); if (save.activeMatch) await resumeMatch(save.activeMatch); else renderLobby(); } catch (error) { renderError(error); } }
+async function boot(): Promise<void> {
+  clearAiSchedule();
+  root.innerHTML = `<main class="loading-shell"><span class="mark">✦</span><p>正在洗牌……</p></main>`;
+  try {
+    save = await bootLoad(repository);
+    let activeMatch: MatchState | null;
+    try { activeMatch = await restoreActiveMatch(repository); }
+    catch (error) {
+      if (!(error instanceof SaveValidationError) || error.kind !== "runtime" || !window.confirm(RESET_RUNTIME_CONFIRM_MESSAGE)) throw error;
+      await repository.deleteRuntime();
+      activeMatch = null;
+    }
+    document.body.classList.toggle("reduced-motion", save.settings.reducedMotion);
+    gameAudio.configure(save.settings.soundEnabled);
+    gameAudio.preload();
+    const unlockAudio = () => { gameAudio.unlock(); const state = autosave?.getState(); if (state) syncMatchAudioState(gameAudio, state); };
+    document.addEventListener("pointerdown", unlockAudio, { capture: true, once: true });
+    document.addEventListener("keydown", unlockAudio, { capture: true, once: true });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) gameAudio.pauseBgm(); else gameAudio.restoreBgm(); });
+    void requestPersistentStorage();
+    if (activeMatch) await resumeMatch(activeMatch); else renderLobby();
+  } catch (error) { renderError(error); }
+}
 void boot();

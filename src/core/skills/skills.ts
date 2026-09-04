@@ -1,5 +1,6 @@
 import type { SeededRng, RngSnapshot } from "../rng/seeded";
-import { getSkillDefinition, SKILL_DEFINITIONS } from "./definitions";
+import type { CharacterDefeatRecord } from "../progression/defeats";
+import { getSkillDefinition, INITIAL_SKILL_IDS, SKILL_DEFINITIONS } from "./definitions";
 import type { SkillDefinition } from "./types";
 
 export interface LoadoutValidation { readonly valid: boolean; readonly reason?: "locked" | "too-many" | "too-many-passives"; readonly equippedSkillIds: readonly string[]; }
@@ -32,6 +33,14 @@ export function skillsUnlockedForVictory(opponentId: string, winner: "player" | 
 
 export function addUnlockedSkills(current: readonly string[], opponentId: string, winner: "player" | "opponent" | null, escaped = false): string[] {
   return [...new Set([...current, ...skillsUnlockedForVictory(opponentId, winner, escaped)])];
+}
+
+/** Rebuilds the canonical persistent inventory without consulting disposable match history. */
+export function unlockedSkillIdsForDefeats(defeats: readonly CharacterDefeatRecord[]): string[] {
+  const defeatedIds = new Set(defeats.map((record) => record.opponentId));
+  return [...new Set([...INITIAL_SKILL_IDS, ...SKILL_DEFINITIONS
+    .filter((skill) => skill.unlock && defeatedIds.has(skill.unlock.opponentId))
+    .map((skill) => skill.id)])];
 }
 
 export const getSkillsUnlockedForVictory = skillsUnlockedForVictory;

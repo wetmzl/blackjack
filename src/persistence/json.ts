@@ -1,15 +1,15 @@
-import { validateSave, type SaveFile } from "./schema";
+import { validateLongTermSave, type LongTermSave } from "./schema";
 
-export function exportSaveJson(save: SaveFile): string {
-  return JSON.stringify(validateSave(save), null, 2);
+export function exportSaveJson(save: LongTermSave): string {
+  return JSON.stringify(validateLongTermSave(save), null, 2);
 }
 
-export async function importSave(input: string | File): Promise<SaveFile> {
+export async function importSave(input: string | File): Promise<LongTermSave> {
   const text = typeof input === "string" ? input : await input.text();
   let parsed: unknown;
   try { parsed = JSON.parse(text) as unknown; }
   catch { throw new Error("Invalid save JSON: unable to parse file"); }
-  return validateSave(parsed);
+  return validateLongTermSave(parsed);
 }
 
 interface FileSystemWritable { write(data: string): Promise<void>; close(): Promise<void>; }
@@ -22,7 +22,7 @@ interface FileSystemWindow {
 
 export type SaveExportMethod = "file-system-access" | "blob-download";
 
-export async function downloadSave(save: SaveFile, filename = "house-of-chances-save.json"): Promise<SaveExportMethod> {
+export async function downloadSave(save: LongTermSave, filename = "house-of-chances-save.json"): Promise<SaveExportMethod> {
   return downloadJson(exportSaveJson(save), filename);
 }
 
@@ -46,7 +46,7 @@ async function downloadJson(json: string, filename: string): Promise<SaveExportM
   return "blob-download";
 }
 
-export async function openSaveWithFileSystemAccess(): Promise<SaveFile> {
+export async function openSaveWithFileSystemAccess(): Promise<LongTermSave> {
   const host = globalThis as unknown as FileSystemWindow;
   if (!host.showOpenFilePicker) throw new Error("File System Access API is unavailable; choose a save file instead");
   const handles = await host.showOpenFilePicker({ multiple: false, types: [{ description: "JSON save", accept: { "application/json": [".json"] } }] });

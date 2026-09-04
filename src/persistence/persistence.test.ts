@@ -1,85 +1,113 @@
 import { describe, expect, it } from "vitest";
 import { createMatch, gameReducer, getLegalActions } from "../core/match/reducer";
-import { bootLoad, acknowledgeMatchResult, createDefaultSave, resetSave, restoreActiveMatch, saveActiveMatch } from "./boot";
+import { acknowledgeMatchResult, bootLoad, clearMatchHistory, createDefaultSave, createRuntimeSave, resetSave, restoreActiveMatch } from "./boot";
 import { createAutosaveController } from "./autosave";
 import { exportSaveJson, importSave } from "./json";
 import { MemorySaveRepository } from "./memory-repository";
-import { assertMatchStateForSave, CURRENT_SCHEMA_VERSION, SaveValidationError, validateSave, type SaveFile } from "./schema";
+import {
+  assertMatchStateForSave,
+  CURRENT_LONG_TERM_SCHEMA_VERSION,
+  CURRENT_RUNTIME_SCHEMA_VERSION,
+  SaveValidationError,
+  validateLongTermSave,
+  validateRuntimeSave,
+  type LongTermSave,
+  type RuntimeSave
+} from "./schema";
 import type { SaveRepository } from "./repository";
 import { requestPersistentStorage } from "./storage";
 import { createCard, createDerivedCard } from "../core/blackjack/card";
 import { addCard, createHand } from "../core/blackjack/hand";
 import type { MatchState } from "../core/match/types";
+import { unlockedSkillIdsForDefeats } from "../core/skills/skills";
+import { unlockedCharacterIdsForDefeats } from "../content/characters/unlocks";
 
 const NOW = "2026-08-30T00:00:00.000Z";
 
-describe("current SaveFile schema and validation", () => {
-  it("round-trips a default save and an active MatchState through JSON", async () => {
-    const save = saveActiveMatch(createDefaultSave(NOW), createMatch("save-roundtrip"), NOW);
+describe("long-term save schema and JSON boundary", () => {
+  it("round-trips only durable data and includes the tutorial preference", async () => {
+    const save = createDefaultSave(NOW);
     const imported = await importSave(exportSaveJson(save));
     expect(imported).toEqual(save);
-    expect(imported.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
-    expect(imported.activeMatch?.rng.deck).toEqual(save.activeMatch?.rng.deck);
-    expect(imported.history).toEqual([]);
+    expect(imported.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
+    expect(imported.skipTutorial).toBe(false);
+    expect(imported).not.toHaveProperty("activeMatch");
   });
 
-  it("round-trips the suit-only private-card reveal event", async () => {
+  it("rejects unknown fields, incompatible versions, and the former combined format", () => {
+    const save = createDefaultSave(NOW);
+    expect(() => validateLongTermSave({ ...save, unexpected: true })).toThrow(SaveValidationError);
+    expect(() => validateLongTermSave({ ...save, schemaVersion: CURRENT_LONG_TERM_SCHEMA_VERSION + 1 })).toThrow(/schemaVersion/);
+    expect(() => validateLongTermSave({ ...save, schemaVersion: 0 })).toThrow(/schemaVersion/);
+    expect(() => validateLongTermSave({ ...save, format: "other-game" })).toThrow(SaveValidationError);
+    expect(() => validateLongTermSave({ ...save, activeMatch: createMatch("old-combined") })).toThrow(SaveValidationError);
+    expect(() => validateLongTermSave({ ...save, skipTutorial: undefined })).toThrow(/skipTutorial/);
+  });
+
+  it("requires unique defeat facts and derives equipped-skill eligibility from them", () => {
+    const save = createDefaultSave(NOW);
+    expect(() => validateLongTermSave({ ...save, defeats: [{ opponentId: "w", timestamp: NOW }, { opponentId: "w", timestamp: NOW }] })).toThrow(/duplicate defeated character/);
+    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, equippedSkillIds: ["night-queen"] } })).toThrow(/recorded defeat/);
+    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, equippedSkillIds: ["night-queen"] }, defeats: [{ opponentId: "w", timestamp: NOW }] })).not.toThrow();
+  });
+});
+
+describe("runtime save schema and validation", () => {
+  it("round-trips an active MatchState independently from durable data", () => {
+    const runtime = createRuntimeSave(createMatch("runtime-roundtrip"), NOW);
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(runtime)) as unknown);
+    expect(imported).toEqual(runtime);
+    expect(imported.schemaVersion).toBe(CURRENT_RUNTIME_SCHEMA_VERSION);
+    expect(imported.activeMatch.rng.deck).toEqual(runtime.activeMatch.rng.deck);
+    expect(imported).not.toHaveProperty("profile");
+    expect(imported).not.toHaveProperty("history");
+  });
+
+  it("round-trips the suit-only private-card reveal event", () => {
     const match = createMatch("suit-event-roundtrip");
     const withReveal = { ...match, history: [...match.history, { type: "CARD_SUIT_REVEALED" as const, viewer: "player" as const, target: "opponent" as const, cardIndex: 1, suit: "hearts" as const }] };
-    const save = saveActiveMatch(createDefaultSave(NOW), withReveal, NOW);
-    const imported = await importSave(exportSaveJson(save));
-    expect(imported.activeMatch?.history.at(-1)).toEqual(withReveal.history.at(-1));
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(withReveal, NOW))) as unknown);
+    expect(imported.activeMatch.history.at(-1)).toEqual(withReveal.history.at(-1));
   });
 
-  it("rejects malformed nested cards, RNG, guns, and unknown fields", () => {
-    const save = createDefaultSave(NOW);
-    const invalid = JSON.parse(JSON.stringify(save)) as Record<string, unknown>;
-    (invalid.profile as Record<string, unknown>).unexpected = true;
-    expect(() => validateSave(invalid)).toThrow(SaveValidationError);
-
-    const withMatch = JSON.parse(JSON.stringify(saveActiveMatch(save, createMatch("invalid-match"), NOW))) as Record<string, unknown>;
-    const match = withMatch.activeMatch as Record<string, unknown>;
+  it("rejects malformed nested cards, RNG, guns, and unknown fields as runtime-only errors", () => {
+    const invalidCard = structuredClone(createRuntimeSave(createMatch("invalid-match"), NOW)) as unknown as Record<string, unknown>;
+    const match = invalidCard.activeMatch as Record<string, unknown>;
     const player = match.player as Record<string, unknown>;
     const hand = player.hand as Record<string, unknown>;
-    (hand.cards as Array<Record<string, unknown>>)[0].rank = "JOKER";
-    expect(() => validateSave(withMatch)).toThrow(/activeMatch/);
+    (hand.cards as Array<Record<string, unknown>>)[0]!.rank = "JOKER";
+    expect(() => validateRuntimeSave(invalidCard)).toThrow(/activeMatch/);
 
-    const invalidRng = JSON.parse(JSON.stringify(saveActiveMatch(save, createMatch("invalid-rng"), NOW))) as Record<string, unknown>;
-    (((invalidRng.activeMatch as Record<string, unknown>).rng as Record<string, unknown>).ai as Record<string, unknown>).state = -1;
-    expect(() => validateSave(invalidRng)).toThrow(SaveValidationError);
+    const invalidRng = structuredClone(createRuntimeSave(createMatch("invalid-rng"), NOW)) as unknown as Record<string, unknown>;
+    ((((invalidRng.activeMatch as Record<string, unknown>).rng as Record<string, unknown>).ai as Record<string, unknown>)).state = -1;
+    expect(() => validateRuntimeSave(invalidRng)).toThrow(SaveValidationError);
 
-    const invalidShoe = JSON.parse(JSON.stringify(saveActiveMatch(save, createMatch("invalid-shoe"), NOW))) as Record<string, unknown>;
-    const shoe = (invalidShoe.activeMatch as Record<string, unknown>).shoe as Record<string, unknown>;
+    const invalidShoe = structuredClone(createRuntimeSave(createMatch("invalid-shoe"), NOW)) as unknown as Record<string, unknown>;
+    const shoe = ((invalidShoe.activeMatch as Record<string, unknown>).shoe as Record<string, unknown>);
     shoe.cursor = (shoe.cards as unknown[]).length + 1;
-    expect(() => validateSave(invalidShoe)).toThrow(/cursor cannot exceed cards length/);
+    expect(() => validateRuntimeSave(invalidShoe)).toThrow(/cursor cannot exceed cards length/);
+
+    try { validateRuntimeSave(invalidShoe); }
+    catch (error) { expect(error).toMatchObject({ kind: "runtime" }); }
   });
 
-  it("accepts only the current schema version and format", () => {
-    const save = createDefaultSave(NOW);
-    expect(() => validateSave({ ...save, schemaVersion: CURRENT_SCHEMA_VERSION + 1 })).toThrow(/schemaVersion/);
-    expect(() => validateSave({ ...save, schemaVersion: 0 })).toThrow(/schemaVersion/);
-    expect(() => validateSave({ ...save, format: "other-game" })).toThrow(SaveValidationError);
-  });
-
-  it("rejects missing ability definitions and catalog mismatches with locating save errors", () => {
-    const saved = JSON.parse(exportSaveJson(saveActiveMatch(createDefaultSave(NOW), createMatch("ability-save-errors"), NOW))) as Record<string, unknown>;
+  it("rejects missing ability definitions, catalog mismatches, and unknown characters", () => {
+    const saved = structuredClone(createRuntimeSave(createMatch("ability-save-errors"), NOW)) as unknown as Record<string, unknown>;
     const missing = structuredClone(saved);
-    const missingRuntime = ((missing.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>);
+    const missingRuntime = (((missing.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>));
     ((missingRuntime.instances as Array<Record<string, unknown>>)[0]!).definitionId = "missing-definition";
-    expect(() => validateSave(missing)).toThrow(/activeMatch.*abilities.*instances|unknown ability definition/i);
+    expect(() => validateRuntimeSave(missing)).toThrow(/activeMatch.*abilities.*instances|unknown ability definition/i);
 
     const mismatch = structuredClone(saved);
-    (((mismatch.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).catalogVersion) = "abilities-v999";
-    expect(() => validateSave(mismatch)).toThrow(/catalogVersion.*unsupported ability catalog version/i);
+    ((((mismatch.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>)).catalogVersion) = "abilities-v999";
+    expect(() => validateRuntimeSave(mismatch)).toThrow(/catalogVersion.*unsupported ability catalog version/i);
+
+    const unknownCharacter = structuredClone(saved);
+    (unknownCharacter.activeMatch as Record<string, unknown>).opponentId = "retired-character";
+    expect(() => validateRuntimeSave(unknownCharacter)).toThrow(/activeMatch.*opponentId.*unknown character/i);
   });
 
-  it("rejects character IDs outside the current catalog", () => {
-    const saved = JSON.parse(exportSaveJson(saveActiveMatch(createDefaultSave(NOW), createMatch("unknown-character"), NOW))) as Record<string, unknown>;
-    (saved.activeMatch as Record<string, unknown>).opponentId = "retired-character";
-    expect(() => validateSave(saved)).toThrow(/activeMatch.*opponentId.*unknown character/i);
-  });
-
-  it("keeps an active save valid after consuming a concrete ability card", () => {
+  it("keeps a runtime save valid after consuming a concrete ability card", () => {
     let match = createMatch("post-ability-save");
     for (let index = 0; index < 80; index += 1) {
       const action = getLegalActions(match).find((candidate) => candidate.type === "PLAY_ABILITY");
@@ -92,17 +120,17 @@ describe("current SaveFile schema and validation", () => {
     expect(() => assertMatchStateForSave(match)).not.toThrow();
   });
 
-  it("round-trips registered character mechanics and does not retrigger on-match-created on restore", async () => {
+  it("persists registered mechanics without retriggering on restore", async () => {
     const match = createMatch("mechanic-restore", { opponentMechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] });
     const openingTriggers = match.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw").length;
-    const save = saveActiveMatch(createDefaultSave(NOW), match, NOW);
-    const restored = restoreActiveMatch(await importSave(exportSaveJson(save)));
+    const repository = new MemorySaveRepository({ runtime: createRuntimeSave(match, NOW) });
+    const restored = await restoreActiveMatch(repository);
     expect(restored).toEqual(match);
     expect(restored?.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw")).toHaveLength(openingTriggers);
     expect(restored?.abilities.instances).toContainEqual(expect.objectContaining({ definitionId: "owner-load-penalty", owner: "opponent" }));
   });
 
-  it("persists a cross-target, next-action status created by an opponent mechanic", async () => {
+  it("persists a cross-target, next-action status created by an opponent mechanic", () => {
     const base = createMatch("silent-drizzle-save", {
       opponentId: "texas",
       equippedSkillIds: ["hunter-instinct"],
@@ -113,132 +141,178 @@ describe("current SaveFile schema and validation", () => {
     const ready = { ...base, player, opponent, round: { ...base.round, phase: "turns" as const, currentActor: "opponent" as const, player, opponent, outcome: null } };
     const silenced = gameReducer(ready, { type: "AI_STAND" });
     expect(silenced.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "silent-drizzle-silenced", owner: "player", duration: "until-owner-action" }));
-
-    const save = saveActiveMatch(createDefaultSave(NOW), silenced, NOW);
-    expect((await importSave(exportSaveJson(save))).activeMatch).toEqual(silenced);
+    expect(validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(silenced, NOW))) as unknown).activeMatch).toEqual(silenced);
   });
 
   it("persists derived cards in hands but rejects them inside the physical shoe", () => {
     const base = createMatch("derived-save");
     const player = { ...base.player, hand: addCard(base.player.hand, createDerivedCard("hearts", "5")) };
     const match = { ...base, player, round: { ...base.round, player } };
-    const save = saveActiveMatch(createDefaultSave(NOW), match, NOW);
-    expect(validateSave(JSON.parse(exportSaveJson(save)) as unknown).activeMatch?.player.hand.cards.at(-1)?.origin).toBe("derived");
+    const runtime = createRuntimeSave(match, NOW);
+    expect(validateRuntimeSave(JSON.parse(JSON.stringify(runtime)) as unknown).activeMatch.player.hand.cards.at(-1)?.origin).toBe("derived");
 
-    const invalid = JSON.parse(exportSaveJson(save)) as Record<string, unknown>;
+    const invalid = structuredClone(runtime) as unknown as Record<string, unknown>;
     const shoe = ((invalid.activeMatch as Record<string, unknown>).shoe as Record<string, unknown>);
     ((shoe.cards as Array<Record<string, unknown>>)[0]!).origin = "derived";
-    expect(() => validateSave(invalid)).toThrow(/activeMatch.*shoe.*cards/i);
+    expect(() => validateRuntimeSave(invalid)).toThrow(/activeMatch.*shoe.*cards/i);
   });
 });
 
 describe("boot and repositories", () => {
-  it("resetSave returns a clean current-schema profile with initial loadout", () => {
+  it("resetSave returns clean durable data with the initial loadout", () => {
     const reset = resetSave(NOW);
-    expect(reset.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(reset.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
-    expect(reset.profile.unlockedCharacterIds).toEqual(["texas", "irene", "plume"]);
-    expect(reset.profile.unlockedSkillIds).toEqual(reset.profile.equippedSkillIds);
-    expect(reset.activeMatch).toBeNull();
+    expect(unlockedSkillIdsForDefeats(reset.defeats)).toEqual(reset.profile.equippedSkillIds);
     expect(reset.history).toEqual([]);
+    expect(reset.defeats).toEqual([]);
+    expect(reset.skipTutorial).toBe(false);
   });
 
-  it("does not migrate an incompatible stored save", async () => {
-    const writes: SaveFile[] = [];
-    const repository: SaveRepository = {
-      load: async () => { throw new SaveValidationError("outdated save"); },
-      save: async (next) => { writes.push(next); }
-    };
-    await expect(bootLoad(repository, NOW)).rejects.toThrow(SaveValidationError);
+  it("does not migrate or overwrite an incompatible long-term save", async () => {
+    const writes: LongTermSave[] = [];
+    const repository = new MemorySaveRepository();
+    repository.loadLongTerm = async () => { throw new SaveValidationError("long-term", "outdated long-term save"); };
+    repository.saveLongTerm = async (next) => { writes.push(next); };
+    await expect(bootLoad(repository, NOW)).rejects.toMatchObject({ kind: "long-term" });
     expect(writes).toEqual([]);
   });
-  it("creates and persists a default save on first boot, then restores active match", async () => {
-    const repository = new MemorySaveRepository();
-    const fresh = await bootLoad(repository, NOW);
-    expect(fresh.activeMatch).toBeNull();
-    expect(fresh.createdAt).toBe(NOW);
-    expect(repository.writes).toHaveLength(1);
 
-    const match = createMatch("restore-me");
-    await repository.save(saveActiveMatch(fresh, match, NOW));
-    const restored = await bootLoad(repository, NOW);
-    expect(restoreActiveMatch(restored)).toEqual(match);
-    expect(repository.writes).toHaveLength(2);
+  it("loads long-term data even when only the runtime save is incompatible", async () => {
+    const durable = createDefaultSave(NOW);
+    const repository = new MemorySaveRepository({ longTerm: durable });
+    repository.loadRuntime = async () => { throw new SaveValidationError("runtime", "outdated runtime save"); };
+    await expect(bootLoad(repository, NOW)).resolves.toEqual(durable);
+    await expect(restoreActiveMatch(repository)).rejects.toMatchObject({ kind: "runtime" });
+    expect(await repository.loadLongTerm()).toEqual(durable);
   });
 
-  it("clears activeMatch only after finished summary acknowledgement", () => {
+  it("creates durable data on first boot and restores runtime independently", async () => {
+    const repository = new MemorySaveRepository();
+    const fresh = await bootLoad(repository, NOW);
+    expect(fresh.createdAt).toBe(NOW);
+    expect(repository.longTermWrites).toHaveLength(1);
+    expect(await restoreActiveMatch(repository)).toBeNull();
+
+    const match = createMatch("restore-me");
+    await repository.saveRuntime(createRuntimeSave(match, NOW));
+    expect(await restoreActiveMatch(repository)).toEqual(match);
+    expect(repository.longTermWrites).toHaveLength(1);
+    expect(repository.runtimeWrites).toHaveLength(1);
+  });
+
+  it("deletes long-term and runtime records independently", async () => {
+    const durable = createDefaultSave(NOW);
+    const runtime = createRuntimeSave(createMatch("independent-delete"), NOW);
+    const repository = new MemorySaveRepository({ longTerm: durable, runtime });
+
+    await repository.deleteRuntime();
+    expect(await repository.loadRuntime()).toBeNull();
+    expect(await repository.loadLongTerm()).toEqual(durable);
+
+    await repository.saveRuntime(runtime);
+    await repository.deleteLongTerm();
+    expect(await repository.loadLongTerm()).toBeNull();
+    expect(await repository.loadRuntime()).toEqual(runtime);
+  });
+
+  it("records only an acknowledged finished match into durable data", () => {
     const save = createDefaultSave(NOW);
     const match = createMatch("ack");
-    expect(acknowledgeMatchResult(saveActiveMatch(save, match, NOW), NOW).activeMatch).not.toBeNull();
+    expect(acknowledgeMatchResult(save, match, NOW)).toBe(save);
     const finished = gameReducer(match, { type: "ESCAPE_MATCH" });
+    expect(acknowledgeMatchResult(save, finished, NOW)).toBe(save);
     const acknowledged = gameReducer(finished, { type: "ACK_MATCH_RESULT" });
-    const summary = saveActiveMatch(save, acknowledged, NOW);
-    const acknowledgedSave = acknowledgeMatchResult(summary, NOW);
-    expect(acknowledgedSave.activeMatch).toBeNull();
+    const acknowledgedSave = acknowledgeMatchResult(save, acknowledged, NOW);
     expect(acknowledgedSave.history).toHaveLength(1);
     expect(acknowledgedSave.history[0]).toMatchObject({ id: match.id, opponentId: match.opponentId, escaped: true, winner: null, timestamp: NOW });
+    expect(acknowledgedSave.defeats).toEqual([]);
   });
 
   it("atomically records victory progression and does not grant it twice", () => {
     const base = createMatch("character-unlock", { opponentId: "texas" });
-    const acknowledged: MatchState = {
-      ...base,
-      status: "finished",
-      scene: "lobby",
-      view: "match-summary",
-      outcome: { winner: "player", reason: "opponent-killed" }
-    };
-    const first = acknowledgeMatchResult(saveActiveMatch(createDefaultSave(NOW), acknowledged, NOW), NOW);
-    expect(first.activeMatch).toBeNull();
+    const acknowledged: MatchState = { ...base, status: "finished", scene: "lobby", view: "match-summary", outcome: { winner: "player", reason: "opponent-killed" } };
+    const first = acknowledgeMatchResult(createDefaultSave(NOW), acknowledged, NOW);
     expect(first.history).toHaveLength(1);
+    expect(first.defeats).toEqual([{ opponentId: "texas", timestamp: NOW }]);
     expect(first.profile.matchesPlayed).toBe(1);
     expect(first.profile.wins).toBe(1);
-    expect(first.profile.unlockedCharacterIds).toEqual(["w", "texas", "irene", "nian", "plume"]);
-    expect(first.profile.unlockedSkillIds).toContain("blueberry-and-dark-chocolate");
+    expect(unlockedSkillIdsForDefeats(first.defeats)).toContain("blueberry-and-dark-chocolate");
 
-    const repeated = acknowledgeMatchResult(saveActiveMatch(first, acknowledged, NOW), NOW);
-    expect(repeated.history).toHaveLength(1);
-    expect(repeated.profile).toEqual(first.profile);
+    const repeated = acknowledgeMatchResult(first, acknowledged, NOW);
+    expect(repeated).toBe(first);
+  });
+
+  it("clears match history without changing trophies, progression, totals, or tutorial preference", () => {
+    const base = createMatch("clear-history", { opponentId: "texas" });
+    const acknowledged: MatchState = { ...base, status: "finished", scene: "lobby", view: "match-summary", outcome: { winner: "player", reason: "opponent-killed" } };
+    const completed = { ...acknowledgeMatchResult(createDefaultSave(NOW), acknowledged, NOW), skipTutorial: true };
+    const cleared = clearMatchHistory(completed, "2026-08-31T00:00:00.000Z");
+    expect(cleared.history).toEqual([]);
+    expect(cleared.defeats).toEqual(completed.defeats);
+    expect(cleared.profile).toEqual(completed.profile);
+    expect(cleared.skipTutorial).toBe(true);
+    expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "texas", "irene", "nian", "plume"]);
+    expect(unlockedSkillIdsForDefeats(cleared.defeats)).toContain("blueberry-and-dark-chocolate");
+    expect(cleared.updatedAt).toBe("2026-08-31T00:00:00.000Z");
   });
 });
 
 describe("serial autosave", () => {
   class DelayedRepository implements SaveRepository {
-    readonly writes: SaveFile[] = [];
+    longTerm: LongTermSave | null = null;
+    runtime: RuntimeSave | null = null;
+    readonly runtimeWrites: RuntimeSave[] = [];
+    readonly commits: LongTermSave[] = [];
     private sequence = Promise.resolve();
-    async load(): Promise<SaveFile | null> { return null; }
-    async save(save: SaveFile): Promise<void> {
-      const snapshot = save;
+
+    async loadLongTerm(): Promise<LongTermSave | null> { return this.longTerm; }
+    async saveLongTerm(save: LongTermSave): Promise<void> { this.longTerm = save; }
+    async deleteLongTerm(): Promise<void> { this.longTerm = null; }
+    async loadRuntime(): Promise<RuntimeSave | null> { return this.runtime; }
+    async deleteRuntime(): Promise<void> { this.runtime = null; }
+    async saveRuntime(save: RuntimeSave): Promise<void> {
       this.sequence = this.sequence.then(async () => {
         await new Promise((resolve) => setTimeout(resolve, 2));
-        this.writes.push(snapshot);
+        this.runtime = save;
+        this.runtimeWrites.push(save);
+      });
+      return this.sequence;
+    }
+    async commitMatchResult(save: LongTermSave): Promise<void> {
+      this.sequence = this.sequence.then(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        this.longTerm = save;
+        this.runtime = null;
+        this.commits.push(save);
       });
       return this.sequence;
     }
   }
 
-  it("serializes snapshots and never allows an older state to finish last", async () => {
+  it("serializes runtime snapshots, then commits durable results and removes runtime", async () => {
     const repository = new DelayedRepository();
     const controller = createAutosaveController(repository, createDefaultSave(NOW), createMatch("autosave"), { now: () => NOW });
     controller.dispatch({ type: "ESCAPE_MATCH" });
     controller.dispatch({ type: "ACK_MATCH_RESULT" });
     await controller.flush();
-    expect(repository.writes).toHaveLength(3);
-    expect(repository.writes[0].activeMatch?.status).toBe("active");
-    expect(repository.writes[0].activeMatch?.scene).toBe("match");
-    expect(repository.writes[1].activeMatch?.status).toBe("finished");
-    expect(repository.writes[1].activeMatch?.scene).toBe("match");
-    expect(repository.writes[2].activeMatch).toBeNull();
-    expect(repository.writes[2].profile.matchesPlayed).toBe(1);
-    expect(controller.getSave().activeMatch).toBeNull();
+    expect(repository.runtimeWrites).toHaveLength(2);
+    expect(repository.runtimeWrites[0]!.activeMatch.status).toBe("active");
+    expect(repository.runtimeWrites[1]!.activeMatch.status).toBe("finished");
+    expect(repository.runtimeWrites[1]!.activeMatch.scene).toBe("match");
+    expect(repository.commits).toHaveLength(1);
+    expect(repository.commits[0]!.profile.matchesPlayed).toBe(1);
+    expect(repository.runtime).toBeNull();
+    expect(controller.getSave().profile.matchesPlayed).toBe(1);
   });
 });
 
 describe("import and storage capabilities", () => {
-  it("turns malformed JSON into a clear import error", async () => {
+  it("turns malformed or runtime JSON into a clear long-term import error", async () => {
     await expect(importSave("{ definitely not json")).rejects.toThrow(/Invalid save JSON/);
-    await expect(importSave(JSON.stringify({ schemaVersion: 99 }))).rejects.toThrow(SaveValidationError);
+    await expect(importSave(JSON.stringify({ schemaVersion: 99 }))).rejects.toMatchObject({ kind: "long-term" });
+    await expect(importSave(JSON.stringify(createRuntimeSave(createMatch("runtime-import"), NOW)))).rejects.toMatchObject({ kind: "long-term" });
   });
 
   it("treats persistent storage as best effort", async () => {

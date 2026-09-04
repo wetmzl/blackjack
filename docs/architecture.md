@@ -59,11 +59,15 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 ## 角色内容
 
-`src/content/characters/catalog.json` 只保存大厅和历史索引所需的元数据与安全 `dataFile`。`catalog.ts` 校验并冻结目录；`loader.ts` 通过 `import.meta.glob("./data/*.json")` 按需加载完整角色并缓存结果。
+`src/content/characters/catalog.json` 只保存大厅、战利品和历史索引所需的元数据与安全 `dataFile`。`catalog.ts` 校验并冻结目录；`loader.ts` 通过 `import.meta.glob("./data/*.json")` 按需加载完整角色并缓存结果。
 
-目录元数据包含自定义 `tags`；角色 tier 由 `getCharacterTags` 暴露为 `tier:s`、`tier:a` 等查询标签。`unlock` 使用通用条件引擎，支持击败任意角色、击败带标签角色、击败指定角色和按标签击败百分比。解锁集合由完成对局历史计算，并在确认结算时与历史记录、胜场和技能奖励一起原子写入 profile；历史中策展人胜利且未离席的角色视为已击败，首次击败时间决定大厅收藏顺序。
+目录元数据包含自定义 `tags`；角色 tier 由 `getCharacterTags` 暴露为 `tier:s`、`tier:a` 等查询标签。`unlock` 使用通用条件引擎，支持击败任意角色、击败带标签角色、击败指定角色和按标签击败百分比。
+
+进度层的 `CharacterDefeatRecord` 是击败事实的唯一来源，每名角色至多一条，只保存角色 ID 与首次击败时间。角色解锁、技能解锁、候场过滤、已击败名册和战利品时间线都读取该集合；完整 `MatchHistoryRecord` 只负责逐局结果和统计。确认结算时两者与 profile 原子写入，清理历史时只置空 `history`，不会修改 `defeats` 或 profile。
 
 完整角色 JSON 由 `character.schema.json` 和运行时 Zod Schema 校验，包含档案、结算文案、资源、瞄准点、AI、机制和完整有限状态对白。未知 ID、不安全文件名、目录/数据不一致、非法机制绑定或缺少对白都会失败。新增角色的操作步骤见 [新增与会者工作流](adding-a-character.md)。
+
+全屏战利品鉴赏采用表现层分层合成：应用固定加载共享 `trophy-gallery-coffin.png` 作为底图，角色 JSON 的 `trophyGallery.fullBody` 与可选 `poses` 只提供同尺寸透明角色层。局部记录坐标只绑定默认 `fullBody`，姿势切换不进入领域状态或存档。
 
 ## 能力底座
 
@@ -89,16 +93,15 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 ## 持久化
 
-`src/persistence/` 通过 `SaveRepository` 隔离存储实现，生产实现使用 Dexie + IndexedDB。活动对局在重要领域动作后自动保存；应用启动时恢复有效活动对局。
+`src/persistence/` 通过 `SaveRepository` 隔离存储实现，生产实现使用 Dexie + IndexedDB。长期档与运行时档保存为独立记录；活动对局在重要领域动作后自动保存，应用启动时在长期档验证成功后单独恢复有效运行时档。确认最终结算时，长期结果写入与运行时档删除处于同一 IndexedDB 事务。
 
-保存和导入边界使用严格 Zod Schema，验证：
+两个保存边界分别使用严格 Zod Schema，验证：
 
-- save format、schema version、角色与技能引用；
-- 牌、轮次、左轮和事件结构；
-- 能力实例、状态来源、参数、目录版本和卡牌实例一致性；
-- 历史摘要结构。
+- 长期档：format、长期 schema version、profile、设置、`skipTutorial`、历史摘要与独立首次击败记录；
+- 运行时档：format、运行时 schema version、角色与技能引用、牌、轮次、左轮和事件结构；
+- 运行时能力实例、状态来源、参数、目录版本和卡牌实例一致性。
 
-不兼容或损坏的本地存档在启动时被视为不可恢复，界面会明确引导玩家删除/清理后重新开始，不自动迁移或覆盖旧档。角色解锁契约变更将提升 Save Schema 版本（当前为 5）；JSON 导入会明确报错；导出优先使用 File System Access API，缺失时退回 Blob 下载。
+当前长期 Schema 版本为 7，运行时 Schema 版本为 1。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
 
 ## PWA 与资源缓存
 

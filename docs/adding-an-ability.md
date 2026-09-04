@@ -10,8 +10,9 @@ condition, selector, and effect primitives in `core/abilities/types.ts`.
 
 During rapid development, saves are current-version only. Bump
 `ABILITY_CATALOG_VERSION` whenever definition semantics change; an incompatible
-stored save is discarded on boot and replaced with a fresh save. Do not add
-save migrations or legacy ability/event compatibility paths.
+runtime save is discarded after a one-time player confirmation, while the
+separate long-term progress save remains intact. Do not add runtime-save
+migrations or legacy ability/event compatibility paths.
 
 `replace-pending-draw` may use the `create-derived-card` fallback when no
 physical card can satisfy an exact resulting total. A derived card does not

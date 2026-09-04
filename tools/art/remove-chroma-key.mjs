@@ -39,7 +39,14 @@ try {
         // The generated intermediate uses a saturated green screen. Muted jade
         // costume details remain well below these brightness/excess thresholds.
         let alpha = 255;
-        if (green >= 180 && greenExcess >= 90) alpha = 0;
+        // Image generators sometimes paint cast shadows directly onto the
+        // screen, turning #00ff00 into a much darker but still nearly pure
+        // green. Key that family out as well; requiring a large distance from
+        // both red and blue preserves cyan/jade costume accents.
+        if (
+          (green >= 180 && greenExcess >= 90) ||
+          (green >= 48 && green - red >= 40 && green - blue >= 42)
+        ) alpha = 0;
         else if (green >= 130 && greenExcess >= 42) {
           alpha = Math.round(255 * (1 - (greenExcess - 42) / 48));
           alpha = Math.max(0, Math.min(255, alpha));
@@ -52,70 +59,81 @@ try {
         }
       }
 
-      // Refine only pixels beside the removed screen. This catches green spill
-      // on pale hair and clothing without keying the jade bracelet internally.
+      // Measure a short distance from the removed screen. Green spill can reach
+      // several antialiased pixels into pale hair, while interior jade costume
+      // details remain outside this narrow edge band.
       const width = canvas.width;
       const height = canvas.height;
-      const refinedAlpha = new Uint8ClampedArray(width * height);
-      for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex += 1) {
+      const count = width * height;
+      const distance = new Uint8Array(count);
+      const queue = new Int32Array(count);
+      let queueHead = 0;
+      let queueTail = 0;
+      for (let pixelIndex = 0; pixelIndex < count; pixelIndex += 1) {
         const offset = pixelIndex * 4;
-        let alpha = pixels[offset + 3];
-        if (alpha === 0) continue;
+        if (pixels[offset + 3] === 0) {
+          distance[pixelIndex] = 1;
+          queue[queueTail++] = pixelIndex;
+        }
+      }
+      while (queueHead < queueTail) {
+        const pixelIndex = queue[queueHead++];
+        const currentDistance = distance[pixelIndex];
+        if (currentDistance >= 7) continue;
         const x = pixelIndex % width;
         const y = Math.floor(pixelIndex / width);
-        let nearTransparent = false;
-        for (let dy = -2; dy <= 2 && !nearTransparent; dy += 1) {
-          const neighbourY = y + dy;
-          if (neighbourY < 0 || neighbourY >= height) continue;
-          for (let dx = -2; dx <= 2; dx += 1) {
-            const neighbourX = x + dx;
-            if (neighbourX < 0 || neighbourX >= width) continue;
-            if (pixels[(neighbourY * width + neighbourX) * 4 + 3] === 0) {
-              nearTransparent = true;
-              break;
-            }
+        const neighbours = [
+          x > 0 ? pixelIndex - 1 : -1,
+          x + 1 < width ? pixelIndex + 1 : -1,
+          y > 0 ? pixelIndex - width : -1,
+          y + 1 < height ? pixelIndex + width : -1
+        ];
+        for (const neighbour of neighbours) {
+          if (neighbour >= 0 && distance[neighbour] === 0) {
+            distance[neighbour] = currentDistance + 1;
+            queue[queueTail++] = neighbour;
           }
         }
-        if (nearTransparent) {
+      }
+
+      for (let pixelIndex = 0; pixelIndex < count; pixelIndex += 1) {
+        const offset = pixelIndex * 4;
+        let alpha = pixels[offset + 3];
+        if (alpha > 0 && distance[pixelIndex] > 1 && distance[pixelIndex] <= 7) {
           const red = original[offset];
           const green = original[offset + 1];
           const blue = original[offset + 2];
           const greenExcess = green - Math.max(red, blue);
-          if (green >= 130 && greenExcess > 20) {
-            const estimatedAlpha = Math.round(255 * (1 - (greenExcess - 20) / 235));
-            alpha = Math.min(alpha, Math.max(0, estimatedAlpha));
+          if (greenExcess > 4 && green > red * 1.04 && green > blue * 1.04) {
+            alpha = Math.max(0, Math.min(alpha, 255 - greenExcess));
           }
         }
-        refinedAlpha[pixelIndex] = alpha;
-      }
-
-      let transparent = 0;
-      let partial = 0;
-      let opaque = 0;
-      for (let pixelIndex = 0; pixelIndex < width * height; pixelIndex += 1) {
-        const offset = pixelIndex * 4;
-        const alpha = refinedAlpha[pixelIndex];
-        if (alpha === 0) {
+        if (alpha <= 6) {
           pixels[offset] = 0;
           pixels[offset + 1] = 0;
           pixels[offset + 2] = 0;
           pixels[offset + 3] = 0;
-          transparent += 1;
-          continue;
-        }
-        if (alpha < 255) {
-          pixels[offset] = original[offset];
-          pixels[offset + 1] = Math.min(original[offset + 1], Math.max(original[offset], original[offset + 2]));
-          pixels[offset + 2] = original[offset + 2];
+        } else if (alpha < 255) {
+          const ratio = alpha / 255;
+          pixels[offset] = Math.max(0, Math.min(255, Math.round(original[offset] / ratio)));
+          pixels[offset + 1] = Math.max(0, Math.min(255, Math.round((original[offset + 1] - (1 - ratio) * 255) / ratio)));
+          pixels[offset + 2] = Math.max(0, Math.min(255, Math.round(original[offset + 2] / ratio)));
           pixels[offset + 3] = alpha;
-          partial += 1;
         } else {
           pixels[offset] = original[offset];
           pixels[offset + 1] = original[offset + 1];
           pixels[offset + 2] = original[offset + 2];
           pixels[offset + 3] = 255;
-          opaque += 1;
         }
+      }
+
+      let transparent = 0;
+      let partial = 0;
+      let opaque = 0;
+      for (let offset = 3; offset < pixels.length; offset += 4) {
+        if (pixels[offset] === 0) transparent += 1;
+        else if (pixels[offset] < 255) partial += 1;
+        else opaque += 1;
       }
 
       context.putImageData(imageData, 0, 0);

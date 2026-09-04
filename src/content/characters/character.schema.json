@@ -52,10 +52,25 @@
       "required": ["headshot", "fullBody", "closeups"],
       "properties": {
         "headshot": { "$ref": "#/$defs/assetPath", "description": "5:7 的与会者遗体档案头肩像。" },
-        "fullBody": { "$ref": "#/$defs/assetPath", "description": "2:3 竖屏全身遗体收藏图，作为记录点坐标底图。" },
+        "fullBody": { "$ref": "#/$defs/assetPath", "description": "2:3 竖屏透明背景的遗体角色层，与共享棺材底图叠加；同时作为记录点坐标基准。" },
+        "poses": {
+          "type": "array",
+          "minItems": 1,
+          "description": "可选的其他陈列姿势；每项都是与共享棺材底图对齐的 2:3 透明角色层，局部记录点不跟随这些姿势显示。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "image"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "与会者内唯一的稳定姿势 ID。" },
+              "name": { "type": "string", "minLength": 1, "description": "姿势切换按钮文案。" },
+              "image": { "$ref": "#/$defs/assetPath", "description": "2:3 透明背景的角色层。" }
+            }
+          }
+        },
         "closeups": {
           "type": "array",
-          "description": "可添加任意数量的方形局部收藏记录；x/y 为相对 fullBody 的百分比坐标。",
+          "description": "可添加任意数量的方形局部收藏记录；x/y 为相对共享棺材与默认 fullBody 合成画面的百分比坐标。",
           "items": {
             "type": "object",
             "additionalProperties": false,

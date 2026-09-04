@@ -102,21 +102,32 @@ h2 { font-size: 1.5rem; }
 .quiet-button small { color: #728397; margin-left: 4px; }
 .footer { margin-top: 24px; border-top: 1px solid #3d5369; padding-top: 16px; font-size: .6rem; }
 
-/* Trophy room: compact 16:4.5 history cards with modal-only statistics. */
+/* Trophy room and its linked match log share the compact 16:4.5 card language. */
 .trophy-shell { background: radial-gradient(circle at 50% 12%, #293f58 0, #101722 54%); }
 .history-count { min-width: 32px; min-height: 32px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--amber); font-size: .7rem; }
+.history-shortcut { display: inline-flex; min-height: 38px; align-items: center; gap: 7px; border: 1px solid #617a8f; border-radius: 999px; background: #152536cc; color: var(--muted); padding: 7px 8px 7px 12px; font-size: .63rem; }
+.history-shortcut small { display: grid; min-width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #283d50; color: var(--amber); font-size: .61rem; }
 .trophy-heading { padding: 42px 4px 24px; }
 .trophy-heading h1 { margin-bottom: 18px; }
 .trophy-heading > p:last-child { color: var(--muted); font-size: .8rem; line-height: 1.55; }
+.history-heading { padding-bottom: 18px; }
+.history-heading > p:last-of-type { color: var(--muted); font-size: .8rem; line-height: 1.55; }
+.clear-history-button { min-height: 44px; margin-top: 4px; }
 .trophy-list { display: grid; gap: 14px; }
 .trophy-card { position: relative; width: 100%; aspect-ratio: 16 / 4.5; overflow: hidden; border: 1px solid #527087; border-radius: 16px; background: linear-gradient(145deg, #21364a, #111c28); padding: 0; text-align: left; box-shadow: 0 12px 26px #02081388; }
 .trophy-card.is-victory { border-color: #c69d6288; }
+.trophy-card.tier-trophy { --tier-color: #65d6e3; border-color: var(--tier-color); box-shadow: 0 12px 26px #02081388, inset 0 0 0 1px color-mix(in srgb, var(--tier-color) 18%, transparent); }
+.tier-trophy[data-tier="B"] { --tier-color: #50a9ff; }
+.tier-trophy[data-tier="A"] { --tier-color: #bd78ff; }
+.tier-trophy[data-tier="S"] { --tier-color: #f2c46b; }
+.tier-trophy[data-tier="SS"] { --tier-color: #ff596d; }
 .trophy-card.is-empty { background: repeating-linear-gradient(135deg, #182636 0 12px, #142130 12px 24px); }
 .trophy-visual { position: absolute; inset: 0; display: grid; place-items: center; }
 .trophy-visual img { width: 100%; height: 100%; object-fit: contain; object-position: center; filter: drop-shadow(0 9px 8px #030b13cc); }
 .trophy-visual img.transparent-history-image { opacity: 0; }
 .trophy-meta { position: absolute; inset: auto 0 0; display: grid; gap: 3px; padding: 34px 14px 12px; background: linear-gradient(transparent, #09121df2 52%); }
 .trophy-meta small { color: var(--pink); font-size: .62rem; letter-spacing: .1em; }
+.tier-trophy .trophy-meta small { color: var(--tier-color); text-shadow: 0 0 12px color-mix(in srgb, var(--tier-color) 55%, transparent); }
 .trophy-meta strong { color: var(--ink); font-size: .86rem; }
 .trophy-meta time { color: var(--muted); font-size: .62rem; }
 .empty-history { min-height: 280px; display: grid; place-items: center; align-content: center; border: 1px dashed #527087; border-radius: 18px; color: var(--muted); text-align: center; padding: 24px; }
@@ -144,10 +155,21 @@ h2 { font-size: 1.5rem; }
 .trophy-gallery-header h1 { margin: 0; color: var(--ink); font-size: 1.45rem; line-height: 1; letter-spacing: .02em; }
 .trophy-gallery-close { flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid #567188; border-radius: 50%; background: #142434dd; color: var(--ink); font-size: 1.3rem; }
 .trophy-gallery-canvas { position: relative; display: grid; min-height: 0; place-items: center; overflow: hidden; padding: 10px 0 max(10px, env(safe-area-inset-bottom)); }
-.trophy-gallery-stage { position: relative; width: min(100vw, calc((100svh - 92px) * 2 / 3), 560px); aspect-ratio: 2 / 3; max-height: 100%; margin: 0; overflow: hidden; border: 1px solid #5f5260; border-radius: 8px; background: #070b10; box-shadow: 0 20px 70px #000b; }
-.trophy-gallery-stage > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.trophy-gallery-stage { position: relative; width: min(100vw, calc((100svh - 92px) * 2 / 3), 560px); aspect-ratio: 2 / 3; max-height: 100%; margin: 0; overflow: hidden; border: 1px solid #5f5260; border-radius: 8px; background: #070b10; box-shadow: 0 20px 70px #000b; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.trophy-gallery-stage > img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.trophy-gallery-background { z-index: 0; }
+.trophy-gallery-subject { z-index: 1; filter: drop-shadow(0 6px 5px #0008); }
+.trophy-gallery-subject.is-turning-previous { animation: trophy-gallery-turn-previous .22s cubic-bezier(.2, .75, .3, 1) both; }
+.trophy-gallery-subject.is-turning-next { animation: trophy-gallery-turn-next .22s cubic-bezier(.2, .75, .3, 1) both; }
 .trophy-gallery-stage figcaption { position: absolute; z-index: 2; inset: auto 12px 10px; border: 1px solid #6e829388; border-radius: 999px; background: #07111bd9; color: #c3ced8; padding: 7px 12px; text-align: center; font-size: .62rem; letter-spacing: .05em; pointer-events: none; }
+.trophy-gallery-turn-controls { position: absolute; z-index: 4; inset: 0; pointer-events: none; }
+.trophy-gallery-turn { position: absolute; top: 50%; display: grid; width: 44px; min-width: 44px; height: 44px; min-height: 44px; place-items: center; transform: translateY(-50%); border: 1px solid #718493b8; border-radius: 50%; background: #07111bc7; color: #eef3f6; padding: 0 1px 3px 0; box-shadow: 0 5px 18px #000a, inset 0 0 0 1px #ffffff0c; font-size: 1.65rem; line-height: 1; pointer-events: auto; backdrop-filter: blur(7px); transition: border-color .16s ease, background-color .16s ease, transform .16s ease; }
+.trophy-gallery-turn.is-previous { left: 10px; }
+.trophy-gallery-turn.is-next { right: 10px; padding-right: 0; padding-left: 1px; }
+.trophy-gallery-turn:hover, .trophy-gallery-turn:focus-visible { transform: translateY(-50%) scale(1.06); border-color: #f2c46b; background: #4a3028df; color: #fff; outline: none; }
+.trophy-gallery-turn:focus-visible { box-shadow: 0 0 0 3px #f2c46b4a, 0 5px 18px #000a; }
 .trophy-hotspot { position: absolute; z-index: 3; left: var(--hotspot-x); top: var(--hotspot-y); display: grid; width: 42px; height: 42px; place-items: center; transform: translate(-50%, -50%); border: 0; border-radius: 50%; outline: 0; background: transparent; color: transparent; padding: 0; }
+.trophy-hotspot[hidden] { display: none; }
 .trophy-hotspot span { display: none; }
 .trophy-hotspot::before { content: ""; width: 14px; height: 14px; border: 2px solid #ffffffb8; border-radius: 50%; background: #ffffff0a; box-shadow: 0 0 0 1px #06111a70, 0 0 8px #ffffff20, inset 0 0 5px #ffffff12; animation: trophy-hotspot-glimmer 3.6s ease-in-out infinite; transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease, transform .2s ease; }
 .trophy-hotspot:hover::before, .trophy-hotspot:focus-visible::before, .trophy-hotspot[aria-pressed="true"]::before { border-color: #fff; background: #ffffff2b; box-shadow: 0 0 0 3px #ffffff38, 0 0 14px #ffffff70, inset 0 0 6px #ffffff38; animation: none; transform: scale(1.16); }
@@ -161,6 +183,8 @@ h2 { font-size: 1.5rem; }
 .trophy-closeup-close { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: #263848; color: var(--ink); }
 
 @keyframes trophy-hotspot-glimmer { 0%, 100% { opacity: .38; transform: scale(.88); box-shadow: 0 0 0 1px #06111a70, 0 0 4px #ffffff12, inset 0 0 4px #ffffff0d; } 50% { opacity: 1; transform: scale(1.18); box-shadow: 0 0 0 3px #ffffff30, 0 0 13px #ffffff70, inset 0 0 6px #ffffff38; } }
+@keyframes trophy-gallery-turn-previous { from { opacity: .58; transform: perspective(500px) translateX(-14px) rotateY(7deg) scale(.985); } to { opacity: 1; transform: perspective(500px) translateX(0) rotateY(0) scale(1); } }
+@keyframes trophy-gallery-turn-next { from { opacity: .58; transform: perspective(500px) translateX(14px) rotateY(-7deg) scale(.985); } to { opacity: 1; transform: perspective(500px) translateX(0) rotateY(0) scale(1); } }
 
 .modal { width: min(90vw, 400px); border: 1px solid #5b8291; border-radius: 18px; background: #172638f5; color: var(--ink); padding: 22px; box-shadow: 0 24px 80px #02060dcc; }
 .profile-modal { max-height: min(88svh, 760px); overflow-y: auto; overflow-x: hidden; }
