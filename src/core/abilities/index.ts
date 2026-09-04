@@ -7,3 +7,4 @@ export * from "./effects";
 export * from "./engine";
 export * from "./card-zone-adapter";
 export * from "./roulette-adapter";
+export * from "./info-bar";

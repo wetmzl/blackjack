@@ -3,8 +3,8 @@ import { createHand } from "../blackjack/hand";
 import { createCard, createDerivedCard } from "../blackjack/card";
 import { createRng } from "../rng/seeded";
 import { AbilityDefinitionSchema, StatusDefinitionSchema } from "./schema";
-import { ABILITY_DEFINITIONS, createAbilityRegistry, getAbilityDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "./registry";
-import { canConsumeRule, clearCounters, clearEventCounters, consumeRule, createAbilityRuntime, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "./runtime";
+import { ABILITY_DEFINITIONS, createAbilityRegistry, getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "./registry";
+import { advanceRoundAbilityTtls, canConsumeRule, clearCounters, clearEventCounters, consumeRule, createAbilityRuntime, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "./runtime";
 import { AbilityResolutionError, MAX_ABILITY_DEPTH, canPlayAbility, playAbility, resolveAbilityEvent } from "./engine";
 import { drawExactResultingTotal, replaceLastHandCard } from "./card-zone-adapter";
 import { evaluateCondition } from "./conditions";
@@ -20,12 +20,12 @@ function world(cards: readonly SkillCardInstance[] = []): AbilityWorld {
 }
 
 function mechanic(definitionId: string, owner: "player" | "opponent", instanceId = `${definitionId}-${owner}`, createdAtSequence = 1): AbilityInstance {
-  return { kind: "character-mechanic", definitionId, owner, instanceId, createdAtSequence, parameters: {} };
+  return { kind: "ai-skill", definitionId, owner, instanceId, createdAtSequence, parameters: {} };
 }
 
 const relativeFixture = {
-  id: "relative-load-adjustment", name: "relative", description: "fixture", sourceKind: "character-mechanic",
-  activation: { type: "automatic" }, tags: [], rules: [
+  id: "relative-load-adjustment", name: "relative", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
+  activation: { type: "automatic" }, tags: ["test-fixture"], rules: [
     { id: "owner-failed-load", trigger: "before-bullet-load", conditions: [{ type: "round-penalty-target-is", target: "owner" }], effects: [{ type: "add-to-pending-load", target: "owner", amount: -1 }] },
     { id: "rival-bust-load", trigger: "before-bullet-load", conditions: [{ type: "round-reason-is", value: "bust" }, { type: "round-penalty-target-is", target: "rival" }], effects: [{ type: "add-to-pending-load", target: "rival", amount: 1 }] }
   ]
@@ -34,12 +34,12 @@ const relativeFixture = {
 describe("ability schemas and immutable registry", () => {
   it("applies parameter defaults and rejects missing, unknown, and out-of-range values", () => {
     const registry = createAbilityRegistry([{
-      id: "parameter-fixture", name: "parameter", description: "fixture", sourceKind: "character-mechanic",
+      id: "parameter-fixture", name: "parameter", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
       parameters: {
         amount: { type: "number", minimum: -1, maximum: 1, default: -1 },
         required: { type: "boolean" }
       },
-      activation: { type: "passive" }, rules: [], tags: []
+      activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, rules: [], tags: ["test-fixture"]
     }]);
     expect(validateAbilityBinding({ definitionId: "parameter-fixture", enabled: true, parameters: { required: true } }, registry).parameters).toEqual({ amount: -1, required: true });
     expect(() => validateAbilityBinding({ definitionId: "parameter-fixture", enabled: true, parameters: {} }, registry)).toThrow(/Missing parameter/);
@@ -47,20 +47,20 @@ describe("ability schemas and immutable registry", () => {
     expect(() => validateAbilityBinding({ definitionId: "parameter-fixture", enabled: true, parameters: { required: true, extra: 1 } }, registry)).toThrow(/Unknown parameter/);
   });
 
-  it("registers player skills, reusable character fixtures, and shared mechanics as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(17);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(7);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "character-mechanic")).toHaveLength(8);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "shared")).toHaveLength(2);
+  it("registers three disjoint ability domains as deeply frozen data", () => {
+    expect(ABILITY_DEFINITIONS).toHaveLength(19);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(8);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(10);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
-    expect(ABILITY_DEFINITIONS.every((definition) => definition.rules.length > 0)).toBe(true);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind !== "talent").every((definition) => definition.rules.length > 0)).toBe(true);
     expect(Object.isFrozen(ABILITY_DEFINITIONS[0]?.rules[0]?.effects[0])).toBe(true);
   });
 
   it("rejects unknown triggers, conditions, effects, selectors, and extra fields", () => {
     const base = {
-      id: "schema-fixture", name: "schema", description: "fixture", sourceKind: "character-mechanic",
-      activation: { type: "passive" }, tags: [], rules: [{ id: "rule", trigger: "on-match-created", effects: [{ type: "draw-skill-cards", target: "owner", amount: 1 }] }]
+      id: "schema-fixture", name: "schema", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
+      activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "rule", trigger: "on-match-created", effects: [{ type: "draw-skill-cards", target: "owner", amount: 1 }] }]
     };
     expect(AbilityDefinitionSchema.safeParse(base).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案中的文学化技能描写。" }).success).toBe(true);
@@ -73,17 +73,22 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "unknown-effect", target: "owner" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "draw-skill-cards", target: "player", amount: 1 }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, executable: "doSomething()" }).success).toBe(false);
-    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", primaryDomain: "rule-control", drop: { enabled: true, baseWeight: 1 }, stackable: false, activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "card" } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, ttl: undefined }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, ttl: { type: "triggers", amount: 0 } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "talent", ttl: { type: "rounds", amount: 1 } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "none" }, ttl: { type: "triggers", amount: 1 } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "after-stand" }] }).success).toBe(true);
     expect(StatusDefinitionSchema.safeParse({ id: "next-action", rules: [], defaultDuration: "until-owner-action", blocksAbilityTags: ["active-skill-card"] }).success).toBe(true);
   });
 
   it("rejects unresolved parameter, status, and ability references while building a registry", () => {
     const definition = (id: string, effect: unknown, availability?: readonly unknown[]) => ({
-      id, name: "reference", description: "fixture", sourceKind: "character-mechanic",
+      id, name: "reference", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
       activation: availability ? { type: "action", windows: ["owner-turn"], consume: "none", availability } : { type: "passive" },
-      rules: [{ id: "rule", trigger: "on-match-created", effects: [effect] }], tags: []
+      ...(!availability ? { ttl: { type: "rounds", amount: 2 } } : {}),
+      rules: [{ id: "rule", trigger: "on-match-created", effects: [effect] }], tags: ["test-fixture"]
     });
     expect(() => createAbilityRegistry([definition("reference-parameter", { type: "draw-skill-cards", target: "owner", amount: { type: "parameter", key: "missing" } })])).toThrow(/Unknown parameter/);
     expect(() => createAbilityRegistry([definition("reference-status", { type: "add-status", target: "owner", statusDefinitionId: "missing-status" })])).toThrow(/Unknown status/);
@@ -91,10 +96,10 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("enforces concrete instance source kinds during event collection", () => {
-    const shared = getAbilityDefinition("sword-and-handcannon")!;
-    expect(supportsAbilitySourceKind(shared, "player-skill")).toBe(true);
-    expect(supportsAbilitySourceKind(shared, "character-mechanic")).toBe(true);
-    for (const [definitionId, kind] of [["sword-and-handcannon", "character-mechanic"], ["forge-heralds-the-year", "player-skill"]] as const) {
+    expect(supportsAbilitySourceKind(getAbilityDefinition("sword-and-handcannon")!, "player-skill")).toBe(true);
+    expect(supportsAbilitySourceKind(getAbilityDefinition("sword-and-handcannon")!, "ai-skill")).toBe(false);
+    expect(supportsAbilitySourceKind(getAbilityDefinition("ai-sword-and-handcannon")!, "ai-skill")).toBe(true);
+    for (const [definitionId, kind] of [["ai-sword-and-handcannon", "ai-skill"], ["forge-heralds-the-year", "player-skill"]] as const) {
       const owner = "opponent" as const;
       const instance = { kind, definitionId, owner, instanceId: `${definitionId}-${kind}`, createdAtSequence: 1, parameters: {} } as AbilityInstance;
       const runtime = { ...createAbilityRuntime(createRng(`${definitionId}-${kind}`).snapshot()), instances: [instance] };
@@ -152,7 +157,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("orders rules by priority, instance creation sequence, and rule index", () => {
     const ordering = {
-      id: "ordering-fixture", name: "ordering", description: "fixture", sourceKind: "character-mechanic", activation: { type: "passive" }, tags: [],
+      id: "ordering-fixture", name: "ordering", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control", activation: { type: "passive" }, ttl: { type: "triggers", amount: 10 }, tags: ["test-fixture"],
       rules: [
         { id: "late-a", trigger: "before-bullet-load", priority: 10, effects: [{ type: "add-to-pending-load", target: "owner", amount: 1 }] },
         { id: "first", trigger: "before-bullet-load", priority: -1, effects: [{ type: "add-to-pending-load", target: "owner", amount: 1 }] },
@@ -168,6 +173,64 @@ describe("generic resolution and lifecycle", () => {
       "created-first:late-a", "created-first:late-b",
       "created-second:late-a", "created-second:late-b"
     ]);
+  });
+
+  it("consumes trigger TTL only after successful activation and removes an expired passive card", () => {
+    const definition = {
+      id: "trigger-ttl-fixture", name: "trigger ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "roulette",
+      activation: { type: "passive" }, ttl: { type: "triggers", amount: 2 }, tags: ["test-fixture"],
+      drop: { enabled: true, baseWeight: 1 }, stackable: false,
+      rules: [{ id: "load", trigger: "before-bullet-load", conditions: [{ type: "round-penalty-target-is", target: "owner" }], effects: [{ type: "add-to-pending-load", target: "owner", amount: 1 }] }]
+    } as const;
+    const registry = createAbilityRegistry([definition]);
+    const card: SkillCardInstance = { kind: "player-skill", definitionId: definition.id, owner: "player", instanceId: "ttl-card" };
+    const instance = instantiateAbility({ definitionId: definition.id, enabled: true, parameters: {} }, "player", card.instanceId, 1, registry, "player-skill");
+    const linkedStatus: AbilityStatus = { statusDefinitionId: "copper-seal-sealed", owner: "player", sourceInstanceId: card.instanceId, stacks: 1, duration: "match", parameters: {}, createdAtSequence: 1 };
+    let runtime: AbilityRuntimeState = { ...createAbilityRuntime(createRng("trigger-ttl").snapshot()), instances: [instance], statuses: [linkedStatus], sequence: 1 };
+    let abilityWorld: AbilityWorld = { ...world([card]), statuses: [linkedStatus] };
+    const event = { trigger: "before-bullet-load" as const, sourceEventId: "ttl-1", roundOutcome: { reason: "comparison" as const, penaltyTarget: "player" as const } };
+
+    const first = resolveAbilityEvent({ world: abilityWorld, runtime, registry, event, pendingLoad: { id: "ttl-1", actor: "player", amount: 1, reason: "comparison" } });
+    expect(first.pendingLoad?.amount).toBe(2);
+    expect(first.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 1 });
+    expect(first.world.cards).toEqual([card]);
+    expect(first.runtime.statuses).toEqual([linkedStatus]);
+    expect(first.events.some((entry) => entry.type === "ABILITY_EXPIRED")).toBe(false);
+
+    runtime = first.runtime;
+    abilityWorld = first.world;
+    const second = resolveAbilityEvent({ world: abilityWorld, runtime, registry, event: { ...event, sourceEventId: "ttl-2" }, pendingLoad: { id: "ttl-2", actor: "player", amount: 1, reason: "comparison" } });
+    expect(second.pendingLoad?.amount).toBe(2);
+    expect(second.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 0 });
+    expect(second.world.cards).toEqual([]);
+    expect(second.runtime.statuses).toEqual([]);
+    expect(second.world.statuses).toEqual([]);
+    expect(second.events).toContainEqual(expect.objectContaining({ type: "STATUS_REMOVED", statusDefinitionId: linkedStatus.statusDefinitionId, reason: "expired" }));
+    expect(second.events).toContainEqual(expect.objectContaining({ type: "ABILITY_EXPIRED", instanceId: card.instanceId, reason: "triggers" }));
+
+    const third = resolveAbilityEvent({ world: second.world, runtime: second.runtime, registry, event: { ...event, sourceEventId: "ttl-3" }, pendingLoad: { id: "ttl-3", actor: "player", amount: 1, reason: "comparison" } });
+    expect(third.triggered).toEqual([]);
+    expect(third.pendingLoad?.amount).toBe(1);
+  });
+
+  it("counts round TTL after the round and frees the passive card slot at zero", () => {
+    const definition = {
+      id: "round-ttl-fixture", name: "round ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "rule-control",
+      activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"],
+      drop: { enabled: true, baseWeight: 1 }, stackable: false, rules: []
+    } as const;
+    const registry = createAbilityRegistry([definition]);
+    const card: SkillCardInstance = { kind: "player-skill", definitionId: definition.id, owner: "player", instanceId: "round-ttl-card" };
+    const instance = instantiateAbility({ definitionId: definition.id, enabled: true, parameters: {} }, "player", card.instanceId, 1, registry, "player-skill");
+    const initial = { ...createAbilityRuntime(createRng("round-ttl").snapshot()), instances: [instance], sequence: 1 };
+    const first = advanceRoundAbilityTtls(initial, [card], registry);
+    expect(first.runtime.instances[0]?.ttl).toEqual({ type: "rounds", remaining: 1 });
+    expect(first.cards).toEqual([card]);
+    expect(first.expired).toEqual([]);
+    const second = advanceRoundAbilityTtls(first.runtime, first.cards, registry);
+    expect(second.runtime.instances[0]?.ttl).toEqual({ type: "rounds", remaining: 0 });
+    expect(second.cards).toEqual([]);
+    expect(second.expired.map((entry) => entry.instanceId)).toEqual([card.instanceId]);
   });
 
   it("enforces and clears event, turn, round, and match counters", () => {
@@ -205,8 +268,8 @@ describe("generic resolution and lifecycle", () => {
 
   it("preflights direct effects without consuming a card and resolves valid actions atomically", () => {
     const invalid = {
-      id: "invalid-action-context", name: "invalid", description: "fixture", sourceKind: "player-skill",
-      activation: { type: "action", windows: ["owner-turn"], consume: "card" }, tags: [],
+      id: "invalid-action-context", name: "invalid", description: "fixture", sourceKind: "player-skill", primaryDomain: "rule-control", drop: { enabled: true, baseWeight: 1 }, stackable: false,
+      activation: { type: "action", windows: ["owner-turn"], consume: "card" }, tags: ["test-fixture"],
       rules: [{ id: "requires-draw", trigger: "on-ability-played", effects: [{ type: "replace-pending-draw", target: "owner", policy: { type: "exact-resulting-total", total: 21, fallback: "create-derived-card" } }] }]
     } as const;
     const registry = createAbilityRegistry([invalid]);
@@ -267,7 +330,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("keeps canonical lookups independent of isolated test registries", () => {
     createAbilityRegistry([relativeFixture], [], "isolated-test-catalog");
-    expect(getAbilityDefinition("early-preparation")?.sourceKind).toBe("player-skill");
+    expect(getAbilityDefinition("early-preparation")?.sourceKind).toBe("talent");
     expect(getAbilityDefinition(relativeFixture.id)).toBeUndefined();
   });
 });

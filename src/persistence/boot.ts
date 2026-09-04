@@ -13,12 +13,12 @@ import {
   type PlayerProfile,
   type RuntimeSave
 } from "./schema";
-import { INITIAL_SKILL_IDS } from "../core/skills/definitions";
+import { INITIAL_TALENT_IDS } from "../core/talents/definitions";
 import type { SaveRepository } from "./repository";
 
 /** The default user-facing/exportable save contains only durable progress and preferences. */
 export function createDefaultSave(now = new Date().toISOString()): LongTermSave {
-  const profile: PlayerProfile = { id: "player", displayName: "博士", matchesPlayed: 0, wins: 0, equippedSkillIds: [...INITIAL_SKILL_IDS] };
+  const profile: PlayerProfile = { id: "player", displayName: "博士", matchesPlayed: 0, wins: 0, talentIds: [...INITIAL_TALENT_IDS] };
   const settings: GameSettings = { soundEnabled: true, reducedMotion: false };
   return {
     format: LONG_TERM_SAVE_FORMAT,

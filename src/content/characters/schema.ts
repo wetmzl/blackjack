@@ -43,6 +43,22 @@ export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().
 });
 
 const dialoguePool = z.array(z.string().min(1)).min(1);
+const infoBarActor = z.enum(["owner", "rival"]);
+const infoBarScalar: z.ZodType<unknown> = z.lazy(() => z.union([
+  z.number().finite(),
+  z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(),
+  z.object({ type: z.enum(["gun-bullets", "hand-total", "hand-card-count", "round-hit-count"]), target: infoBarActor }).strict(),
+  z.object({ type: z.enum(["add", "subtract", "multiply", "min", "max"]), left: infoBarScalar, right: infoBarScalar }).strict()
+]));
+const infoBar = z.object({
+  sourceAbilityId: z.string().min(1), label: z.string().min(1), description: z.string().min(1), format: z.enum(["number", "percent"]).optional(),
+  value: z.union([
+    z.object({ type: z.literal("number"), value: infoBarScalar }).strict(),
+    z.object({ type: z.enum(["card", "suit"]), target: infoBarActor, card: z.enum(["last-card", "first-private-card"]) }).strict()
+  ])
+}).strict().superRefine((bar, ctx) => {
+  if (bar.format === "percent" && bar.value.type !== "number") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["format"], message: "百分比格式只适用于数值信息" });
+});
 const dialogueShape = Object.fromEntries(DIALOGUE_EVENT_CODES.map((code) => [code, dialoguePool])) as Record<DialogueEvent, typeof dialoguePool>;
 const dialogue = z.object(dialogueShape).strict();
 const trophyGallery = z.object({
@@ -81,18 +97,23 @@ export const CharacterDataSchema = z.object({
   }).strict(),
   profile: z.object({ description: z.string().min(1) }).strict(),
   matchSummary: z.object({ playerVictory: z.string().min(1), playerDefeat: z.string().min(1), escaped: z.string().min(1) }).strict(),
+  infoBar: infoBar.optional(),
   trophyGallery: trophyGallery.optional(),
   revolverPlacement: z.object({ top: z.number().finite(), left: z.number().finite(), mobileTop: z.number().finite(), mobileLeft: z.number().finite() }).strict(),
   ai: z.object({ P: z.number().finite(), A: z.number().finite(), B: z.number().finite(), C: z.number().finite() }).strict(),
-  mechanics: z.array(AbilityBindingSchema).default([]).superRefine((mechanics, ctx) => {
-    for (const [index, binding] of mechanics.entries()) {
+  aiSkills: z.array(AbilityBindingSchema).default([]).superRefine((aiSkills, ctx) => {
+    for (const [index, binding] of aiSkills.entries()) {
       const definition = getAbilityDefinition(binding.definitionId);
       if (!definition) { ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "definitionId"], message: `未知能力机制：${binding.definitionId}` }); continue; }
-      if (!supportsAbilitySourceKind(definition, "character-mechanic")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "definitionId"], message: "角色机制必须引用 character-mechanic 定义" });
+      if (!supportsAbilitySourceKind(definition, "ai-skill")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "definitionId"], message: "角色技能必须引用 AI Skill 定义" });
       try { validateAbilityBinding(binding); } catch (error) { ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, "parameters"], message: error instanceof Error ? error.message : String(error) }); }
     }
   }),
   dialogue: dialogue
-}).strict();
+}).strict().superRefine((character, ctx) => {
+  if (character.infoBar && !character.aiSkills.some((binding) => binding.enabled && binding.definitionId === character.infoBar?.sourceAbilityId)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["infoBar", "sourceAbilityId"], message: "信息栏必须绑定角色已启用的 AI Skill" });
+  }
+});
 
 export { DIALOGUE_EVENT_CODES };

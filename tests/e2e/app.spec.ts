@@ -2,16 +2,20 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { createDefaultSave, createRuntimeSave } from "../../src/persistence/boot";
-import { createMatch } from "../../src/core/match/reducer";
+import { createMatch, gameReducer } from "../../src/core/match/reducer";
 import type { MatchHistoryRecord } from "../../src/core/match/history";
 import type { MatchState } from "../../src/core/match/types";
 import { getAiTurnDelayMs } from "../../src/presentation/ai-timing";
 import { createCard, createDerivedCard } from "../../src/core/blackjack/card";
 import { createHand } from "../../src/core/blackjack/hand";
+import type { AbilityBinding } from "../../src/core/abilities/types";
 
-const wDialogue = (JSON.parse(readFileSync(new URL("../../src/content/characters/data/w.json", import.meta.url), "utf8")) as {
+const wCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/w.json", import.meta.url), "utf8")) as {
   dialogue: { PLAYER_BLACKJACK: string[]; PLAYER_WIN_ROUND: string[] };
-}).dialogue;
+  aiSkills: AbilityBinding[];
+};
+const ireneCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/irene.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
+const wDialogue = wCharacterData.dialogue;
 
 function findTurnsMatch(prefix: string) {
   for (let index = 0; index < 10_000; index += 1) {
@@ -27,6 +31,30 @@ function findPlayerBlackjackMatch() {
     if (match.round.outcome?.reason === "blackjack" && match.round.outcome.winner === "player") return match;
   }
   throw new Error("No deterministic player Blackjack fixture found");
+}
+
+function wInfoBarMatch(): MatchState {
+  for (let index = 0; index < 10_000; index += 1) {
+    const dealt = gameReducer(createMatch(`e2e-w-info-${index}`, { opponentId: "w", opponentAiSkills: wCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    if (dealt.round.phase !== "turns" || dealt.round.currentActor !== "opponent") continue;
+    const hit = gameReducer(dealt, { type: "AI_HIT" });
+    if (hit.round.phase !== "turns" || hit.opponent.hand.cards.length !== dealt.opponent.hand.cards.length + 1) continue;
+    return { ...hit, round: { ...hit.round, currentActor: "player" } };
+  }
+  throw new Error("No deterministic W information-bar fixture found");
+}
+
+function ireneInfoBarMatch(): MatchState {
+  for (let index = 0; index < 10_000; index += 1) {
+    const dealt = gameReducer(createMatch(`e2e-irene-info-${index}`, { opponentId: "irene", opponentAiSkills: ireneCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    if (dealt.round.phase !== "turns") continue;
+    return {
+      ...dealt,
+      history: [...dealt.history, { type: "PLAYER_HIT", value: 10 }, { type: "PLAYER_HIT", value: 12 }],
+      round: { ...dealt.round, currentActor: "player" }
+    };
+  }
+  throw new Error("No deterministic Irene information-bar fixture found");
 }
 
 function playerWinSummary(opponentId = "w"): MatchState {
@@ -264,6 +292,46 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
   await page.getByRole("button", { name: "返回大厅" }).click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
+});
+
+test("W 的技能信息栏显示动态领先数并可打开说明", async ({ page }) => {
+  await page.goto("/");
+  await installRuntimeSave(page, wInfoBarMatch());
+
+  const infoBar = page.locator(".ai-info-bar");
+  await expect(infoBar).toContainText("W领先优势");
+  await expect(infoBar.locator(".ai-info-number")).toHaveText("1");
+  const lastGunRow = page.locator(".gun-status-row").last();
+  const gunBox = await lastGunRow.boundingBox();
+  const infoBox = await infoBar.boundingBox();
+  expect(gunBox).not.toBeNull();
+  expect(infoBox).not.toBeNull();
+  expect(infoBox!.y).toBeGreaterThanOrEqual(gunBox!.y + gunBox!.height);
+
+  await infoBar.getByRole("button", { name: "查看W领先优势说明" }).click();
+  const dialog = page.locator("#ai-info-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "W领先优势" })).toBeVisible();
+  await expect(dialog).toContainText("双方爆牌上限");
+  await expect(dialog.locator(".ai-info-number")).toHaveText("1");
+  await dialog.getByRole("button", { name: "关闭机制信息说明" }).click();
+  await expect(dialog).not.toBeVisible();
+
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});
+
+test("艾丽妮的信息栏显示本轮实际哑火概率", async ({ page }) => {
+  await page.goto("/");
+  await installRuntimeSave(page, ireneInfoBarMatch());
+
+  const infoBar = page.locator(".ai-info-bar");
+  await expect(infoBar).toContainText("本轮哑火概率");
+  await expect(infoBar.locator(".ai-info-number")).toHaveText("66%");
+  await infoBar.getByRole("button", { name: "查看本轮哑火概率说明" }).click();
+  const dialog = page.locator("#ai-info-dialog");
+  await expect(dialog).toContainText("策展人本轮每次 Hit 增加33%");
+  await expect(dialog.locator(".ai-info-number")).toHaveText("66%");
 });
 
 test("新对局逐张展示早有准备带来的两张技能牌", async ({ page }) => {

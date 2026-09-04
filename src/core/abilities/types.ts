@@ -3,8 +3,20 @@ import type { GunState } from "../roulette/types";
 import type { RngSnapshot } from "../rng/seeded";
 
 export type AbilityActor = "player" | "opponent";
-export type AbilitySourceKind = "player-skill" | "character-mechanic";
-export type AbilityDefinitionSourceKind = AbilitySourceKind | "shared";
+export type AbilitySourceKind = "player-skill" | "ai-skill" | "talent";
+export type AbilityDefinitionSourceKind = AbilitySourceKind;
+export type AbilityPrimaryDomain = "blackjack" | "roulette" | "information" | "skill-economy" | "rule-control";
+export type AbilityTtl =
+  | { readonly type: "rounds"; readonly amount: number }
+  | { readonly type: "triggers"; readonly amount: number };
+export interface AbilityInstanceTtl { readonly type: AbilityTtl["type"]; readonly remaining: number; }
+export type SkillOfferReason = "opening" | "normal-win" | "blackjack-win" | "loss" | "push";
+export interface SkillOfferWeightModifier { readonly tag: string; readonly factor: number; }
+export interface SkillOfferRuleModifier {
+  readonly reason: SkillOfferReason | "any";
+  readonly candidateCountDelta?: number;
+  readonly selectionCountDelta?: number;
+}
 export type AbilityTrigger =
   | "on-match-created" | "on-ability-played" | "before-card-draw" | "after-card-draw"
   | "after-hand-changed" | "after-stand" | "before-bust-check" | "before-round-resolution" | "before-bullet-load" | "after-bullet-load"
@@ -25,6 +37,14 @@ export type NumberValue =
   | { readonly type: "add" | "subtract" | "multiply"; readonly left: ScalarValue; readonly right: ScalarValue };
 export type ActorSelector = "owner" | "rival" | "event-actor" | "penalty-target";
 export type CardSelector = "last-card" | "first-private-card";
+/** Owner-relative projection used by a character's single table information slot. */
+export type AbilityInfoActor = "owner" | "rival";
+export type AbilityInfoScalar = number | { readonly type: "constant"; readonly value: number }
+  | { readonly type: "gun-bullets" | "hand-total" | "hand-card-count" | "round-hit-count"; readonly target: AbilityInfoActor }
+  | { readonly type: "add" | "subtract" | "multiply" | "min" | "max"; readonly left: AbilityInfoScalar; readonly right: AbilityInfoScalar };
+export type AbilityInfoValue =
+  | { readonly type: "number"; readonly value: AbilityInfoScalar }
+  | { readonly type: "card" | "suit"; readonly target: AbilityInfoActor; readonly card: CardSelector };
 export type CardSource = "remaining-draw-pile";
 export type RandomPick = "uniform-ability-rng";
 export type CardCandidate =
@@ -76,13 +96,42 @@ export interface AbilityParameterSpec { readonly type: "number" | "boolean" | "e
 export interface AbilityBinding { readonly definitionId: string; readonly enabled: boolean; readonly parameters: Readonly<Record<string, string | number | boolean>>; }
 export interface AbilitySource { readonly kind: AbilitySourceKind; readonly definitionId: string; readonly owner: AbilityActor; readonly instanceId: string; }
 export interface SkillCardInstance extends AbilitySource { readonly kind: "player-skill"; }
-export interface AbilityInstance extends AbilitySource { readonly createdAtSequence: number; readonly parameters: Readonly<Record<string, string | number | boolean>>; }
+export interface AbilityInstance extends AbilitySource { readonly createdAtSequence: number; readonly parameters: Readonly<Record<string, string | number | boolean>>; readonly ttl?: AbilityInstanceTtl; }
 export interface RuleLimit { readonly perEvent?: number; readonly perTurn?: number; readonly perRound?: number; readonly perMatch?: number; }
 export interface AbilityRule { readonly id: string; readonly trigger: AbilityBroadcastTrigger; readonly priority?: number; readonly conditions?: readonly Condition[]; readonly effects: readonly Effect[]; readonly limit?: RuleLimit; }
 export type AbilityActivation =
   | { readonly type: "action"; readonly windows: readonly ActionWindow[]; readonly consume: "card" | "none"; readonly availability?: readonly Condition[] }
   | { readonly type: "automatic" } | { readonly type: "passive" };
-export interface AbilityDefinition { readonly id: string; readonly name: string; readonly description: string; readonly usage?: string; readonly triggerNotice?: string; readonly profileLore?: string; readonly hidden?: boolean; readonly sourceKind: AbilityDefinitionSourceKind; readonly parameters?: Readonly<Record<string, AbilityParameterSpec>>; readonly activation: AbilityActivation; readonly rules: readonly AbilityRule[]; readonly tags: readonly string[]; readonly unlock?: { readonly opponentId: string; readonly label: string }; }
+interface AbilityDefinitionBase {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly usage?: string;
+  readonly triggerNotice?: string;
+  readonly profileLore?: string;
+  readonly hidden?: boolean;
+  readonly sourceKind: AbilityDefinitionSourceKind;
+  readonly primaryDomain: AbilityPrimaryDomain;
+  readonly tags: readonly string[];
+  readonly parameters?: Readonly<Record<string, AbilityParameterSpec>>;
+  readonly activation: AbilityActivation;
+  /** Finite lifetime for passive/automatic skills. Talents and active cards do not use TTL. */
+  readonly ttl?: AbilityTtl;
+  readonly rules: readonly AbilityRule[];
+  /** Shared extension point consumed by the Skill Offer domain, not the ability interpreter. */
+  readonly skillOfferWeightModifiers?: readonly SkillOfferWeightModifier[];
+  readonly skillOfferRuleModifiers?: readonly SkillOfferRuleModifier[];
+}
+export interface PlayerSkillAbilityDefinition extends AbilityDefinitionBase {
+  readonly sourceKind: "player-skill";
+  readonly drop: { readonly enabled: boolean; readonly baseWeight: number };
+  /** Only passive skills consult this flag; active cards may always be duplicated. */
+  readonly stackable: boolean;
+  readonly unlock?: { readonly opponentId: string; readonly label: string };
+}
+export interface AiSkillAbilityDefinition extends AbilityDefinitionBase { readonly sourceKind: "ai-skill"; }
+export interface TalentAbilityDefinition extends AbilityDefinitionBase { readonly sourceKind: "talent"; }
+export type AbilityDefinition = PlayerSkillAbilityDefinition | AiSkillAbilityDefinition | TalentAbilityDefinition;
 export interface StatusDefinition { readonly id: string; readonly rules: readonly AbilityRule[]; readonly defaultDuration: StatusDuration; readonly blocksAbilityTags?: readonly string[]; }
 export interface AbilityStatus { readonly statusDefinitionId: string; readonly owner: AbilityActor; readonly sourceInstanceId: string; readonly stacks: number; readonly duration: StatusDuration; readonly parameters: Readonly<Record<string, string | number | boolean>>; readonly createdAtSequence: number; }
 export interface AbilityRuntimeState { readonly instances: readonly AbilityInstance[]; readonly statuses: readonly AbilityStatus[]; readonly counters: Readonly<Record<string, number>>; readonly sequence: number; readonly catalogVersion: string; readonly rng: RngSnapshot; }
@@ -98,6 +147,7 @@ export interface AbilityEffectResult { readonly world: AbilityWorld; readonly pe
 export type AbilityDomainEvent =
   | { readonly type: "ABILITY_PLAYED"; readonly instanceId: string; readonly definitionId: string; readonly owner: AbilityActor }
   | { readonly type: "ABILITY_TRIGGERED"; readonly instanceId: string; readonly definitionId: string; readonly ruleId: string; readonly owner: AbilityActor }
+  | { readonly type: "ABILITY_EXPIRED"; readonly instanceId: string; readonly definitionId: string; readonly owner: AbilityActor; readonly reason: "rounds" | "triggers" }
   | { readonly type: "ABILITY_RESOLUTION_FAILED"; readonly instanceId: string; readonly definitionId: string; readonly ruleId: string; readonly reason: string }
   | { readonly type: "STATUS_ADDED"; readonly statusDefinitionId: string; readonly owner: AbilityActor; readonly sourceInstanceId: string }
   | { readonly type: "STATUS_REMOVED"; readonly statusDefinitionId: string; readonly owner: AbilityActor; readonly reason: "consumed" | "expired" | "dispelled" }

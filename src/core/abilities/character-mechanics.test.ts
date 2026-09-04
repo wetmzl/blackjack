@@ -8,7 +8,7 @@ import { AbilityResolutionError, resolveAbilityEvent } from "./engine";
 import { AbilityDefinitionSchema } from "./schema";
 
 const hand = (...cards: Array<ReturnType<typeof createCard>>) => createHand(cards);
-const instance = (definitionId: string, owner: "player" | "opponent" = "opponent"): AbilityInstance => ({ kind: "character-mechanic", definitionId, owner, instanceId: `${definitionId}-${owner}`, createdAtSequence: 1, parameters: {} });
+const instance = (definitionId: string, owner: "player" | "opponent" = "opponent"): AbilityInstance => ({ kind: "ai-skill", definitionId, owner, instanceId: `${definitionId}-${owner}`, createdAtSequence: 1, parameters: {} });
 function world(player = hand(createCard("spades", "10")), opponent = hand(createCard("hearts", "9"))): AbilityWorld {
   return { hands: { player, opponent }, guns: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 1 } }, shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 }, cards: [], statuses: [] };
 }
@@ -67,32 +67,35 @@ describe("new character mechanics", () => {
     }
   });
 
-  it("adds exactly 0.1 per current-round rival Hit and only for the owner penalty", () => {
+  it("adds exactly 33% per current-round rival Hit and only for the owner penalty", () => {
     const pending = { id: "trigger", actor: "opponent" as const };
-    const result = resolve("sword-and-handcannon", "opponent", { trigger: "before-trigger-pull", sourceEventId: "trigger", eventActor: "opponent", roundHitCounts: { player: 2, opponent: 0 }, roundOutcome: { reason: "comparison", penaltyTarget: "opponent" } }, { pendingTrigger: pending });
-    expect(result.pendingTrigger?.misfireChance).toBe(0.2);
+    const result = resolve("ai-sword-and-handcannon", "opponent", { trigger: "before-trigger-pull", sourceEventId: "trigger", eventActor: "opponent", roundHitCounts: { player: 2, opponent: 0 }, roundOutcome: { reason: "comparison", penaltyTarget: "opponent" } }, { pendingTrigger: pending });
+    expect(result.pendingTrigger?.misfireChance).toBeCloseTo(0.66);
+    expect(result.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 2 });
   });
 
-  it("runs shared mechanics as either concrete source kind", () => {
-    const sword = { ...instance("sword-and-handcannon"), kind: "player-skill" as const };
-    const swordResult = resolveAbilityEvent({ world: world(), runtime: { ...createAbilityRuntime(createRng("shared-sword").snapshot()), instances: [sword] }, event: { trigger: "before-trigger-pull", sourceEventId: "shared-sword", roundHitCounts: { player: 2, opponent: 0 }, roundOutcome: { reason: "comparison", penaltyTarget: "opponent" }, eventActor: "opponent" }, pendingTrigger: { id: "shared-sword", actor: "opponent" } });
-    expect(swordResult.pendingTrigger?.misfireChance).toBe(0.2);
-    const forge = { ...instance("forge-heralds-the-year"), kind: "player-skill" as const };
-    const forgeResult = resolveAbilityEvent({ world: world(hand(createCard("spades", "10")), hand(createCard("hearts", "2"), createCard("diamonds", "8"))), runtime: { ...createAbilityRuntime(createRng("shared-forge").snapshot()), instances: [forge] }, event: { trigger: "before-bullet-load", sourceEventId: "shared-forge", roundOutcome: { reason: "comparison", penaltyTarget: "player" }, eventActor: "opponent" }, pendingLoad: { id: "shared-forge", actor: "player", amount: 1, reason: "comparison" } });
+  it("runs the separate Player Skill counterparts without sharing AI definitions", () => {
+    const sword: AbilityInstance = { kind: "player-skill", definitionId: "sword-and-handcannon", owner: "player", instanceId: "player-sword", createdAtSequence: 1, parameters: {} };
+    const swordResult = resolveAbilityEvent({ world: world(), runtime: { ...createAbilityRuntime(createRng("player-sword").snapshot()), instances: [sword] }, event: { trigger: "before-trigger-pull", sourceEventId: "player-sword", roundHitCounts: { player: 0, opponent: 2 }, roundOutcome: { reason: "comparison", penaltyTarget: "player" }, eventActor: "player" }, pendingTrigger: { id: "player-sword", actor: "player" } });
+    expect(swordResult.pendingTrigger?.misfireChance).toBeCloseTo(0.66);
+    expect(swordResult.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 2 });
+    const forge: AbilityInstance = { kind: "player-skill", definitionId: "forge-heralds-the-year", owner: "player", instanceId: "player-forge", createdAtSequence: 1, parameters: {} };
+    const forgeResult = resolveAbilityEvent({ world: world(hand(createCard("hearts", "2"), createCard("diamonds", "8"))), runtime: { ...createAbilityRuntime(createRng("player-forge").snapshot()), instances: [forge] }, event: { trigger: "before-bullet-load", sourceEventId: "player-forge", roundOutcome: { reason: "comparison", penaltyTarget: "opponent" }, eventActor: "player" }, pendingLoad: { id: "player-forge", actor: "opponent", amount: 1, reason: "comparison" } });
     expect(forgeResult.pendingLoad?.amount).toBe(2);
+    expect(forgeResult.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 1 });
   });
 
   it("does not trigger Sword and Handcannon with no Hits or a different penalty target, and clamps at one", () => {
     const baseEvent = { trigger: "before-trigger-pull" as const, sourceEventId: "trigger", eventActor: "opponent" as const, roundHitCounts: { player: 0, opponent: 0 }, roundOutcome: { reason: "comparison" as const, penaltyTarget: "opponent" as const } };
-    expect(resolve("sword-and-handcannon", "opponent", baseEvent, { pendingTrigger: { id: "trigger", actor: "opponent" } }).triggered).toHaveLength(0);
-    expect(resolve("sword-and-handcannon", "opponent", { ...baseEvent, roundOutcome: { ...baseEvent.roundOutcome, penaltyTarget: "player" } }, { pendingTrigger: { id: "trigger", actor: "opponent" } }).triggered).toHaveLength(0);
-    const clamped = resolve("sword-and-handcannon", "opponent", { ...baseEvent, roundHitCounts: { player: 10, opponent: 0 } }, { pendingTrigger: { id: "trigger", actor: "opponent", misfireChance: 0.5 } });
+    expect(resolve("ai-sword-and-handcannon", "opponent", baseEvent, { pendingTrigger: { id: "trigger", actor: "opponent" } }).triggered).toHaveLength(0);
+    expect(resolve("ai-sword-and-handcannon", "opponent", { ...baseEvent, roundOutcome: { ...baseEvent.roundOutcome, penaltyTarget: "player" } }, { pendingTrigger: { id: "trigger", actor: "opponent" } }).triggered).toHaveLength(0);
+    const clamped = resolve("ai-sword-and-handcannon", "opponent", { ...baseEvent, roundHitCounts: { player: 10, opponent: 0 } }, { pendingTrigger: { id: "trigger", actor: "opponent", misfireChance: 0.5 } });
     expect(clamped.pendingTrigger?.misfireChance).toBe(1);
   });
 
   it("adds Forge's extra load for a red ordinary win", () => {
     const pending = { id: "load", actor: "player" as const, amount: 1, reason: "comparison" as const };
-    const result = resolve("forge-heralds-the-year", "opponent", { trigger: "before-bullet-load", sourceEventId: "load", eventActor: "opponent", roundOutcome: { reason: "comparison", penaltyTarget: "player" } }, { pendingLoad: pending }, world(hand(createCard("spades", "10")), hand(createCard("hearts", "2"), createCard("diamonds", "8"))));
+    const result = resolve("ai-forge-heralds-the-year", "opponent", { trigger: "before-bullet-load", sourceEventId: "load", eventActor: "opponent", roundOutcome: { reason: "comparison", penaltyTarget: "player" } }, { pendingLoad: pending }, world(hand(createCard("spades", "10")), hand(createCard("hearts", "2"), createCard("diamonds", "8"))));
     expect(result.pendingLoad?.amount).toBe(2);
   });
 
@@ -101,7 +104,7 @@ describe("new character mechanics", () => {
     ["blackjack", [createCard("hearts", "10"), createCard("diamonds", "A")], { reason: "blackjack" as const, penaltyTarget: "player" as const }],
     ["owner loses", [createCard("hearts", "2"), createCard("diamonds", "8")], { reason: "comparison" as const, penaltyTarget: "opponent" as const }]
   ] as const)("does not trigger Forge for %s", (_label, cards, outcome) => {
-    const result = resolve("forge-heralds-the-year", "opponent", { trigger: "before-bullet-load", sourceEventId: "load-negative", eventActor: "player", roundOutcome: outcome }, { pendingLoad: { id: "load-negative", actor: "player", amount: 1, reason: outcome.reason } }, world(undefined, hand(...cards)));
+    const result = resolve("ai-forge-heralds-the-year", "opponent", { trigger: "before-bullet-load", sourceEventId: "load-negative", eventActor: "player", roundOutcome: outcome }, { pendingLoad: { id: "load-negative", actor: "player", amount: 1, reason: outcome.reason } }, world(undefined, hand(...cards)));
     expect(result.triggered).toHaveLength(0);
     expect(result.pendingLoad?.amount).toBe(1);
   });
@@ -135,13 +138,13 @@ describe("new character mechanics", () => {
 
   it("strictly rejects extra fields on new primitives and keeps impossible derived effects atomic", () => {
     const base = {
-      id: "strict-new-primitive", name: "strict", description: "strict", sourceKind: "character-mechanic",
-      activation: { type: "passive" }, tags: [], rules: [{ id: "rule", trigger: "after-hand-changed", conditions: [{ type: "hand-all-color", target: "owner", color: "red" }], effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }]
+      id: "strict-new-primitive", name: "strict", description: "strict", sourceKind: "ai-skill", primaryDomain: "rule-control",
+      activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "rule", trigger: "after-hand-changed", conditions: [{ type: "hand-all-color", target: "owner", color: "red" }], effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }]
     } as const;
     expect(AbilityDefinitionSchema.safeParse(base).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ ...base.rules[0].conditions[0], extra: true }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ ...base.rules[0].effects[0], extra: true }] }] }).success).toBe(false);
-    const impossible = { id: "atomic-derived", name: "atomic", description: "atomic", sourceKind: "character-mechanic", activation: { type: "passive" }, tags: [], rules: [{ id: "derive", trigger: "after-hand-changed", effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }] } as const;
+    const impossible = { id: "atomic-derived", name: "atomic", description: "atomic", sourceKind: "ai-skill", primaryDomain: "rule-control", activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "derive", trigger: "after-hand-changed", effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }] } as const;
     const registry = createAbilityRegistry([impossible]);
     const initialWorld = world(hand(createCard("spades", "K"), createCard("hearts", "K"), createCard("clubs", "K")));
     const runtime = { ...createAbilityRuntime(createRng("atomic").snapshot()), instances: [instance("atomic-derived")] };

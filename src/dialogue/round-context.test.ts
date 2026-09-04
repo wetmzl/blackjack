@@ -27,10 +27,9 @@ const comparison = (winner: "player" | "opponent"): RoundOutcome => ({
   winner,
   reason: "comparison",
   penaltyTarget: winner === "player" ? "opponent" : "player",
-  bulletsAdded: 1,
-  playerSkillReward: winner === "player" ? 1 : 0
+  bulletsAdded: 1
 });
-const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 };
+const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0};
 
 describe("special round dialogue", () => {
   it("recognizes 21 vs 21 on the confirmation screen", () => {

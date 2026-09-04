@@ -17,6 +17,23 @@
     "playerDefeat": "在死线边缘，W凭借着运气撕裂了牌局。她喘息着发出狂笑，迫不及待地索要那个能让殿下死而复生的奇迹——可惜，这场胜利只会马上被你回溯。",
     "escaped": "高高在上的策展人居然主动离席？W靠在椅背上戏谑地吐舌头嘲弄：‘什么嘛，连魔鬼也会害怕我吗？’"
   },
+  "infoBar": {
+    "sourceAbilityId": "bomb-maniac",
+    "label": "W领先优势",
+    "description": "W当前比策展人领先的手牌张数,每领先一张，双方爆牌上限就提升一点。",
+    "value": {
+      "type": "number",
+      "value": {
+        "type": "max",
+        "left": 0,
+        "right": {
+          "type": "subtract",
+          "left": { "type": "hand-card-count", "target": "owner" },
+          "right": { "type": "hand-card-count", "target": "rival" }
+        }
+      }
+    }
+  },
   "trophyGallery": {
     "headshot": "/assets/characters/w-trophy-gallery-headshot.png",
     "fullBody": "/assets/characters/w-trophy-gallery-full-subject.png",
@@ -84,7 +101,7 @@
     "B": 0.5,
     "C": 0.5
   },
-  "mechanics": [
+  "aiSkills": [
     { "definitionId": "bomb-maniac", "enabled": true, "parameters": {} },
     { "definitionId": "w-night-queen", "enabled": true, "parameters": {} }
   ],
@@ -200,6 +217,9 @@
       "咔哒一声～看你刚才屏住呼吸的模样……哈哈，策展人也会心跳过速啊？",
       "算你命大！不过这场交易的终点，注定是你把殿下还给我！"
     ],
+    "PLAYER_TRIGGER_MISFIRED": [
+      "哈，不是空膛，是你的花招让它哑火了！策展人，你还真舍不得输啊！"
+    ],
     "OPPONENT_SURVIVED_TRIGGER": [
       "咔哒！哈哈哈哈！空膛！死神刚才摸了摸我的脖子，但又嫌我命太硬溜走了！",
       "没响！哈，连这把破枪都知道我还没把特蕾西娅殿下接回来呢！",
@@ -209,6 +229,9 @@
       "没响！哈！死神把枪口从我额头挪开了！殿下，再等等我，我马上就接你回来！",
       "空枪！浑身发烫、心跳狂飙……这种在刀尖上跳舞的感觉真是让人欲罢不能！",
       "子弹没出膛！萨卡兹的命硬得很，古堡主人，想收我的尸，你还得拿出更狠的手段！"
+    ],
+    "OPPONENT_TRIGGER_MISFIRED": [
+      "哑火！哈哈，击锤都砸下去了还杀不了我——这才叫真正的惊喜！"
     ],
     "PLAYER_WIN_ROUND": [
       "这一轮算你赢。不过赢了一手牌就露出那种傲慢的眼神，离让我死还差得远呢！",

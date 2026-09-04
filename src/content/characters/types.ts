@@ -1,6 +1,6 @@
 import type { AiProfile } from "../../core/ai/types";
 import type { CharacterDialogue } from "../../dialogue/types";
-import type { AbilityBinding } from "../../core/abilities/types";
+import type { AbilityBinding, AbilityInfoValue } from "../../core/abilities/types";
 
 export type Tier = "D" | "C" | "B" | "A" | "S" | "SS";
 
@@ -58,6 +58,16 @@ export interface CharacterMatchSummary {
   readonly escaped: string;
 }
 
+/** Declarative, single-slot information shown for an attendee on the table. */
+export interface CharacterInfoBar {
+  /** Enabled AI Skill whose lifetime controls whether this information remains active. */
+  readonly sourceAbilityId: string;
+  readonly label: string;
+  readonly description: string;
+  readonly format?: "number" | "percent";
+  readonly value: AbilityInfoValue;
+}
+
 /** Percentage coordinates are relative to the shared coffin plus the attendee's default fullBody layer. */
 export interface TrophyCloseupPoint {
   readonly id: string;
@@ -100,10 +110,11 @@ export interface CharacterData {
   readonly assets: CharacterAssets;
   readonly profile: CharacterProfile;
   readonly matchSummary: CharacterMatchSummary;
+  readonly infoBar?: CharacterInfoBar;
   readonly trophyGallery?: CharacterTrophyGallery;
   readonly revolverPlacement: RevolverPlacement;
   readonly ai: AiProfile;
-  readonly mechanics: readonly AbilityBinding[];
+  readonly aiSkills: readonly AbilityBinding[];
   readonly dialogue: CharacterDialogue;
 }
 

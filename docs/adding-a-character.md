@@ -86,10 +86,72 @@
 2. 在 `catalog.json` 添加唯一的 `id`、名称、副标题、等级、多个 `tags`、预览图、收藏横幅和数据文件名。`tier:<小写等级>` 会由目录自动生成，不能在自定义 tag 中重复声明。需要门槛时再配置 `unlock`：可使用 `defeat-any`、`defeat-any-tag`、`defeat-character` 或 `defeat-tag-percentage`；引用的角色和 tag 必须已经存在于同一目录。
 3. 为角色单独配置 AI 阈值参数 `P/A/B/C`、结算文案和 `revolverPlacement`；参数默认值为 `0/1/1/1`，含义与公式见 [玩法与叙事设计](game-design.md#ai-与信息权限)。选择页或牌局内立绘只有在实机验收明确要求时，才在 `catalog.json` 设置 `portraitScales.selection` 或 `portraitScales.table`。不要复制 W 的人物对白充数。
 4. `staffRevolver` 指向共享发牌员资源；根据紧张态头部位置分别校准桌面端和移动端坐标。
-5. 只有在任务明确要求时才实现策展人胜利奖励技能；单纯的技能建议不写入 `definitions.ts`。
+5. 只有在任务明确要求时才新增该角色解锁的 Player Skill；通过其 `unlock.opponentId` 声明解锁来源，局内 Offer 会从全部已解锁且允许掉落的技能中生成候选。
 6. 深度收藏资源写入可选的 `trophyGallery`：`headshot`、透明角色层 `fullBody`、可选 `poses` 和 `closeups`。每个 `poses` 对象包含与会者内唯一 `id`、按钮名称和透明角色层路径；每个 `closeups` 对象必须包含与会者内唯一 `id`、名称、0–100 的 `x/y` 百分比坐标、方形图片和描述。两类数组都由 Schema 校验唯一 ID。
 
-角色档案中的技能栏由 `mechanics` 自动生成：角色 JSON 只绑定 `{ definitionId, enabled, parameters }`，不重复技能名称、规则或文案。技能名称与规则说明来自能力注册表；文学化的档案描写写在能力定义的可选 `profileLore` 字段中。只有 `enabled: true` 且能在注册表中找到的绑定会显示，未配置技能的角色不显示空栏。
+角色档案中的技能栏由 `aiSkills` 自动生成：角色 JSON 只绑定 `{ definitionId, enabled, parameters }`，且 Definition 必须来自独立 AI Skill Catalog，不重复技能名称、规则或文案。技能名称与规则说明来自能力注册表；文学化的档案描写写在能力定义的可选 `profileLore` 字段中。只有 `enabled: true` 且能在注册表中找到的绑定会显示，未配置技能的角色不显示空栏。
+
+### 6.1 添加单一角色信息栏
+
+牌桌右上角在双方弹量下方保留一个可选的角色机制信息槽。需要持续公开 AI Skill 的变量、花色或牌时，只修改角色 JSON 的单个 `infoBar`；不要在 `app.ts`、reducer 或能力解释器中加入角色 ID 分支。
+
+添加步骤：
+
+1. 先在角色的 `aiSkills` 中绑定并启用负责该信息的 AI Skill。
+2. 新增一个 `infoBar`。`sourceAbilityId` 必须等于上述某个 `enabled: true` 的 `definitionId`；技能 TTL 归零后，数值栏显示 0，牌或花色栏显示暂无。
+3. `label` 使用能放入窄栏的中文短标题；`description` 完整解释当前值、变化条件、上下限和失效条件，供信息按钮弹窗显示。
+4. 用 `value` 声明投影内容：
+   - `number`：可读取 `gun-bullets`、`hand-total`、`hand-card-count`、`round-hit-count`，并用 `add`、`subtract`、`multiply`、`min`、`max` 组合；也可直接使用数字或 `constant`。
+   - `suit` / `card`：从 `last-card` 或 `first-private-card` 读取花色或整张牌。
+   - `owner` 始终指该与会者，`rival` 始终指策展人。`round-hit-count` 从当前轮最新 `ROUND_STARTED` 之后计数。
+5. 数值默认原样显示；概率使用顶层 `"format": "percent"`，底座值保持 0–1，例如 `0.66` 显示为 `66%`。
+6. 运行 `npm test`、`npm run build`，并为新类型或新交互补充聚焦测试。若配置会公开与会者暗牌，必须确认这确实是该机制有意授予策展人的信息，不能无意绕过牌面信息边界。
+7. 若现有投影原语不够，先同步扩展 `core/abilities/types.ts`、`core/abilities/info-bar.ts`、角色 Zod Schema、`character.schema.json` 和聚焦测试，再让角色 JSON 使用新原语；不要把新算法直接写进 UI。
+
+W 的领先张数配置如下：
+
+```json
+"infoBar": {
+  "sourceAbilityId": "bomb-maniac",
+  "label": "W领先优势",
+  "description": "W当前比策展人领先的手牌张数,每领先一张，双方爆牌上限就提升一点。",
+  "value": {
+    "type": "number",
+    "value": {
+      "type": "max",
+      "left": 0,
+      "right": {
+        "type": "subtract",
+        "left": { "type": "hand-card-count", "target": "owner" },
+        "right": { "type": "hand-card-count", "target": "rival" }
+      }
+    }
+  }
+}
+```
+
+艾丽妮使用同一底座把本轮策展人的 Hit 次数换算成哑火概率，并封顶为 100%：
+
+```json
+"infoBar": {
+  "sourceAbilityId": "ai-sword-and-handcannon",
+  "label": "本轮哑火概率",
+  "description": "若艾丽妮在本轮承受轮盘惩罚……",
+  "format": "percent",
+  "value": {
+    "type": "number",
+    "value": {
+      "type": "min",
+      "left": 1,
+      "right": {
+        "type": "multiply",
+        "left": { "type": "round-hit-count", "target": "rival" },
+        "right": 0.33
+      }
+    }
+  }
+}
+```
 
 ## 7. 验收清单
 

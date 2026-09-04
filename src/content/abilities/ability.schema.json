@@ -1,10 +1,23 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Declarative ability definition",
-  "description": "Closed data format for player skills and character mechanics. Runtime code must dispatch only these enumerated primitives.",
+  "description": "Closed data format for independent Player Skill, AI Skill, and Talent definitions sharing one execution engine.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "name", "description", "sourceKind", "activation", "rules", "tags"],
+  "required": ["id", "name", "description", "sourceKind", "primaryDomain", "activation", "rules", "tags"],
+  "allOf": [
+    { "if": { "properties": { "sourceKind": { "const": "player-skill" } } }, "then": { "required": ["drop", "stackable"] } },
+    { "if": { "required": ["sourceKind", "activation"], "properties": { "sourceKind": { "enum": ["player-skill", "ai-skill"] }, "activation": { "required": ["type"], "properties": { "type": { "const": "passive" } } } } }, "then": { "required": ["ttl"] } },
+    { "if": { "required": ["sourceKind"], "properties": { "sourceKind": { "const": "talent" } } }, "then": { "not": { "required": ["ttl"] } } },
+    { "if": { "required": ["activation"], "properties": { "activation": { "required": ["type"], "properties": { "type": { "const": "action" } } } } }, "then": { "not": { "required": ["ttl"] } } },
+    { "if": { "required": ["sourceKind"], "properties": { "sourceKind": { "enum": ["ai-skill", "talent"] } } }, "then": { "allOf": [
+      { "not": { "required": ["drop"] } },
+      { "not": { "required": ["stackable"] } },
+      { "not": { "required": ["unlock"] } }
+    ] } },
+    { "if": { "required": ["sourceKind", "activation"], "properties": { "sourceKind": { "const": "player-skill" }, "activation": { "required": ["type"], "properties": { "type": { "const": "action" } } } } }, "then": { "properties": { "activation": { "properties": { "consume": { "const": "card" } } } } } },
+    { "if": { "required": ["sourceKind", "activation"], "properties": { "sourceKind": { "enum": ["ai-skill", "talent"] }, "activation": { "required": ["type"], "properties": { "type": { "const": "action" } } } } }, "then": { "properties": { "activation": { "properties": { "consume": { "const": "none" } } } } } }
+  ],
   "properties": {
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
     "name": { "type": "string", "minLength": 1 },
@@ -13,15 +26,24 @@
     "triggerNotice": { "type": "string", "minLength": 1 },
     "profileLore": { "type": "string", "minLength": 1 },
     "hidden": { "type": "boolean", "default": false },
-    "sourceKind": { "enum": ["player-skill", "character-mechanic", "shared"] },
+    "sourceKind": { "enum": ["player-skill", "ai-skill", "talent"] },
+    "primaryDomain": { "enum": ["blackjack", "roulette", "information", "skill-economy", "rule-control"] },
     "parameters": { "type": "object", "additionalProperties": { "$ref": "#/definitions/parameter" } },
     "activation": { "oneOf": [
       { "type": "object", "additionalProperties": false, "required": ["type", "windows", "consume"], "properties": { "type": { "const": "action" }, "windows": { "type": "array", "items": { "enum": ["owner-turn", "owner-roulette-reaction"] }, "minItems": 1 }, "consume": { "enum": ["card", "none"] }, "availability": { "type": "array", "items": { "$ref": "#/definitions/condition" } } } },
       { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "automatic" } } },
       { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "passive" } } }
     ] },
+    "ttl": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["type", "amount"], "properties": { "type": { "const": "rounds" }, "amount": { "type": "integer", "minimum": 1 } } },
+      { "type": "object", "additionalProperties": false, "required": ["type", "amount"], "properties": { "type": { "const": "triggers" }, "amount": { "type": "integer", "minimum": 1 } } }
+    ] },
     "rules": { "type": "array", "items": { "$ref": "#/definitions/rule" } },
-    "tags": { "type": "array", "items": { "type": "string" } },
+    "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+    "drop": { "type": "object", "additionalProperties": false, "required": ["enabled", "baseWeight"], "properties": { "enabled": { "type": "boolean" }, "baseWeight": { "type": "number", "exclusiveMinimum": 0 } } },
+    "stackable": { "type": "boolean" },
+    "skillOfferWeightModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["tag", "factor"], "properties": { "tag": { "type": "string", "minLength": 1 }, "factor": { "type": "number", "minimum": 0 } } } },
+    "skillOfferRuleModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["reason"], "anyOf": [{ "required": ["candidateCountDelta"] }, { "required": ["selectionCountDelta"] }], "properties": { "reason": { "enum": ["opening", "normal-win", "blackjack-win", "loss", "push", "any"] }, "candidateCountDelta": { "type": "integer" }, "selectionCountDelta": { "type": "integer" } } } },
     "unlock": {
       "type": "object",
       "additionalProperties": false,
@@ -50,7 +72,7 @@
       { "type": "object", "additionalProperties": false, "required": ["type", "target", "expected"], "properties": { "type": { "const": "gun-is-full" }, "target": { "$ref": "#/definitions/actor" }, "expected": { "type": "boolean" } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "round-reason-is" }, "value": { "enum": ["blackjack", "bust", "comparison", "push"] } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "target"], "properties": { "type": { "const": "round-penalty-target-is" }, "target": { "$ref": "#/definitions/actor" } } },
-      { "type": "object", "additionalProperties": false, "required": ["type", "kind"], "properties": { "type": { "const": "event-ability-kind-is" }, "kind": { "enum": ["player-skill", "character-mechanic"] } } },
+      { "type": "object", "additionalProperties": false, "required": ["type", "kind"], "properties": { "type": { "const": "event-ability-kind-is" }, "kind": { "enum": ["player-skill", "ai-skill", "talent"] } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "target", "statusDefinitionId"], "properties": { "type": { "const": "status-present" }, "target": { "$ref": "#/definitions/actor" }, "statusDefinitionId": { "type": "string", "minLength": 1 } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "conditions"], "properties": { "type": { "const": "any" }, "conditions": { "type": "array", "items": { "$ref": "#/definitions/condition" } } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "condition"], "properties": { "type": { "const": "not" }, "condition": { "$ref": "#/definitions/condition" } } }

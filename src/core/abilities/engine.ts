@@ -2,7 +2,7 @@ import { SeededRng } from "../rng/seeded";
 import { allConditionsPass } from "./conditions";
 import { applyEffects } from "./effects";
 import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, type AbilityRegistry } from "./registry";
-import { addAbilityInstance, canConsumeRule, consumeRule } from "./runtime";
+import { addAbilityInstance, canConsumeRule, consumeAbilityTriggerTtl, consumeRule, isAbilityInstanceExpired } from "./runtime";
 import type { AbilityDefinition, AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger } from "./types";
 
 const MAX_ABILITY_DEPTH = 16;
@@ -18,6 +18,7 @@ interface CollectedRule { readonly instance: AbilityInstance; readonly rule: imp
 function collect(runtime: AbilityRuntimeState, trigger: AbilityEventContext["trigger"], directInstanceId?: string, registry?: AbilityRegistry): CollectedRule[] {
   const rules: CollectedRule[] = [];
   for (const instance of runtime.instances) {
+    if (isAbilityInstanceExpired(instance)) continue;
     if (trigger === "on-ability-played" && instance.instanceId !== directInstanceId) continue;
     const definition = registry?.definitionsById[instance.definitionId] ?? getAbilityDefinition(instance.definitionId);
     if (!definition) throw new AbilityResolutionError(`Unknown ability definition: ${instance.definitionId}`, [], { instanceId: instance.instanceId, definitionId: instance.definitionId, ruleId: "definition-missing" });
@@ -122,7 +123,9 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
   let events: readonly AbilityDomainEvent[] = [];
   const triggered: string[] = [];
   for (const entry of collect(runtime, input.event.trigger, input.directInstanceId, input.registry)) {
-    const context = { world, ability: entry.instance, event: input.event };
+    const liveInstance = runtime.instances.find((instance) => instance.instanceId === entry.instance.instanceId);
+    if (!liveInstance || isAbilityInstanceExpired(liveInstance)) continue;
+    const context = { world, ability: liveInstance, event: input.event };
     if (!allConditionsPass(entry.rule.conditions, context)) continue;
     if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId)) continue;
     try {
@@ -135,7 +138,16 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
       pendingTrigger = result.pendingTrigger;
       runtime = { ...result.runtime, rng: abilityRng.snapshot() };
       runtime = consumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId);
-      events = [...events, ...result.events, { type: "ABILITY_TRIGGERED", instanceId: entry.instance.instanceId, definitionId: entry.instance.definitionId, ruleId: entry.rule.id, owner: entry.instance.owner }];
+      const ttl = consumeAbilityTriggerTtl(runtime, world.cards, entry.instance.instanceId, input.registry);
+      runtime = ttl.runtime;
+      world = { ...world, cards: ttl.cards, statuses: ttl.runtime.statuses };
+      events = [
+        ...events,
+        ...result.events,
+        { type: "ABILITY_TRIGGERED", instanceId: entry.instance.instanceId, definitionId: entry.instance.definitionId, ruleId: entry.rule.id, owner: entry.instance.owner },
+        ...ttl.expiredStatuses.map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const })),
+        ...ttl.expired.map((instance) => ({ type: "ABILITY_EXPIRED" as const, instanceId: instance.instanceId, definitionId: instance.definitionId, owner: instance.owner, reason: "triggers" as const }))
+      ];
       triggered.push(`${entry.instance.instanceId}:${entry.rule.id}`);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

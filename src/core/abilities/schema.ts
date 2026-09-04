@@ -27,7 +27,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("gun-is-full"), target: actorSelector, expected: z.boolean() }).strict(),
   z.object({ type: z.literal("round-reason-is"), value: z.enum(["blackjack", "bust", "comparison", "push"]) }).strict(),
   z.object({ type: z.literal("round-penalty-target-is"), target: actorSelector }).strict(),
-  z.object({ type: z.literal("event-ability-kind-is"), kind: z.enum(["player-skill", "character-mechanic"]) }).strict(),
+  z.object({ type: z.literal("event-ability-kind-is"), kind: z.enum(["player-skill", "ai-skill", "talent"]) }).strict(),
   z.object({ type: z.literal("status-present"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("any"), conditions: z.array(condition) }).strict(),
   z.object({ type: z.literal("not"), condition }).strict()
@@ -60,11 +60,39 @@ const activation = z.union([
   z.object({ type: z.literal("action"), windows: z.array(z.enum(["owner-turn", "owner-roulette-reaction"])).min(1), consume: z.enum(["card", "none"]), availability: z.array(condition).optional() }).strict(),
   z.object({ type: z.literal("automatic") }).strict(), z.object({ type: z.literal("passive") }).strict()
 ]);
-export const AbilityDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), description: z.string().min(1), usage: z.string().min(1).optional(), triggerNotice: z.string().min(1).optional(), profileLore: z.string().min(1).optional(), hidden: z.boolean().default(false), sourceKind: z.enum(["player-skill", "character-mechanic", "shared"]), parameters: z.record(parameterSpec).optional(), activation, rules: z.array(AbilityRuleSchema), tags: z.array(z.string().min(1)), unlock: z.object({ opponentId: z.string().min(1), label: z.string().min(1) }).strict().optional() }).strict().superRefine((definition, ctx) => {
+const abilityTtl = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("rounds"), amount: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("triggers"), amount: z.number().int().positive() }).strict()
+]);
+const primaryDomain = z.enum(["blackjack", "roulette", "information", "skill-economy", "rule-control"]);
+const tags = z.array(z.string().min(1)).min(1).superRefine((values, ctx) => {
+  if (new Set(values).size !== values.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "ability tags must be unique" });
+});
+const skillOfferWeightModifier = z.object({ tag: z.string().min(1), factor: z.number().finite().nonnegative() }).strict();
+const skillOfferRuleModifier = z.object({
+  reason: z.enum(["opening", "normal-win", "blackjack-win", "loss", "push", "any"]),
+  candidateCountDelta: z.number().int().optional(),
+  selectionCountDelta: z.number().int().optional()
+}).strict().refine((value) => value.candidateCountDelta !== undefined || value.selectionCountDelta !== undefined, "offer modifier must change at least one count");
+const definitionBase = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), description: z.string().min(1),
+  usage: z.string().min(1).optional(), triggerNotice: z.string().min(1).optional(), profileLore: z.string().min(1).optional(), hidden: z.boolean().default(false),
+  primaryDomain, tags, parameters: z.record(parameterSpec).optional(), activation, ttl: abilityTtl.optional(), rules: z.array(AbilityRuleSchema),
+  skillOfferWeightModifiers: z.array(skillOfferWeightModifier).optional(), skillOfferRuleModifiers: z.array(skillOfferRuleModifier).optional()
+});
+const playerSkillDefinition = definitionBase.extend({
+  sourceKind: z.literal("player-skill"), drop: z.object({ enabled: z.boolean(), baseWeight: z.number().finite().positive() }).strict(), stackable: z.boolean().default(false),
+  unlock: z.object({ opponentId: z.string().min(1), label: z.string().min(1) }).strict().optional()
+}).strict();
+const aiSkillDefinition = definitionBase.extend({ sourceKind: z.literal("ai-skill") }).strict();
+const talentDefinition = definitionBase.extend({ sourceKind: z.literal("talent") }).strict();
+export const AbilityDefinitionSchema = z.discriminatedUnion("sourceKind", [playerSkillDefinition, aiSkillDefinition, talentDefinition]).superRefine((definition, ctx) => {
+  if (definition.sourceKind === "talent" && definition.ttl) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttl"], message: "Talents cannot expire inside a match" });
+  if (definition.activation.type === "action" && definition.ttl) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttl"], message: "Active abilities are consumed explicitly and cannot declare TTL" });
+  if (definition.sourceKind !== "talent" && definition.activation.type === "passive" && !definition.ttl) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttl"], message: "Passive skills must declare TTL" });
   if (definition.activation.type !== "action") return;
   if (definition.sourceKind === "player-skill" && definition.activation.consume !== "card") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: "player-skill actions must consume a card" });
-  if (definition.sourceKind === "character-mechanic" && definition.activation.consume !== "none") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: "character-mechanic actions cannot consume a player card" });
-  if (definition.sourceKind === "shared" && definition.activation.type === "action") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation"], message: "shared definitions cannot be action abilities" });
+  if (definition.sourceKind !== "player-skill" && definition.activation.consume !== "none") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["activation", "consume"], message: `${definition.sourceKind} actions cannot consume a player card` });
 });
 export const StatusDefinitionSchema = z.object({ id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), rules: z.array(AbilityRuleSchema), defaultDuration: z.enum(["turn", "round", "match", "until-owner-action", "until-consumed"]), blocksAbilityTags: z.array(z.string().min(1)).optional() }).strict();
 export const AbilityBindingSchema = z.object({ definitionId: z.string().min(1), enabled: z.boolean(), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])) }).strict();

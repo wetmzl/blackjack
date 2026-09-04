@@ -1,7 +1,7 @@
 # Adding an ability
 
 Abilities are content, not reducer branches. Add a JSON definition under
-`src/content/abilities/player-skills` or `character-mechanics`, then import it
+`src/content/abilities/player-skills`, `ai-skills`, or `talents`, then import it
 into the immutable canonical list in `core/abilities/registry.ts`. The registry
 validates every imported definition with `AbilityDefinitionSchema`, validates
 its parameter/status/ability references, and deep-freezes it at startup. There
@@ -19,12 +19,29 @@ physical card can satisfy an exact resulting total. A derived card does not
 mutate the physical shoe or enter a discard pile; do not use this fallback as a
 general substitute for selecting real cards.
 
-`sourceKind` may be `player-skill`, `character-mechanic`, or `shared`. A
-`shared` definition is limited to passive/automatic behavior and can be
-instantiated as either concrete runtime kind through the common source-kind
-validation helper. `hidden: true` keeps a definition in the registry for
-compatibility and testing, but excludes it from visible skills, default
-loadouts, unlock rewards, and drop pools.
+`sourceKind` must be exactly `player-skill`, `ai-skill`, or `talent`. These are
+independent domains: definitions and IDs cannot be shared even when their
+names and effects are identical. They may reuse only the generic trigger,
+condition, effect, status, and runtime machinery. `hidden: true` keeps a
+definition in the registry for testing, while excluding it from the visible
+Player Skill catalog and offer pool.
+
+Every Player Skill and AI Skill declares one `primaryDomain` and at least one
+open-ended tag. Player Skills additionally declare `drop.enabled`, positive
+`drop.baseWeight`, and `stackable`; active cards may repeat, while a held
+non-stackable passive is excluded from later offers. Definitions in any of the
+three domains may declare `skillOfferWeightModifiers` and
+`skillOfferRuleModifiers`. Primary domains and tags share the offer matching
+namespace, and every matching weight factor multiplies rather than overrides.
+
+Every passive Player Skill or AI Skill must declare a positive finite `ttl` as
+either `{ "type": "rounds", "amount": N }` or
+`{ "type": "triggers", "amount": N }`. Round TTL is consumed after
+`on-round-end`; trigger TTL is consumed only after a rule successfully applies,
+not when its conditions miss or resolution fails. At zero the definition stops
+participating in future events and a Player Skill card is removed from inventory.
+Talent definitions and active cards cannot declare TTL. Automatic AI Skills may
+declare TTL when their product behavior is intentionally finite.
 
 When a rule needs a new kind of fact, add a reusable condition primitive to
 `types.ts` and its strict Zod branch to `schema.ts`, then implement the same
@@ -56,13 +73,14 @@ extra fields, deterministic RNG, and atomic failure. Prefer owner/rival
 selectors so one definition can be bound to either actor.
 
 能力定义中的 `description` 负责规则说明，`profileLore`（可选）负责角色档案
-中的文学化描写。档案页面根据角色 `mechanics` 的启用绑定从能力注册表自动读取
+中的文学化描写。档案页面根据角色 `aiSkills` 的启用绑定从能力注册表自动读取
 名称、规则与描写；角色 JSON 不重复维护技能文案。
 
 For a new pure-data ability:
 
-1. Choose `player-skill` or `character-mechanic` and declare activation,
-   rules, tags, and bounded parameters in JSON.
+1. Choose exactly one of `player-skill`, `ai-skill`, or `talent`; declare its
+   primary domain, tags, activation, rules, bounded parameters, and required
+   passive TTL in JSON.
 2. Reuse only registered status IDs and declared parameter keys. If behavior
    outlives one event, add and register a status JSON definition too.
 3. Import the definition into the canonical registry. Do not add its ID to the
@@ -72,8 +90,8 @@ For a new pure-data ability:
    mechanisms must be exercised for both actors.
 5. Run `npm test`, `npm run build`, and the relevant Playwright flow.
 
-Character JSON binds an existing definition with `{ definitionId, enabled,
-parameters }`. Bindings are checked against the definition's declared
+Character JSON `aiSkills` binds an existing AI Skill definition with
+`{ definitionId, enabled, parameters }`. Bindings are checked against the definition's declared
 parameter table; unknown, missing, or out-of-range values fail during loading.
 
 Cards have an explicit `origin`: `shoe` for physical cards and `derived` for

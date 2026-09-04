@@ -2,15 +2,16 @@ import { z } from "zod";
 import type { MatchHistoryRecord } from "../core/match/history";
 import type { MatchState } from "../core/match/types";
 import type { CharacterDefeatRecord } from "../core/progression/defeats";
-import { getSkillDefinition } from "../core/skills/definitions";
-import { unlockedSkillIdsForDefeats } from "../core/skills/skills";
+import { getPlayerSkillDefinition } from "../core/skills/definitions";
+import { PLAYER_SKILL_INVENTORY_CAPACITY } from "../core/skills/skills";
+import { getTalentDefinition } from "../core/talents/definitions";
 import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, validateAbilityBinding } from "../core/abilities/registry";
 import characterCatalog from "../content/characters/catalog.json" with { type: "json" };
 
 export const LONG_TERM_SAVE_FORMAT = "house-of-chances-save" as const;
 export const RUNTIME_SAVE_FORMAT = "house-of-chances-runtime" as const;
-export const CURRENT_LONG_TERM_SCHEMA_VERSION = 7 as const;
-export const CURRENT_RUNTIME_SCHEMA_VERSION = 1 as const;
+export const CURRENT_LONG_TERM_SCHEMA_VERSION = 8 as const;
+export const CURRENT_RUNTIME_SCHEMA_VERSION = 3 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -36,12 +37,11 @@ const RoundOutcomeSchema = z.object({
   winner: z.enum(["player", "opponent"]).nullable(),
   reason: z.enum(["blackjack", "bust", "comparison", "push"]),
   penaltyTarget: z.enum(["player", "opponent"]).nullable(),
-  bulletsAdded: z.number().int().min(0),
-  playerSkillReward: z.number().int().min(0)
+  bulletsAdded: z.number().int().min(0)
 }).strict();
 const RoundSchema = z.object({
   index: z.number().int().min(0),
-  phase: z.enum(["dealing", "initial-blackjack-check", "turns", "settlement", "round-reveal", "roulette-reaction", "roulette-trigger", "roulette-result", "reward", "round-end"]),
+  phase: z.enum(["dealing", "skill-offer", "initial-blackjack-check", "turns", "settlement", "round-reveal", "roulette-reaction", "roulette-trigger", "roulette-result", "round-end"]),
   starter: z.enum(["player", "opponent"]),
   currentActor: z.enum(["player", "opponent"]).nullable(),
   player: ParticipantSchema,
@@ -54,8 +54,12 @@ const AiDecisionSchema = z.object({
   handValue: z.number().int().min(0), threshold: z.number().finite(), bulletDifference: z.number().int(),
   matchNoise: z.number().min(-0.3).max(0.3), playNoise: z.number().min(-0.3).max(0.3), action: z.enum(["hit", "stand"])
 }).strict();
-const AbilityCardSchema = z.object({ kind: z.literal("player-skill"), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), instanceId: z.string().min(1) }).strict();
-const AbilityInstanceSchema = z.object({ kind: z.enum(["player-skill", "character-mechanic"]), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), instanceId: z.string().min(1), createdAtSequence: z.number().int().min(0), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])) }).strict();
+const AbilityCardSchema = z.object({ kind: z.literal("player-skill"), definitionId: z.string().min(1), owner: z.literal("player"), instanceId: z.string().min(1) }).strict();
+const AbilityInstanceSchema = z.object({
+  kind: z.enum(["player-skill", "ai-skill", "talent"]), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]),
+  instanceId: z.string().min(1), createdAtSequence: z.number().int().min(0), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])),
+  ttl: z.object({ type: z.enum(["rounds", "triggers"]), remaining: z.number().int().min(0) }).strict().optional()
+}).strict();
 const AbilityStatusSchema = z.object({ statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), sourceInstanceId: z.string().min(1), stacks: z.number().int().positive(), duration: z.enum(["turn", "round", "match", "until-owner-action", "until-consumed"]), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])), createdAtSequence: z.number().int().min(0) }).strict();
 const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema), statuses: z.array(AbilityStatusSchema), counters: z.record(z.number().int().min(0)), sequence: z.number().int().min(0), catalogVersion: z.string().min(1), rng: RngSnapshotSchema }).strict().superRefine((runtime, ctx) => {
   if (runtime.catalogVersion !== ABILITY_CATALOG_VERSION) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["catalogVersion"], message: "unsupported ability catalog version" });
@@ -68,6 +72,10 @@ const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema
     if (!definition) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "definitionId"], message: "unknown ability definition" });
     else {
       if (!supportsAbilitySourceKind(definition, instance.kind)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "kind"], message: "instance kind does not match definition source kind" });
+      if (definition.sourceKind === "ai-skill" && instance.owner !== "opponent") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "owner"], message: "AI Skill runtime instances must be owned by the opponent" });
+      if ((definition.sourceKind === "player-skill" || definition.sourceKind === "talent") && instance.owner !== "player") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "owner"], message: `${definition.sourceKind} runtime instances must be owned by the player` });
+      if (definition.ttl && (!instance.ttl || instance.ttl.type !== definition.ttl.type || instance.ttl.remaining > definition.ttl.amount)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "ttl"], message: "instance TTL does not match its definition" });
+      if (!definition.ttl && instance.ttl) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "ttl"], message: "instance has TTL but its definition does not" });
       try { validateAbilityBinding({ definitionId: instance.definitionId, enabled: true, parameters: instance.parameters }); } catch (error) { ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "parameters"], message: error instanceof Error ? error.message : "invalid ability parameters" }); }
     }
   });
@@ -81,6 +89,7 @@ const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema
 const GameEventSchema = z.union([
   z.object({ type: z.literal("ABILITY_PLAYED"), instanceId: z.string().min(1), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]) }).strict(),
   z.object({ type: z.literal("ABILITY_TRIGGERED"), instanceId: z.string().min(1), definitionId: z.string().min(1), ruleId: z.string().min(1), owner: z.enum(["player", "opponent"]) }).strict(),
+  z.object({ type: z.literal("ABILITY_EXPIRED"), instanceId: z.string().min(1), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), reason: z.enum(["rounds", "triggers"]) }).strict(),
   z.object({ type: z.literal("ABILITY_RESOLUTION_FAILED"), instanceId: z.string().min(1), definitionId: z.string().min(1), ruleId: z.string().min(1), reason: z.string().min(1) }).strict(),
   z.object({ type: z.literal("STATUS_ADDED"), statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), sourceInstanceId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("STATUS_REMOVED"), statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), reason: z.enum(["consumed", "expired", "dispelled"]) }).strict(),
@@ -97,11 +106,16 @@ const GameEventSchema = z.union([
   z.object({ type: z.literal("ROUND_RESOLVED"), outcome: RoundOutcomeSchema }).strict(),
   z.object({ type: z.literal("ROUND_RESULT_ACKNOWLEDGED") }).strict(),
   z.object({ type: z.literal("BULLET_ADDED"), actor: z.enum(["player", "opponent"]), amount: z.number().int().min(0) }).strict(),
-  z.object({ type: z.literal("TRIGGER_PULLED"), actor: z.enum(["player", "opponent"]), probability: z.number().min(0).max(1), fired: z.boolean() }).strict(),
+  z.object({ type: z.literal("TRIGGER_PULLED"), actor: z.enum(["player", "opponent"]), probability: z.number().min(0).max(1), baseProbability: z.number().min(0).max(1), misfireChance: z.number().min(0).max(1), result: z.enum(["fired", "empty-chamber", "misfire"]), fired: z.boolean() }).strict().superRefine((event, ctx) => {
+    if (event.fired !== (event.result === "fired")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fired"], message: "trigger result and fired flag disagree" });
+  }),
   z.object({ type: z.literal("TRIGGER_SURVIVED"), actor: z.enum(["player", "opponent"]) }).strict(),
   z.object({ type: z.literal("TRIGGER_RESULT_ACKNOWLEDGED") }).strict(),
   z.object({ type: z.literal("PARTICIPANT_KILLED"), actor: z.enum(["player", "opponent"]) }).strict(),
   z.object({ type: z.literal("SKILL_GAINED"), skillId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("SKILL_OFFER_CREATED"), offerId: z.string().min(1), reason: z.enum(["opening", "normal-win", "blackjack-win", "loss", "push"]), candidateDefinitionIds: z.array(z.string().min(1)).max(4), maxSelections: z.number().int().min(0).max(4) }).strict(),
+  z.object({ type: z.literal("SKILL_OFFER_SELECTION_CHANGED"), offerId: z.string().min(1), selectedDefinitionIds: z.array(z.string().min(1)).max(4) }).strict(),
+  z.object({ type: z.literal("SKILL_OFFER_RESOLVED"), offerId: z.string().min(1), selectedDefinitionIds: z.array(z.string().min(1)).max(4), skipped: z.boolean() }).strict(),
   z.object({ type: z.literal("MATCH_FINISHED"), reason: z.enum(["player-killed", "opponent-killed", "escaped"]) }).strict(),
   z.object({ type: z.literal("MATCH_ESCAPED"), }).strict(),
   z.object({ type: z.literal("MATCH_RESULT_ACKNOWLEDGED"), }).strict(),
@@ -113,7 +127,39 @@ export const MatchStateSchema = z.object({
   status: z.enum(["active", "finished"]), scene: z.enum(["lobby", "match", "trophy-room"]),
   view: z.enum(["table", "execution-room", "match-summary"]), roundIndex: z.number().int().min(0),
   player: ParticipantSchema, opponent: ParticipantSchema, shoe: ShoeSchema, roulette: RouletteSchema,
-  skills: z.object({ equippedSkillIds: z.array(z.string().min(1)).max(4), cards: z.array(AbilityCardSchema), advice: z.enum(["hit", "stand"]).nullable() }).strict().superRefine((skills, ctx) => { const defs = skills.equippedSkillIds.map(getSkillDefinition); if (new Set(skills.equippedSkillIds).size !== skills.equippedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate equipped skill" }); if (defs.some((skill) => !skill)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown equipped skill" }); if (defs.filter((skill) => skill?.category === "passive").length > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "at most one passive skill" }); const ids = new Set<string>(); for (const card of skills.cards) { if (ids.has(card.instanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate skill card instance" }); ids.add(card.instanceId); const skill = getSkillDefinition(card.definitionId); if (!skill || skill.category !== "active" || card.owner !== "player" || !skills.equippedSkillIds.includes(card.definitionId)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "skill card must be equipped active skill" }); } }), round: RoundSchema,
+  playerSkills: z.object({
+    unlockedDefinitionIds: z.array(z.string().min(1)), cards: z.array(AbilityCardSchema).max(PLAYER_SKILL_INVENTORY_CAPACITY),
+    offer: z.object({ id: z.string().min(1), reason: z.enum(["opening", "normal-win", "blackjack-win", "loss", "push"]), candidateDefinitionIds: z.array(z.string().min(1)).max(4), maxSelections: z.number().int().min(0).max(4), selectedDefinitionIds: z.array(z.string().min(1)).max(4) }).strict().nullable(),
+    advice: z.enum(["hit", "stand"]).nullable()
+  }).strict().superRefine((skills, ctx) => {
+    if (new Set(skills.unlockedDefinitionIds).size !== skills.unlockedDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unlockedDefinitionIds"], message: "duplicate unlocked Player Skill" });
+    for (const id of skills.unlockedDefinitionIds) if (!getPlayerSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unlockedDefinitionIds"], message: "unknown Player Skill" });
+    const instanceIds = new Set<string>();
+    const passiveIds = new Set<string>();
+    for (const [index, card] of skills.cards.entries()) {
+      if (instanceIds.has(card.instanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cards", index, "instanceId"], message: "duplicate skill card instance" });
+      instanceIds.add(card.instanceId);
+      const skill = getPlayerSkillDefinition(card.definitionId);
+      if (!skill) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cards", index, "definitionId"], message: "unknown Player Skill card" });
+      else if (!skills.unlockedDefinitionIds.includes(skill.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cards", index, "definitionId"], message: "Player Skill card is not unlocked" });
+      else if (skill.category === "passive" && !skill.stackable && passiveIds.has(skill.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cards", index], message: "non-stackable passive Player Skill is duplicated" });
+      else if (skill.category === "passive") passiveIds.add(skill.id);
+    }
+    const offer = skills.offer;
+    if (offer) {
+      if (new Set(offer.candidateDefinitionIds).size !== offer.candidateDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "candidateDefinitionIds"], message: "duplicate offer candidate" });
+      if (new Set(offer.selectedDefinitionIds).size !== offer.selectedDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "selectedDefinitionIds"], message: "duplicate offer selection" });
+      offer.candidateDefinitionIds.forEach((id, index) => {
+        const skill = getPlayerSkillDefinition(id);
+        if (!skill || !skills.unlockedDefinitionIds.includes(id) || !skill.drop.enabled) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "candidateDefinitionIds", index], message: "offer candidate is not an unlocked droppable Player Skill" });
+        else if (skill.category === "passive" && !skill.stackable && skills.cards.some((card) => card.definitionId === id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "candidateDefinitionIds", index], message: "held non-stackable passive cannot be offered" });
+      });
+      if (offer.maxSelections > offer.candidateDefinitionIds.length || offer.maxSelections > PLAYER_SKILL_INVENTORY_CAPACITY - skills.cards.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "maxSelections"], message: "offer selection limit exceeds candidates or inventory capacity" });
+      if (offer.selectedDefinitionIds.length > offer.maxSelections || offer.selectedDefinitionIds.some((id) => !offer.candidateDefinitionIds.includes(id))) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "selectedDefinitionIds"], message: "invalid offer selection" });
+      if (skills.cards.length + offer.selectedDefinitionIds.length > PLAYER_SKILL_INVENTORY_CAPACITY) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "selectedDefinitionIds"], message: "skill inventory overflow" });
+    }
+  }),
+  talentIds: z.array(z.string().min(1)), round: RoundSchema,
   abilities: AbilityRuntimeSchema,
   outcome: z.object({ winner: z.enum(["player", "opponent"]).nullable(), reason: z.enum(["player-killed", "opponent-killed", "escaped"]) }).strict().optional(),
   history: z.array(GameEventSchema),
@@ -121,22 +167,25 @@ export const MatchStateSchema = z.object({
   aiProfile: AiProfileSchema, aiNoise: AiNoiseSchema, lastAiDecision: AiDecisionSchema.nullable()
 }).strict().superRefine((match, ctx) => {
   const instances = new Map(match.abilities.instances.map((instance) => [instance.instanceId, instance]));
-  match.skills.cards.forEach((card, index) => {
+  match.playerSkills.cards.forEach((card, index) => {
     const instance = instances.get(card.instanceId);
-    if (!instance) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skills", "cards", index, "instanceId"], message: "card runtime instance is missing" });
-    else if (instance.kind !== "player-skill" || instance.definitionId !== card.definitionId || instance.owner !== card.owner) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skills", "cards", index], message: "card does not match runtime instance" });
+    if (!instance) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["playerSkills", "cards", index, "instanceId"], message: "card runtime instance is missing" });
+    else if (instance.kind !== "player-skill" || instance.definitionId !== card.definitionId || instance.owner !== card.owner) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["playerSkills", "cards", index], message: "card does not match runtime instance" });
+    else if (instance.ttl?.remaining === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["playerSkills", "cards", index], message: "expired Player Skill cannot retain an inventory card" });
   });
   match.abilities.instances.forEach((instance, index) => {
-    const isPassive = getSkillDefinition(instance.definitionId)?.category === "passive";
     const isStatusSource = match.abilities.statuses.some((status) => status.sourceInstanceId === instance.instanceId);
-    if (instance.kind === "player-skill" && !isPassive && !isStatusSource && !match.skills.cards.some((card) => card.instanceId === instance.instanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["abilities", "instances", index], message: "player-skill runtime instance is neither a card, passive, nor status source" });
+    if (instance.kind === "player-skill" && !isStatusSource && !match.playerSkills.cards.some((card) => card.instanceId === instance.instanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["abilities", "instances", index], message: "Player Skill runtime instance has no card" });
   });
+  if ((match.round.phase === "skill-offer") !== (match.playerSkills.offer !== null)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["playerSkills", "offer"], message: "offer presence must match skill-offer phase" });
+  if (new Set(match.talentIds).size !== match.talentIds.length || match.talentIds.some((id) => !getTalentDefinition(id))) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["talentIds"], message: "invalid Talent list" });
+  for (const id of match.talentIds) if (!match.abilities.instances.some((instance) => instance.kind === "talent" && instance.definitionId === id && instance.owner === "player")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["talentIds"], message: "Talent runtime instance is missing" });
 });
 
 export const PlayerProfileSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), matchesPlayed: z.number().int().min(0),
-  wins: z.number().int().min(0), equippedSkillIds: z.array(z.string().min(1)).max(4)
-}).strict().superRefine((profile, ctx) => { if (new Set(profile.equippedSkillIds).size !== profile.equippedSkillIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate equipped skill" }); for (const id of profile.equippedSkillIds) if (!getSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown skill" }); if (profile.equippedSkillIds.filter((id) => getSkillDefinition(id)?.category === "passive").length > 1) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "at most one passive skill" }); });
+  wins: z.number().int().min(0), talentIds: z.array(z.string().min(1))
+}).strict().superRefine((profile, ctx) => { if (new Set(profile.talentIds).size !== profile.talentIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate Talent" }); for (const id of profile.talentIds) if (!getTalentDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown Talent" }); });
 export const GameSettingsSchema = z.object({ soundEnabled: z.boolean(), reducedMotion: z.boolean() }).strict();
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
 export type GameSettings = z.infer<typeof GameSettingsSchema>;
@@ -166,10 +215,6 @@ export const LongTermSaveSchema = z.object({
   save.defeats.forEach((record, index) => {
     if (opponentIds.has(record.opponentId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["defeats", index, "opponentId"], message: "duplicate defeated character" });
     opponentIds.add(record.opponentId);
-  });
-  const unlockedSkills = new Set(unlockedSkillIdsForDefeats(save.defeats as CharacterDefeatRecord[]));
-  save.profile.equippedSkillIds.forEach((id, index) => {
-    if (!unlockedSkills.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["profile", "equippedSkillIds", index], message: "equipped skill must be unlocked by a recorded defeat" });
   });
 });
 

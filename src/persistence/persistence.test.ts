@@ -19,10 +19,14 @@ import { requestPersistentStorage } from "./storage";
 import { createCard, createDerivedCard } from "../core/blackjack/card";
 import { addCard, createHand } from "../core/blackjack/hand";
 import type { MatchState } from "../core/match/types";
-import { unlockedSkillIdsForDefeats } from "../core/skills/skills";
+import { unlockedPlayerSkillIdsForDefeats } from "../core/skills/skills";
 import { unlockedCharacterIdsForDefeats } from "../content/characters/unlocks";
 
 const NOW = "2026-08-30T00:00:00.000Z";
+
+function createActiveMatch(seed: string, options: Parameters<typeof createMatch>[1] = {}): MatchState {
+  return gameReducer(createMatch(seed, options), { type: "SKIP_SKILL_OFFER" });
+}
 
 describe("long-term save schema and JSON boundary", () => {
   it("round-trips only durable data and includes the tutorial preference", async () => {
@@ -44,11 +48,11 @@ describe("long-term save schema and JSON boundary", () => {
     expect(() => validateLongTermSave({ ...save, skipTutorial: undefined })).toThrow(/skipTutorial/);
   });
 
-  it("requires unique defeat facts and derives equipped-skill eligibility from them", () => {
+  it("requires unique defeat facts and valid unique Talents", () => {
     const save = createDefaultSave(NOW);
     expect(() => validateLongTermSave({ ...save, defeats: [{ opponentId: "w", timestamp: NOW }, { opponentId: "w", timestamp: NOW }] })).toThrow(/duplicate defeated character/);
-    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, equippedSkillIds: ["night-queen"] } })).toThrow(/recorded defeat/);
-    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, equippedSkillIds: ["night-queen"] }, defeats: [{ opponentId: "w", timestamp: NOW }] })).not.toThrow();
+    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, talentIds: ["early-preparation", "early-preparation"] } })).toThrow(/duplicate Talent/);
+    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, talentIds: ["missing-talent"] } })).toThrow(/unknown Talent/);
   });
 });
 
@@ -71,7 +75,7 @@ describe("runtime save schema and validation", () => {
   });
 
   it("rejects malformed nested cards, RNG, guns, and unknown fields as runtime-only errors", () => {
-    const invalidCard = structuredClone(createRuntimeSave(createMatch("invalid-match"), NOW)) as unknown as Record<string, unknown>;
+    const invalidCard = structuredClone(createRuntimeSave(createActiveMatch("invalid-match"), NOW)) as unknown as Record<string, unknown>;
     const match = invalidCard.activeMatch as Record<string, unknown>;
     const player = match.player as Record<string, unknown>;
     const hand = player.hand as Record<string, unknown>;
@@ -92,7 +96,7 @@ describe("runtime save schema and validation", () => {
   });
 
   it("rejects missing ability definitions, catalog mismatches, and unknown characters", () => {
-    const saved = structuredClone(createRuntimeSave(createMatch("ability-save-errors"), NOW)) as unknown as Record<string, unknown>;
+    const saved = structuredClone(createRuntimeSave(createMatch("ability-save-errors", { talentIds: ["early-preparation"] }), NOW)) as unknown as Record<string, unknown>;
     const missing = structuredClone(saved);
     const missingRuntime = (((missing.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>));
     ((missingRuntime.instances as Array<Record<string, unknown>>)[0]!).definitionId = "missing-definition";
@@ -105,10 +109,18 @@ describe("runtime save schema and validation", () => {
     const unknownCharacter = structuredClone(saved);
     (unknownCharacter.activeMatch as Record<string, unknown>).opponentId = "retired-character";
     expect(() => validateRuntimeSave(unknownCharacter)).toThrow(/activeMatch.*opponentId.*unknown character/i);
+
+    const wrongOwner = structuredClone(saved);
+    const talent = (((wrongOwner.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).instances as Array<Record<string, unknown>>)[0]!;
+    talent.owner = "opponent";
+    expect(() => validateRuntimeSave(wrongOwner)).toThrow(/talent runtime instances must be owned by the player/i);
   });
 
   it("keeps a runtime save valid after consuming a concrete ability card", () => {
     let match = createMatch("post-ability-save");
+    const candidate = match.playerSkills.offer!.candidateDefinitionIds[0]!;
+    match = gameReducer(match, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: candidate });
+    match = gameReducer(match, { type: "CONFIRM_SKILL_OFFER" });
     for (let index = 0; index < 80; index += 1) {
       const action = getLegalActions(match).find((candidate) => candidate.type === "PLAY_ABILITY");
       if (action) { match = gameReducer(match, action); break; }
@@ -121,7 +133,7 @@ describe("runtime save schema and validation", () => {
   });
 
   it("persists registered mechanics without retriggering on restore", async () => {
-    const match = createMatch("mechanic-restore", { opponentMechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] });
+    const match = createMatch("mechanic-restore", { opponentAiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] });
     const openingTriggers = match.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.ruleId === "opening-draw").length;
     const repository = new MemorySaveRepository({ runtime: createRuntimeSave(match, NOW) });
     const restored = await restoreActiveMatch(repository);
@@ -130,11 +142,41 @@ describe("runtime save schema and validation", () => {
     expect(restored?.abilities.instances).toContainEqual(expect.objectContaining({ definitionId: "owner-load-penalty", owner: "opponent" }));
   });
 
+  it("persists finite TTL and rejects missing, over-budget, or card-retaining expired values", () => {
+    const aiRuntime = createRuntimeSave(createMatch("ttl-save", {
+      opponentAiSkills: [{ definitionId: "ai-sword-and-handcannon", enabled: true, parameters: {} }]
+    }), NOW);
+    const aiInstance = aiRuntime.activeMatch.abilities.instances.find((instance) => instance.definitionId === "ai-sword-and-handcannon");
+    expect(aiInstance?.ttl).toEqual({ type: "triggers", remaining: 3 });
+    expect(validateRuntimeSave(JSON.parse(JSON.stringify(aiRuntime)) as unknown).activeMatch).toEqual(aiRuntime.activeMatch);
+
+    const missing = structuredClone(aiRuntime) as unknown as Record<string, unknown>;
+    const missingInstances = (((missing.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).instances as Array<Record<string, unknown>>);
+    delete missingInstances.find((instance) => instance.definitionId === "ai-sword-and-handcannon")!.ttl;
+    expect(() => validateRuntimeSave(missing)).toThrow(/TTL does not match/i);
+
+    const overBudget = structuredClone(aiRuntime) as unknown as Record<string, unknown>;
+    const overBudgetInstances = (((overBudget.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).instances as Array<Record<string, unknown>>);
+    (overBudgetInstances.find((instance) => instance.definitionId === "ai-sword-and-handcannon")!.ttl as Record<string, unknown>).remaining = 4;
+    expect(() => validateRuntimeSave(overBudget)).toThrow(/TTL does not match/i);
+
+    let playerMatch = createMatch("expired-player-card-save", { unlockedPlayerSkillIds: ["sword-and-handcannon"] });
+    playerMatch = gameReducer(playerMatch, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: "sword-and-handcannon" });
+    playerMatch = gameReducer(playerMatch, { type: "CONFIRM_SKILL_OFFER" });
+    const expiredCard = structuredClone(createRuntimeSave(playerMatch, NOW)) as unknown as Record<string, unknown>;
+    const activeMatch = expiredCard.activeMatch as Record<string, unknown>;
+    const playerCards = ((activeMatch.playerSkills as Record<string, unknown>).cards as Array<Record<string, unknown>>);
+    const instances = ((activeMatch.abilities as Record<string, unknown>).instances as Array<Record<string, unknown>>);
+    const matching = instances.find((instance) => instance.instanceId === playerCards[0]!.instanceId)!;
+    (matching.ttl as Record<string, unknown>).remaining = 0;
+    expect(() => validateRuntimeSave(expiredCard)).toThrow(/expired Player Skill cannot retain/i);
+  });
+
   it("persists a cross-target, next-action status created by an opponent mechanic", () => {
-    const base = createMatch("silent-drizzle-save", {
+    const base = createActiveMatch("silent-drizzle-save", {
       opponentId: "texas",
-      equippedSkillIds: ["hunter-instinct"],
-      opponentMechanics: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
+      unlockedPlayerSkillIds: ["hunter-instinct"],
+      opponentAiSkills: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
     });
     const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
     const opponent = { ...base.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
@@ -159,12 +201,13 @@ describe("runtime save schema and validation", () => {
 });
 
 describe("boot and repositories", () => {
-  it("resetSave returns clean durable data with the initial loadout", () => {
+  it("resetSave returns clean durable data with the initial Talent", () => {
     const reset = resetSave(NOW);
     expect(reset.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
-    expect(unlockedSkillIdsForDefeats(reset.defeats)).toEqual(reset.profile.equippedSkillIds);
+    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman"]);
+    expect(reset.profile.talentIds).toEqual(["early-preparation"]);
     expect(reset.history).toEqual([]);
     expect(reset.defeats).toEqual([]);
     expect(reset.skipTutorial).toBe(false);
@@ -238,7 +281,7 @@ describe("boot and repositories", () => {
     expect(first.defeats).toEqual([{ opponentId: "texas", timestamp: NOW }]);
     expect(first.profile.matchesPlayed).toBe(1);
     expect(first.profile.wins).toBe(1);
-    expect(unlockedSkillIdsForDefeats(first.defeats)).toContain("blueberry-and-dark-chocolate");
+    expect(unlockedPlayerSkillIdsForDefeats(first.defeats)).toContain("blueberry-and-dark-chocolate");
 
     const repeated = acknowledgeMatchResult(first, acknowledged, NOW);
     expect(repeated).toBe(first);
@@ -254,7 +297,7 @@ describe("boot and repositories", () => {
     expect(cleared.profile).toEqual(completed.profile);
     expect(cleared.skipTutorial).toBe(true);
     expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "texas", "irene", "nian", "plume"]);
-    expect(unlockedSkillIdsForDefeats(cleared.defeats)).toContain("blueberry-and-dark-chocolate");
+    expect(unlockedPlayerSkillIdsForDefeats(cleared.defeats)).toContain("blueberry-and-dark-chocolate");
     expect(cleared.updatedAt).toBe("2026-08-31T00:00:00.000Z");
   });
 });

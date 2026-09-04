@@ -9,6 +9,7 @@ export * from "./roulette/types";
 export * from "./skills/definitions";
 export * from "./skills/skills";
 export * from "./skills/types";
+export * from "./talents/definitions";
 export * from "./abilities/index";
 export * from "./ai/observation";
 export * from "./ai/policy";

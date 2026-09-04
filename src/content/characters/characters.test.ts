@@ -219,18 +219,18 @@ describe("data-driven character registry", () => {
     expect(plume.ai).toEqual({ P: 0, A: 1, B: 1, C: 1 });
     expect(getCharacterMetadata("plume")?.tier).toBe("B");
     expect(getCharacterMetadata("w")?.tier).toBe("S");
-    expect(w.mechanics).toEqual([
+    expect(w.aiSkills).toEqual([
       { definitionId: "bomb-maniac", enabled: true, parameters: {} },
       { definitionId: "w-night-queen", enabled: true, parameters: {} }
     ]);
-    expect(irene.mechanics).toEqual([{ definitionId: "sword-and-handcannon", enabled: true, parameters: {} }]);
-    expect(nian.mechanics).toEqual([
-      { definitionId: "forge-heralds-the-year", enabled: true, parameters: {} },
+    expect(irene.aiSkills).toEqual([{ definitionId: "ai-sword-and-handcannon", enabled: true, parameters: {} }]);
+    expect(nian.aiSkills).toEqual([
+      { definitionId: "ai-forge-heralds-the-year", enabled: true, parameters: {} },
       { definitionId: "copper-seal", enabled: true, parameters: {} }
     ]);
-    expect(texas.mechanics).toEqual([{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]);
-    expect(plume.mechanics).toEqual([]);
-    const formalMechanics = [...w.mechanics, ...texas.mechanics, ...irene.mechanics, ...nian.mechanics, ...plume.mechanics]
+    expect(texas.aiSkills).toEqual([{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]);
+    expect(plume.aiSkills).toEqual([]);
+    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...nian.aiSkills, ...plume.aiSkills]
       .filter((binding) => binding.enabled)
       .map((binding) => getAbilityDefinition(binding.definitionId));
     expect(formalMechanics).toHaveLength(6);
@@ -297,14 +297,15 @@ describe("data-driven character registry", () => {
   });
 
   it("strictly validates declarative mechanic bindings", () => {
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] }).success).toBe(true);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 2 } }] }).success).toBe(true);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "unknown-mechanic", enabled: true, parameters: {} }] }).success).toBe(false);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "switcheroo", enabled: true, parameters: {} }] }).success).toBe(false);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: {} }] }).success).toBe(false);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 11 } }] }).success).toBe(false);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: { unknown: true } }] }).success).toBe(false);
-    expect(CharacterDataSchema.safeParse({ ...wData, mechanics: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {}, extra: true }] }).success).toBe(false);
+    const { infoBar: _infoBar, ...bindingFixture } = wData;
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {} }] }).success).toBe(true);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 2 } }] }).success).toBe(true);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "unknown-mechanic", enabled: true, parameters: {} }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "switcheroo", enabled: true, parameters: {} }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: {} }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 11 } }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: { unknown: true } }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {}, extra: true }] }).success).toBe(false);
   });
 
   it("supports any number of bounded, uniquely identified trophy closeups", () => {

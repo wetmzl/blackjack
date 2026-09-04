@@ -6,7 +6,7 @@
   "$comment": "叙事映射固定为 player=来自高位面的策展人，opponent/AI=回应邀请的与会者，staff=执行轮盘惩罚的发牌员。与会者被实弹命中会当场死亡；策展人受罚时枪口朝向天花板，player-killed 只是兼容性标识，公开结果是与会者赢得一个愿望，隐藏结果是策展人回溯到本局以前重开，且与会者绝不知情。对话解析顺序固定为：轮盘状态 > 本轮结果特殊牌型 > Blackjack/Bust/Comparison/Push > 当前轮最新行动 > MATCH_START。一次渲染只会选择一个池。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "assets", "profile", "matchSummary", "revolverPlacement", "ai", "mechanics", "dialogue"],
+  "required": ["$schema", "assets", "profile", "matchSummary", "revolverPlacement", "ai", "aiSkills", "dialogue"],
   "properties": {
     "$schema": {
       "const": "../character.schema.json",
@@ -44,6 +44,30 @@
         "playerDefeat": { "type": "string", "minLength": 1, "description": "与会者在公开规则下获胜并可许下任意一个愿望；策展人不会死亡，隐藏时间线将被回溯。" },
         "escaped": { "type": "string", "minLength": 1, "description": "策展人中途终止本次古堡牌局。" }
       }
+    },
+    "infoBar": {
+      "type": "object",
+      "description": "该与会者绑定的单一牌桌信息栏；数值由技能底座根据当前牌局动态解析。",
+      "additionalProperties": false,
+      "required": ["sourceAbilityId", "label", "description", "value"],
+      "properties": {
+        "sourceAbilityId": { "type": "string", "minLength": 1, "description": "必须与该角色 aiSkills 中一个 enabled=true 的 AI Skill definitionId 相同。" },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "format": { "enum": ["number", "percent"], "default": "number", "description": "数值显示格式；percent 将 0–1 的小数显示为百分比。" },
+        "value": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "number" }, "value": { "$ref": "#/$defs/infoBarScalar" } } },
+            { "type": "object", "additionalProperties": false, "required": ["type", "target", "card"], "properties": { "type": { "enum": ["card", "suit"] }, "target": { "$ref": "#/$defs/infoBarActor" }, "card": { "enum": ["last-card", "first-private-card"] } } }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["format"], "properties": { "format": { "const": "percent" } } },
+          "then": { "properties": { "value": { "properties": { "type": { "const": "number" } } } } }
+        }
+      ]
     },
     "trophyGallery": {
       "type": "object",
@@ -111,7 +135,7 @@
         "C": { "type": "number", "default": 1, "description": "每手重抽噪声 Rplay 的权重；默认 1。" }
       }
     },
-    "mechanics": {
+    "aiSkills": {
       "type": "array",
       "description": "与会者绑定的声明式能力；只允许 registry 中已验证的 definitionId 和参数。",
       "items": { "$ref": "#/$defs/abilityBinding" }
@@ -124,7 +148,7 @@
         "MATCH_START", "PLAYER_HIT", "PLAYER_STAND",
         "OPPONENT_FIRST_HIT", "OPPONENT_FIRST_STAND", "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND",
         "PLAYER_BLACKJACK", "OPPONENT_BLACKJACK", "PLAYER_BUST", "OPPONENT_BUST",
-        "PLAYER_SURVIVED_TRIGGER", "OPPONENT_SURVIVED_TRIGGER",
+        "PLAYER_SURVIVED_TRIGGER", "OPPONENT_SURVIVED_TRIGGER", "PLAYER_TRIGGER_MISFIRED", "OPPONENT_TRIGGER_MISFIRED",
         "PLAYER_WIN_ROUND", "OPPONENT_WIN_ROUND", "PUSH_ROUND",
         "PLAYER_TRIGGER_READY", "OPPONENT_TRIGGER_READY", "PLAYER_TRIGGER_HIT", "OPPONENT_TRIGGER_HIT",
         "SPECIAL_TWENTY_ONE_PUSH", "SPECIAL_LOW_PUSH"
@@ -142,6 +166,8 @@
         "OPPONENT_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅与会者爆牌。" },
         "PLAYER_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "策展人朝天花板扣下扳机但未击发。" },
         "OPPONENT_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "发牌员对准与会者头部扣下扳机但未击发。" },
+        "PLAYER_TRIGGER_MISFIRED": { "$ref": "#/$defs/dialoguePool", "description": "策展人的左轮因技能干预而哑火；不同于自然空膛。" },
+        "OPPONENT_TRIGGER_MISFIRED": { "$ref": "#/$defs/dialoguePool", "description": "发牌员扣下扳机后，面向与会者的左轮因技能干预而哑火；不同于自然空膛。" },
         "PLAYER_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由策展人获胜；不含 Blackjack、爆牌和特殊牌型。" },
         "OPPONENT_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由与会者获胜；不含 Blackjack、爆牌和特殊牌型。" },
         "PUSH_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "不属于特殊 21 对 21 或低点数平局的普通平局。" },
@@ -155,6 +181,15 @@
     }
   },
   "$defs": {
+    "infoBarActor": { "enum": ["owner", "rival"] },
+    "infoBarScalar": {
+      "oneOf": [
+        { "type": "number" },
+        { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "constant" }, "value": { "type": "number" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "target"], "properties": { "type": { "enum": ["gun-bullets", "hand-total", "hand-card-count", "round-hit-count"] }, "target": { "$ref": "#/$defs/infoBarActor" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "left", "right"], "properties": { "type": { "enum": ["add", "subtract", "multiply", "min", "max"] }, "left": { "$ref": "#/$defs/infoBarScalar" }, "right": { "$ref": "#/$defs/infoBarScalar" } } }
+      ]
+    },
     "assetPath": { "type": "string", "minLength": 1, "pattern": "^/assets/" },
     "dialoguePool": {
       "type": "array",

@@ -10,6 +10,8 @@ export const SOUND_SOURCES = {
   stand: "/assets/audio/sfx/stand.ogg",
   heartbeat: "/assets/audio/sfx/heartbeat.ogg",
   dryFire: "/assets/audio/sfx/revolver-dry-fire.ogg",
+  /** Dedicated routing key; replace this asset when the final misfire SFX is available. */
+  misfire: "/assets/audio/sfx/revolver-dry-fire.ogg",
   gunshot: "/assets/audio/sfx/revolver-gunshot.ogg"
 } as const;
 
@@ -25,6 +27,7 @@ const SOUND_VOLUME: Readonly<Record<SoundCue, number>> = {
   stand: 0.76,
   heartbeat: 0.34,
   dryFire: 0.72,
+  misfire: 0.72,
   gunshot: 0.78
 };
 
@@ -193,7 +196,7 @@ export class GameAudio {
     // Decode sequentially to keep UI work responsive while ensuring the whole
     // confirm → heartbeat → revolver path is ready well before it is reached.
     void (async () => {
-      for (const cue of ["stand", "heartbeat", "dryFire", "gunshot"] as const) await this.loadBuffer(cue, context);
+      for (const cue of ["stand", "heartbeat", "dryFire", "misfire", "gunshot"] as const) await this.loadBuffer(cue, context);
     })();
   }
 

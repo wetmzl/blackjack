@@ -13,6 +13,66 @@ export function addAbilityInstance(runtime: AbilityRuntimeState, instance: Abili
   return { ...runtime, instances: [...runtime.instances, instance], sequence: Math.max(runtime.sequence, instance.createdAtSequence) };
 }
 
+export function isAbilityInstanceExpired(instance: AbilityInstance): boolean {
+  return instance.ttl?.remaining === 0;
+}
+
+interface TtlAdvanceResult {
+  readonly runtime: AbilityRuntimeState;
+  readonly cards: readonly SkillCardInstance[];
+  readonly expired: readonly AbilityInstance[];
+  readonly expiredStatuses: readonly AbilityStatus[];
+}
+
+function decrementAbilityTtl(
+  runtime: AbilityRuntimeState,
+  cards: readonly SkillCardInstance[],
+  instanceId: string,
+  type: "rounds" | "triggers",
+  registry?: AbilityRegistry
+): TtlAdvanceResult {
+  const instance = runtime.instances.find((candidate) => candidate.instanceId === instanceId);
+  if (!instance) return { runtime, cards, expired: [], expiredStatuses: [] };
+  const definition = registry?.definitionsById[instance.definitionId] ?? getAbilityDefinition(instance.definitionId);
+  if (!definition?.ttl || definition.ttl.type !== type) return { runtime, cards, expired: [], expiredStatuses: [] };
+  const current = instance.ttl ?? { type: definition.ttl.type, remaining: definition.ttl.amount };
+  if (current.type !== definition.ttl.type) throw new Error(`Ability TTL kind mismatch: ${instance.definitionId}`);
+  if (current.remaining <= 0) return { runtime, cards, expired: [], expiredStatuses: [] };
+  const ttl = { ...current, remaining: current.remaining - 1 };
+  const updated = { ...instance, ttl };
+  const expiredStatuses = ttl.remaining === 0 ? runtime.statuses.filter((status) => status.sourceInstanceId === instanceId) : [];
+  return {
+    runtime: {
+      ...runtime,
+      instances: runtime.instances.map((candidate) => candidate.instanceId === instanceId ? updated : candidate),
+      statuses: expiredStatuses.length > 0 ? runtime.statuses.filter((status) => status.sourceInstanceId !== instanceId) : runtime.statuses
+    },
+    cards: ttl.remaining === 0 ? cards.filter((card) => card.instanceId !== instanceId) : cards,
+    expired: ttl.remaining === 0 ? [updated] : [],
+    expiredStatuses
+  };
+}
+
+export function consumeAbilityTriggerTtl(runtime: AbilityRuntimeState, cards: readonly SkillCardInstance[], instanceId: string, registry?: AbilityRegistry): TtlAdvanceResult {
+  return decrementAbilityTtl(runtime, cards, instanceId, "triggers", registry);
+}
+
+/** Decrements round TTL after on-round-end has resolved, so the current round counts as one full active round. */
+export function advanceRoundAbilityTtls(runtime: AbilityRuntimeState, cards: readonly SkillCardInstance[], registry?: AbilityRegistry): TtlAdvanceResult {
+  let nextRuntime = runtime;
+  let nextCards = cards;
+  const expired: AbilityInstance[] = [];
+  const expiredStatuses: AbilityStatus[] = [];
+  for (const instance of runtime.instances) {
+    const result = decrementAbilityTtl(nextRuntime, nextCards, instance.instanceId, "rounds", registry);
+    nextRuntime = result.runtime;
+    nextCards = result.cards;
+    expired.push(...result.expired);
+    expiredStatuses.push(...result.expiredStatuses);
+  }
+  return { runtime: nextRuntime, cards: nextCards, expired, expiredStatuses };
+}
+
 export function addAbilityStatus(runtime: AbilityRuntimeState, status: AbilityStatus): AbilityRuntimeState {
   return { ...runtime, statuses: [...runtime.statuses, status], sequence: Math.max(runtime.sequence, status.createdAtSequence) };
 }
@@ -60,6 +120,7 @@ export function garbageCollectAbilityInstances(runtime: AbilityRuntimeState, car
   const cardIds = new Set(cards.map((card) => card.instanceId));
   const statusSources = new Set(runtime.statuses.map((status) => status.sourceInstanceId));
   const instances = runtime.instances.filter((instance) => {
+    if (isAbilityInstanceExpired(instance)) return statusSources.has(instance.instanceId);
     if (cardIds.has(instance.instanceId) || statusSources.has(instance.instanceId)) return true;
     const definition = registry?.definitionsById[instance.definitionId] ?? getAbilityDefinition(instance.definitionId);
     if (!definition) return true;

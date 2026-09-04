@@ -3,28 +3,36 @@ import { dealInitialHands, drawCard, reshuffleIfLow, createShoe } from "../black
 import type { Card } from "../blackjack/types";
 import { deriveRng, SeededRng } from "../rng/seeded";
 import { addBullets, createGun, pullTrigger } from "../roulette/roulette";
-import { INITIAL_SKILL_IDS, getSkillDefinition, isActiveSkill } from "../skills/definitions";
-import { drawRandomSkill, validateLoadout } from "../skills/skills";
+import { getPlayerSkillDefinition, INITIAL_PLAYER_SKILL_IDS } from "../skills/definitions";
+import { collectSkillOfferModifiers, generateSkillOffer, PLAYER_SKILL_INVENTORY_CAPACITY, skillOfferSelectionError } from "../skills/skills";
 import { decideAiAction, sampleAiNoise } from "../ai/policy";
 import { buildObservation } from "../ai/observation";
 import { decideOptimalAction } from "../ai/policy";
 import { getRoundStarter } from "../blackjack/round";
-import { createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances } from "../abilities/runtime";
+import { advanceRoundAbilityTtls, createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances, isAbilityInstanceExpired } from "../abilities/runtime";
 import { getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
-import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
+import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance, SkillOfferReason } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
 import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
-export interface CreateMatchOptions { readonly id?: string; readonly opponentId?: string; readonly aiProfile?: AiProfile; readonly equippedSkillIds?: readonly string[]; readonly opponentMechanics?: readonly AbilityBinding[]; readonly playerMechanics?: readonly AbilityBinding[]; }
-
-function normalizeEquipped(ids: readonly string[] | undefined): string[] {
-  const values = ids ? [...ids] : [...INITIAL_SKILL_IDS];
-  const result = validateLoadout(values, values);
-  if (!result.valid) throw new RangeError(`Invalid skill loadout: ${result.reason}`);
-  return [...result.equippedSkillIds];
+export interface CreateMatchOptions {
+  readonly id?: string;
+  readonly opponentId?: string;
+  readonly aiProfile?: AiProfile;
+  readonly unlockedPlayerSkillIds?: readonly string[];
+  readonly talentIds?: readonly string[];
+  readonly opponentAiSkills?: readonly AbilityBinding[];
+  /** Engine fixture hook; production AI Skills are owned by the opponent. */
+  readonly playerAiSkills?: readonly AbilityBinding[];
 }
-function skillState(state: MatchState, patch: Partial<MatchState["skills"]> = {}): MatchState["skills"] { return { ...state.skills, ...patch }; }
+
+function normalizeUnlocked(ids: readonly string[] | undefined): string[] {
+  const values = [...new Set(ids ?? INITIAL_PLAYER_SKILL_IDS)];
+  if (values.some((id) => !getPlayerSkillDefinition(id))) throw new RangeError("Unlocked Player Skill list contains an unknown definition");
+  return values;
+}
+function playerSkillState(state: MatchState, patch: Partial<MatchState["playerSkills"]> = {}): MatchState["playerSkills"] { return { ...state.playerSkills, ...patch }; }
 function participant(id: Actor, cards: readonly Card[]): ParticipantState { return { id, hand: createHand(cards), stood: false, busted: false }; }
 function append(state: MatchState, ...events: readonly GameEvent[]): MatchState { return events.length === 0 ? state : { ...state, history: [...state.history, ...events] }; }
 function makeRound(index: number, shoe: MatchState["shoe"], deckRng: SeededRng) {
@@ -36,34 +44,34 @@ function makeRound(index: number, shoe: MatchState["shoe"], deckRng: SeededRng) 
 function withRound(state: MatchState, round: RoundState, extra: Partial<MatchState> = {}): MatchState { return { ...state, ...extra, player: round.player, opponent: round.opponent, round, roundIndex: round.index }; }
 function expireLifecycle(state: MatchState, duration: "turn" | "round" | "match"): MatchState {
   const before = state.abilities.statuses;
-  const runtime = garbageCollectAbilityInstances(expireStatuses(clearCounters(state.abilities, duration), duration), state.skills.cards);
+  const runtime = garbageCollectAbilityInstances(expireStatuses(clearCounters(state.abilities, duration), duration), state.playerSkills.cards);
   const expired = before.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
   return append({ ...state, abilities: runtime }, ...expired);
 }
 function expireOwnerActionLifecycle(state: MatchState, owner: Actor): MatchState {
   const before = state.abilities.statuses;
-  const runtime = garbageCollectAbilityInstances(expireOwnerActionStatuses(state.abilities, owner), state.skills.cards);
+  const runtime = garbageCollectAbilityInstances(expireOwnerActionStatuses(state.abilities, owner), state.playerSkills.cards);
   const expired = before.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
   return append({ ...state, abilities: runtime }, ...expired);
 }
 function expireAllStatuses(state: MatchState): MatchState {
   const runtimeWithNoCounters = (["event", "turn", "round", "match"] as const)
     .reduce((runtime, scope) => clearCounters(runtime, scope), state.abilities);
-  const runtime = garbageCollectAbilityInstances({ ...runtimeWithNoCounters, statuses: [] }, state.skills.cards);
+  const runtime = garbageCollectAbilityInstances({ ...runtimeWithNoCounters, statuses: [] }, state.playerSkills.cards);
   const expired = state.abilities.statuses.map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
   return append({ ...state, abilities: runtime }, ...expired);
 }
 function setPhase(state: MatchState, phase: RoundPhase, currentActor: Actor | null): MatchState {
   const changedTurn = state.round.phase === "turns" && phase === "turns" && currentActor !== state.round.currentActor;
   const lifecycle = changedTurn ? expireLifecycle(state, "turn") : state;
-  return withRound({ ...lifecycle, abilities: garbageCollectAbilityInstances(lifecycle.abilities, lifecycle.skills.cards) }, { ...lifecycle.round, phase, currentActor });
+  return withRound({ ...lifecycle, abilities: garbageCollectAbilityInstances(lifecycle.abilities, lifecycle.playerSkills.cards) }, { ...lifecycle.round, phase, currentActor });
 }
 
-export function abilityWorld(state: MatchState): AbilityWorld { return { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.skills.cards, statuses: state.abilities.statuses, advice: state.skills.advice }; }
+export function abilityWorld(state: MatchState): AbilityWorld { return { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, statuses: state.abilities.statuses, advice: state.playerSkills.advice }; }
 export function commitAbilityWorld(state: MatchState, world: AbilityWorld): MatchState {
   const player = { ...state.player, hand: world.hands.player };
   const opponent = { ...state.opponent, hand: world.hands.opponent };
-  return { ...state, player, opponent, round: { ...state.round, player, opponent }, shoe: world.shoe, roulette: world.guns, skills: skillState(state, { cards: [...world.cards], advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
+  return { ...state, player, opponent, round: { ...state.round, player, opponent }, shoe: world.shoe, roulette: world.guns, playerSkills: playerSkillState(state, { cards: [...world.cards], advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
 }
 
 function changedHandActors(before: AbilityWorld, after: AbilityWorld): Actor[] {
@@ -77,7 +85,7 @@ function invalidateBustLimits(state: MatchState, actors: readonly Actor[]): Matc
   const opponent = state.opponent.bustLimit === undefined ? state.opponent : { ...state.opponent, bustLimit: undefined };
   return withRound({ ...state, player, opponent }, { ...state.round, player, opponent });
 }
-function roundHitCounts(state: MatchState): Readonly<Record<Actor, number>> {
+export function getRoundHitCounts(state: MatchState): Readonly<Record<Actor, number>> {
   let start = -1;
   state.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") start = index; });
   const events = start >= 0 ? state.history.slice(start + 1) : state.history;
@@ -94,16 +102,18 @@ function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourc
 
 function drawSkillCards(state: MatchState, owner: Actor, amount: number, world: AbilityWorld, rng: SeededRng): readonly SkillCardInstance[] {
   if (owner !== "player") return [];
-  const pool = state.skills.equippedSkillIds.filter(isActiveSkill);
+  const pool = state.playerSkills.unlockedDefinitionIds.filter((id) => getPlayerSkillDefinition(id)?.category === "active" && getPlayerSkillDefinition(id)?.drop.enabled);
+  const count = Math.min(Math.max(0, amount), PLAYER_SKILL_INVENTORY_CAPACITY - world.cards.length);
+  if (pool.length === 0 || count === 0) return [];
   const result: SkillCardInstance[] = [];
   const used = new Set([...state.abilities.instances.map((instance) => instance.instanceId), ...world.cards.map((card) => card.instanceId)]);
   let serial = state.abilities.sequence;
-  for (let index = 0; index < amount; index += 1) {
-    const drawn = drawRandomSkill(rng, pool);
+  for (let index = 0; index < count; index += 1) {
+    const definitionId = pool[rng.nextInt(pool.length)]!;
     let instanceId = `ability-card-${++serial}`;
     while (used.has(instanceId)) instanceId = `ability-card-${++serial}`;
     used.add(instanceId);
-    result.push({ kind: "player-skill", definitionId: drawn.skill.id, owner: "player", instanceId });
+    result.push({ kind: "player-skill", definitionId, owner: "player", instanceId });
   }
   return result;
 }
@@ -117,12 +127,12 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
   try {
     const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, directInstanceId, ...abilityServices(state) });
     let next = commitAbilityWorld(state, result.world);
-    const cards = result.world.cards.filter((card) => !state.skills.cards.some((old) => old.instanceId === card.instanceId));
+    const cards = result.world.cards.filter((card) => !state.playerSkills.cards.some((old) => old.instanceId === card.instanceId));
     const firstSequence = Math.max(state.abilities.sequence, result.runtime.sequence);
     const instances: AbilityInstance[] = cards.map((card, index) => ({ ...card, createdAtSequence: firstSequence + index + 1, parameters: {} }));
     next = { ...next, abilities: { ...next.abilities, ...result.runtime, instances: [...result.runtime.instances, ...instances], sequence: Math.max(result.runtime.sequence, firstSequence + instances.length) } };
     next = { ...next, abilities: clearEventCounters(next.abilities, event.sourceEventId) };
-    next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.skills.cards) };
+    next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.playerSkills.cards) };
     return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, failed: false };
   } catch (error) {
     // A failed ability event is atomic. The caller may continue with the
@@ -132,17 +142,7 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
   }
 }
 
-function gainSkills(state: MatchState, amount: number): MatchState {
-  const active = state.skills.equippedSkillIds.filter(isActiveSkill);
-  if (active.length === 0 || amount <= 0) return state;
-  const rng = SeededRng.fromSnapshot(state.rng.loot);
-  const result = drawSkillCards(state, "player", amount, abilityWorld(state), rng);
-  const firstSequence = state.abilities.sequence;
-  const instances = result.map((card, index) => ({ ...card, createdAtSequence: firstSequence + index + 1, parameters: {} }));
-  return append({ ...state, skills: skillState(state, { cards: [...state.skills.cards, ...result] }), abilities: { ...state.abilities, instances: [...state.abilities.instances, ...instances], sequence: firstSequence + instances.length }, rng: { ...state.rng, loot: rng.snapshot() } }, ...result.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId })));
-}
-
-function resolveComparison(state: MatchState): MatchState { const p = handValue(state.player.hand); const o = handValue(state.opponent.hand); const winner: Actor | null = p === o ? null : p > o ? "player" : "opponent"; return resolveRound(state, { winner, reason: winner === null ? "push" : "comparison", penaltyTarget: winner === null ? null : winner === "player" ? "opponent" : "player", bulletsAdded: winner === "player" ? 1 : winner === "opponent" ? 1 : 0, playerSkillReward: winner === "player" ? 1 : 0 }); }
+function resolveComparison(state: MatchState): MatchState { const p = handValue(state.player.hand); const o = handValue(state.opponent.hand); const winner: Actor | null = p === o ? null : p > o ? "player" : "opponent"; return resolveRound(state, { winner, reason: winner === null ? "push" : "comparison", penaltyTarget: winner === null ? null : winner === "player" ? "opponent" : "player", bulletsAdded: winner === null ? 0 : 1 }); }
 
 export function resolveRound(state: MatchState, outcome: RoundOutcome): MatchState {
   let next = runAbilityEvent(state, { trigger: "before-round-resolution", sourceEventId: `round-resolution:${state.roundIndex}:${state.history.length}`, eventActor: outcome.winner ?? undefined, roundOutcome: outcome }, {}).state;
@@ -157,16 +157,15 @@ export function resolveRound(state: MatchState, outcome: RoundOutcome): MatchSta
   next = commitAbilityWorld(loaded.state, { ...abilityWorld(loaded.state), guns: { ...loaded.state.roulette, [finalPending.actor]: gun } });
   next = append(next, { type: "ROUND_RESOLVED", outcome: { ...outcome, bulletsAdded: finalPending.amount } }, { type: "BULLET_ADDED", actor: finalPending.actor, amount: finalPending.amount });
   const afterLoad = runAbilityEvent(next, { trigger: "after-bullet-load", sourceEventId: `after:${finalPending.id}`, eventActor: finalPending.actor, roundOutcome: outcome }, {}).state;
-  if (outcome.playerSkillReward > 0) return gainSkills(withRound(afterLoad, { ...afterLoad.round, phase: "round-reveal", currentActor: null, outcome: { ...outcome, bulletsAdded: finalPending.amount } }), outcome.playerSkillReward);
   return withRound(afterLoad, { ...afterLoad.round, phase: "round-reveal", currentActor: null, outcome: { ...outcome, bulletsAdded: finalPending.amount } });
 }
 
-function resolveBust(state: MatchState, actor: Actor): MatchState { const winner: Actor = actor === "player" ? "opponent" : "player"; return resolveRound(state, { winner, reason: "bust", penaltyTarget: actor, bulletsAdded: 1, playerSkillReward: winner === "player" ? 1 : 0 }); }
+function resolveBust(state: MatchState, actor: Actor): MatchState { const winner: Actor = actor === "player" ? "opponent" : "player"; return resolveRound(state, { winner, reason: "bust", penaltyTarget: actor, bulletsAdded: 1 }); }
 
 function drawFor(state: MatchState, actor: Actor): MatchState {
   const base = drawCard(state.shoe);
   const pending: PendingDraw = { id: `draw:${state.roundIndex}:${state.history.length}`, actor, card: base.card };
-  const prepared = runAbilityEvent({ ...state, skills: actor === "player" ? skillState(state, { advice: null }) : state.skills }, { trigger: "before-card-draw", sourceEventId: pending.id, eventActor: actor }, { draw: pending });
+  const prepared = runAbilityEvent({ ...state, playerSkills: actor === "player" ? playerSkillState(state, { advice: null }) : state.playerSkills }, { trigger: "before-card-draw", sourceEventId: pending.id, eventActor: actor }, { draw: pending });
   const replacement = prepared.pendingDraw?.replacement;
   const card = replacement ?? base.card;
   const shoe = replacement ? prepared.state.shoe : base.shoe;
@@ -187,25 +186,75 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
 }
 
 function standFor(state: MatchState, actor: Actor): MatchState {
-  let next = append(withRound({ ...state, skills: actor === "player" ? skillState(state, { advice: null }) : state.skills }, { ...state.round, [actor]: { ...state[actor], stood: true } } as RoundState), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
+  let next = append(withRound({ ...state, playerSkills: actor === "player" ? playerSkillState(state, { advice: null }) : state.playerSkills }, { ...state.round, [actor]: { ...state[actor], stood: true } } as RoundState), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
   next = runAbilityEvent(next, { trigger: "after-stand", sourceEventId: `stand:${state.roundIndex}:${state.history.length}`, eventActor: actor }, {}).state;
   next = expireOwnerActionLifecycle(next, actor);
   const other = actor === "player" ? "opponent" : "player";
   return next[other].stood ? resolveComparison(next) : setPhase(next, "turns", other);
 }
 
+function offerReasonForOutcome(outcome: RoundOutcome | null): SkillOfferReason {
+  if (!outcome) return "opening";
+  if (outcome.winner === null) return "push";
+  if (outcome.winner !== "player") return "loss";
+  return outcome.reason === "blackjack" ? "blackjack-win" : "normal-win";
+}
+
+function activeOfferDefinitions(state: MatchState) {
+  return state.abilities.instances
+    .filter((instance) => !isAbilityInstanceExpired(instance))
+    .map((instance) => getAbilityDefinition(instance.definitionId))
+    .filter((definition): definition is NonNullable<typeof definition> => Boolean(definition));
+}
+
+function createOffer(state: MatchState, reason: SkillOfferReason): MatchState {
+  const modifiers = collectSkillOfferModifiers(activeOfferDefinitions(state));
+  const rng = SeededRng.fromSnapshot(state.rng.loot);
+  const result = generateSkillOffer(
+    rng, reason, state.playerSkills.unlockedDefinitionIds,
+    state.playerSkills.cards.map((card) => card.definitionId), modifiers.weights, modifiers.rules,
+    `skill-offer-${state.roundIndex}-${state.history.length}`
+  );
+  return append({
+    ...state,
+    playerSkills: playerSkillState(state, { offer: result.offer }),
+    rng: { ...state.rng, loot: result.rng }
+  }, { type: "SKILL_OFFER_CREATED", offerId: result.offer.id, reason, candidateDefinitionIds: result.offer.candidateDefinitionIds, maxSelections: result.offer.maxSelections });
+}
+
 function startNextRound(state: MatchState): MatchState {
-  const index = state.roundIndex + 1; const deck = SeededRng.fromSnapshot(state.rng.deck); const nextRound = makeRound(index, state.shoe, deck);
-  const round: RoundState = { index, phase: "initial-blackjack-check", starter: nextRound.starter, currentActor: null, player: nextRound.player, opponent: nextRound.opponent, outcome: null };
-  let next = runAbilityEvent(state, { trigger: "on-round-end", sourceEventId: `round-end:${state.roundIndex}`, roundOutcome: state.round.outcome ?? undefined }, {}).state;
-  const runtime = garbageCollectAbilityInstances(expireStatuses(expireStatuses(clearCounters(next.abilities, "round"), "round"), "until-owner-action"), next.skills.cards);
+  const previousOutcome = state.round.outcome;
+  let next = runAbilityEvent(state, { trigger: "on-round-end", sourceEventId: `round-end:${state.roundIndex}`, roundOutcome: previousOutcome ?? undefined }, {}).state;
+  const ttl = advanceRoundAbilityTtls(next.abilities, next.playerSkills.cards);
+  next = append({ ...next, abilities: ttl.runtime, playerSkills: playerSkillState(next, { cards: ttl.cards }) },
+    ...ttl.expiredStatuses.map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const })),
+    ...ttl.expired.map((instance) => ({ type: "ABILITY_EXPIRED" as const, instanceId: instance.instanceId, definitionId: instance.definitionId, owner: instance.owner, reason: "rounds" as const })));
+  const runtime = garbageCollectAbilityInstances(expireStatuses(expireStatuses(clearCounters(next.abilities, "round"), "round"), "until-owner-action"), next.playerSkills.cards);
   const expired = next.abilities.statuses.filter((status) => !runtime.statuses.includes(status)).map((status) => ({ type: "STATUS_REMOVED" as const, statusDefinitionId: status.statusDefinitionId, owner: status.owner, reason: "expired" as const }));
+  const index = state.roundIndex + 1;
+  const player = participant("player", []);
+  const opponent = participant("opponent", []);
+  const round: RoundState = { index, phase: "skill-offer", starter: getRoundStarter(index), currentActor: null, player, opponent, outcome: null };
   const ai = SeededRng.fromSnapshot(next.rng.ai);
   const playNoise = sampleAiNoise(ai);
-  next = withRound({ ...next, shoe: nextRound.shoe, abilities: runtime, skills: skillState(next, { advice: null }), rng: { ...next.rng, deck: nextRound.deckRng.snapshot(), ai: ai.snapshot() }, aiNoise: { ...next.aiNoise, play: playNoise } }, round);
-  const dealt = append(next, ...expired, ...nextRound.events);
-  const opened = broadcastHandChanges(dealt, ["player", "opponent"], `initial-hand:${index}`);
-  return resolveInitialBlackjack(opened);
+  next = withRound({
+    ...next, abilities: runtime, playerSkills: playerSkillState(next, { advice: null, offer: null }),
+    rng: { ...next.rng, ai: ai.snapshot() }, aiNoise: { ...next.aiNoise, play: playNoise }
+  }, round);
+  return createOffer(append(next, ...expired), offerReasonForOutcome(previousOutcome));
+}
+
+function dealCurrentRound(state: MatchState): MatchState {
+  const deck = SeededRng.fromSnapshot(state.rng.deck);
+  const dealt = makeRound(state.roundIndex, state.shoe, deck);
+  const round: RoundState = {
+    index: state.roundIndex, phase: "initial-blackjack-check", starter: dealt.starter, currentActor: null,
+    player: dealt.player, opponent: dealt.opponent, outcome: null
+  };
+  let next = withRound({ ...state, shoe: dealt.shoe, rng: { ...state.rng, deck: dealt.deckRng.snapshot() } }, round);
+  if (state.roundIndex === 0) next = runAbilityEvent(next, { trigger: "on-match-created", sourceEventId: `match-created:${state.id}` }, {}).state;
+  next = append(next, ...dealt.events);
+  return resolveInitialBlackjack(broadcastHandChanges(next, ["player", "opponent"], `initial-hand:${state.roundIndex}`));
 }
 function resolveInitialBlackjack(state: MatchState): MatchState {
   const p = isBlackjack(state.player.hand); const o = isBlackjack(state.opponent.hand);
@@ -213,9 +262,9 @@ function resolveInitialBlackjack(state: MatchState): MatchState {
   if (p || o) {
     if (p) next = append(next, { type: "BLACKJACK", actor: "player" });
     if (o) next = append(next, { type: "BLACKJACK", actor: "opponent" });
-    if (p && o) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 });
+    if (p && o) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 });
     const winner: Actor = p ? "player" : "opponent";
-    return resolveRound(next, { winner, reason: "blackjack", penaltyTarget: winner === "player" ? "opponent" : "player", bulletsAdded: 2, playerSkillReward: winner === "player" ? 2 : 0 });
+    return resolveRound(next, { winner, reason: "blackjack", penaltyTarget: winner === "player" ? "opponent" : "player", bulletsAdded: 2 });
   }
   // Initial ability-created 21s are not natural Blackjack. Enter the normal
   // turn pipeline so the shared normalization marks them stood and hands the
@@ -230,10 +279,13 @@ function resolveInitialBlackjack(state: MatchState): MatchState {
 
 function triggerFor(state: MatchState, actor: Actor): MatchState {
   const pending: PendingTrigger = { id: `trigger:${state.roundIndex}:${state.history.length}`, actor };
-  const prepared = runAbilityEvent(state, { trigger: "before-trigger-pull", sourceEventId: pending.id, eventActor: actor, roundHitCounts: roundHitCounts(state), roundOutcome: state.round.outcome ?? undefined }, { trigger: pending });
+  const prepared = runAbilityEvent(state, { trigger: "before-trigger-pull", sourceEventId: pending.id, eventActor: actor, roundHitCounts: getRoundHitCounts(state), roundOutcome: state.round.outcome ?? undefined }, { trigger: pending });
   if (prepared.pendingTrigger?.cancelled) return startNextRound(prepared.state);
   const trigger = pullTrigger(prepared.state.roulette[actor], SeededRng.fromSnapshot(prepared.state.rng.roulette), prepared.pendingTrigger?.misfireChance ?? 0);
-  let next = append(withRound({ ...prepared.state, rng: { ...prepared.state.rng, roulette: trigger.rng } }, { ...prepared.state.round, phase: "roulette-result", currentActor: null }), { type: "TRIGGER_PULLED", actor, probability: trigger.result.probability, fired: trigger.result.fired });
+  let next = append(withRound({ ...prepared.state, rng: { ...prepared.state.rng, roulette: trigger.rng } }, { ...prepared.state.round, phase: "roulette-result", currentActor: null }), {
+    type: "TRIGGER_PULLED", actor, probability: trigger.result.probability, baseProbability: trigger.result.baseProbability,
+    misfireChance: trigger.result.misfireChance, result: trigger.result.result, fired: trigger.result.fired
+  });
   next = runAbilityEvent(next, { trigger: "after-trigger-result", sourceEventId: `after:${pending.id}`, eventActor: actor, roundOutcome: state.round.outcome ?? undefined }, {}).state;
   if (!trigger.result.fired) return append(next, { type: "TRIGGER_SURVIVED", actor });
   const winner: Actor = actor === "player" ? "opponent" : "player"; const reason = actor === "player" ? "player-killed" : "opponent-killed"; const outcome: MatchOutcome = { winner, reason };
@@ -250,7 +302,7 @@ export function normalizeAbilityHands(state: MatchState): MatchState {
     if (isBust(next[actor].hand)) {
       if (next[actor].bustLimit === undefined) {
         const pendingBust: PendingBustCheck = { id: `bust:${next.roundIndex}:${next.history.length}:${actor}`, actor, limit: 21 };
-        const checked = runAbilityEvent(next, { trigger: "before-bust-check", sourceEventId: pendingBust.id, eventActor: actor, roundHitCounts: roundHitCounts(next) }, { bust: pendingBust });
+        const checked = runAbilityEvent(next, { trigger: "before-bust-check", sourceEventId: pendingBust.id, eventActor: actor, roundHitCounts: getRoundHitCounts(next) }, { bust: pendingBust });
         next = checked.state;
         const limit = checked.pendingBust?.limit ?? 21;
         if (handValue(next[actor].hand) <= limit && !next[actor].busted) {
@@ -270,7 +322,7 @@ export function normalizeAbilityHands(state: MatchState): MatchState {
       next = append(next, { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
     }
   }
-  if (busts.length > 1) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 });
+  if (busts.length > 1) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 });
   if (busts.length === 1) return resolveBust(next, busts[0]!);
   if (next.player.stood && next.opponent.stood) return resolveComparison(next);
   return next;
@@ -289,7 +341,7 @@ function play(state: MatchState, instanceId: string): MatchState {
     let next = commitAbilityWorld(state, result.world);
     next = invalidateBustLimits(next, handChanges);
     next = { ...next, abilities: clearEventCounters({ ...result.runtime, statuses: result.world.statuses }, `ability:${instanceId}`) };
-    next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.skills.cards) };
+    next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.playerSkills.cards) };
     next = append(next, ...result.events as GameEvent[]);
     // Broadcast only after the direct ability has successfully resolved so
     // observers (for example Copper Seal) cannot block the first card.
@@ -304,30 +356,108 @@ function play(state: MatchState, instanceId: string): MatchState {
   } catch { return state; }
 }
 
+function grantOfferSelections(state: MatchState, definitionIds: readonly string[]): MatchState {
+  if (definitionIds.length === 0) return state;
+  if (new Set(definitionIds).size !== definitionIds.length) return state;
+  if (state.playerSkills.cards.length + definitionIds.length > PLAYER_SKILL_INVENTORY_CAPACITY) return state;
+  let runtime = state.abilities;
+  const cards: SkillCardInstance[] = [];
+  for (const definitionId of definitionIds) {
+    const definition = getPlayerSkillDefinition(definitionId);
+    if (!definition) return state;
+    if (definition.category === "passive" && !definition.stackable && [...state.playerSkills.cards, ...cards].some((card) => card.definitionId === definitionId)) return state;
+    const sequence = runtime.sequence + 1;
+    const instanceId = `ability-player-card-${sequence}`;
+    const instance = instantiateAbility(
+      validateAbilityBinding({ definitionId, enabled: true, parameters: {} }),
+      "player", instanceId, sequence, undefined, "player-skill"
+    );
+    runtime = addAbilityInstance(runtime, instance);
+    cards.push({ kind: "player-skill", definitionId, owner: "player", instanceId });
+  }
+  return append({
+    ...state,
+    playerSkills: playerSkillState(state, { cards: [...state.playerSkills.cards, ...cards] }),
+    abilities: runtime
+  }, ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId })));
+}
+
+export function getSkillOfferSelectionError(state: MatchState, definitionId: string) {
+  const offer = state.playerSkills.offer;
+  if (!offer || !offer.candidateDefinitionIds.includes(definitionId)) return null;
+  return skillOfferSelectionError(offer, state.playerSkills.cards.length, definitionId);
+}
+
+function toggleSkillOfferSelection(state: MatchState, definitionId: string): MatchState {
+  const offer = state.playerSkills.offer;
+  if (state.round.phase !== "skill-offer" || !offer || !offer.candidateDefinitionIds.includes(definitionId)) return state;
+  const selected = offer.selectedDefinitionIds.includes(definitionId)
+    ? offer.selectedDefinitionIds.filter((id) => id !== definitionId)
+    : skillOfferSelectionError(offer, state.playerSkills.cards.length, definitionId)
+      ? offer.selectedDefinitionIds
+      : [...offer.selectedDefinitionIds, definitionId];
+  if (selected === offer.selectedDefinitionIds) return state;
+  const nextOffer = { ...offer, selectedDefinitionIds: selected };
+  return append({ ...state, playerSkills: playerSkillState(state, { offer: nextOffer }) }, {
+    type: "SKILL_OFFER_SELECTION_CHANGED", offerId: offer.id, selectedDefinitionIds: selected
+  });
+}
+
+function resolveSkillOffer(state: MatchState, skipped: boolean): MatchState {
+  const offer = state.playerSkills.offer;
+  if (state.round.phase !== "skill-offer" || !offer) return state;
+  if (!skipped && offer.selectedDefinitionIds.length === 0) return state;
+  const selected = skipped ? [] : offer.selectedDefinitionIds;
+  if (selected.length > offer.maxSelections || state.playerSkills.cards.length + selected.length > PLAYER_SKILL_INVENTORY_CAPACITY) return state;
+  if (selected.some((id) => !offer.candidateDefinitionIds.includes(id))) return state;
+  let next = grantOfferSelections(state, selected);
+  if (next === state && selected.length > 0) return state;
+  next = append({ ...next, playerSkills: playerSkillState(next, { offer: null }) }, {
+    type: "SKILL_OFFER_RESOLVED", offerId: offer.id, selectedDefinitionIds: selected, skipped
+  });
+  return dealCurrentRound(next);
+}
+
 export function createMatch(seed: string, options: CreateMatchOptions = {}): MatchState {
-  const root = deriveRng(seed, "root"); const deck = root.derive("deck"); const roulette = root.derive("roulette"); const ai = root.derive("ai"); const loot = root.derive("loot"); const dialogue = root.derive("dialogue"); const ability = root.derive("ability"); const initial = makeRound(0, createShoe(deck), deck); const equipped = normalizeEquipped(options.equippedSkillIds); const aiNoise = { match: sampleAiNoise(ai), play: sampleAiNoise(ai) };
+  const root = deriveRng(seed, "root"); const deck = root.derive("deck"); const roulette = root.derive("roulette"); const ai = root.derive("ai"); const loot = root.derive("loot"); const dialogue = root.derive("dialogue"); const ability = root.derive("ability"); const shoe = createShoe(deck); const unlocked = normalizeUnlocked(options.unlockedPlayerSkillIds); const aiNoise = { match: sampleAiNoise(ai), play: sampleAiNoise(ai) };
   let runtime = createAbilityRuntime(ability.snapshot());
   let instanceSerial = 0;
-  for (const id of equipped) { const skill = getSkillDefinition(id); if (skill?.category === "passive") runtime = addAbilityInstance(runtime, instantiateAbility(validateAbilityBinding({ definitionId: id, enabled: true, parameters: {} }), "player", `ability-player-${id}`, ++instanceSerial, undefined, "player-skill")); }
-  for (const [owner, bindings] of [["player", options.playerMechanics ?? []], ["opponent", options.opponentMechanics ?? []]] as const) {
+  const talentIds = [...new Set(options.talentIds ?? [])];
+  for (const id of talentIds) {
+    const definition = getAbilityDefinition(id);
+    if (!definition || !supportsAbilitySourceKind(definition, "talent")) throw new RangeError(`Unknown Talent definition: ${id}`);
+    runtime = addAbilityInstance(runtime, instantiateAbility(validateAbilityBinding({ definitionId: id, enabled: true, parameters: {} }), "player", `ability-talent-${id}`, ++instanceSerial, undefined, "talent"));
+  }
+  for (const [owner, bindings] of [["player", options.playerAiSkills ?? []], ["opponent", options.opponentAiSkills ?? []]] as const) {
     for (const binding of bindings) {
       const valid = validateAbilityBinding(binding);
       const definition = getAbilityDefinition(valid.definitionId);
-      if (!definition || !supportsAbilitySourceKind(definition, "character-mechanic")) throw new RangeError(`Match mechanic must reference a character-mechanic definition: ${valid.definitionId}`);
-      if (valid.enabled) runtime = addAbilityInstance(runtime, instantiateAbility(valid, owner, `ability-${owner}-${valid.definitionId}-${++instanceSerial}`, instanceSerial, undefined, "character-mechanic"));
+      if (!definition || !supportsAbilitySourceKind(definition, "ai-skill")) throw new RangeError(`AI Skill binding must reference an AI Skill definition: ${valid.definitionId}`);
+      if (valid.enabled) runtime = addAbilityInstance(runtime, instantiateAbility(valid, owner, `ability-${owner}-${valid.definitionId}-${++instanceSerial}`, instanceSerial, undefined, "ai-skill"));
     }
   }
-  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player: initial.player, opponent: initial.opponent, shoe: initial.shoe, roulette: { player: createGun(), opponent: createGun() }, skills: { equippedSkillIds: equipped, cards: [], advice: null }, abilities: runtime, round: { index: 0, phase: "initial-blackjack-check", starter: initial.starter, currentActor: null, player: initial.player, opponent: initial.opponent, outcome: null }, history: initial.events, rng: { deck: initial.deckRng.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
-  const opened = gainSkills(base, 1); const created = runAbilityEvent(opened, { trigger: "on-match-created", sourceEventId: `match-created:${opened.id}` }, {}).state;
-  const dealt = broadcastHandChanges(created, ["player", "opponent"], "initial-hand:0");
-  return resolveInitialBlackjack(dealt);
+  const player = participant("player", []);
+  const opponent = participant("opponent", []);
+  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player, opponent, shoe, roulette: { player: createGun(), opponent: createGun() }, playerSkills: { unlockedDefinitionIds: unlocked, cards: [], offer: null, advice: null }, talentIds, abilities: runtime, round: { index: 0, phase: "skill-offer", starter: getRoundStarter(0), currentActor: null, player, opponent, outcome: null }, history: [], rng: { deck: deck.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
+  return createOffer(base, "opening");
 }
 
 export function getLegalActions(state: MatchState): Action[] {
   if (state.scene !== "match") return []; if (state.status === "finished") return state.view === "table" && state.round.phase === "roulette-result" ? [{ type: "ACK_TRIGGER_RESULT" }] : state.view === "match-summary" ? [{ type: "ACK_MATCH_RESULT" }] : [];
-  const actions: Action[] = [{ type: "ESCAPE_MATCH" }]; if (state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood && !state.player.busted) actions.push({ type: "PLAYER_HIT" }, { type: "PLAYER_STAND" }); if (state.round.phase === "turns" && state.round.currentActor === "opponent") actions.push({ type: "AI_TURN" }); if (state.round.phase === "round-reveal") actions.push({ type: "ACK_ROUND_RESULT" }); if (state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger") actions.push({ type: "TRIGGER_ROULETTE" }); if (state.round.phase === "roulette-result") actions.push({ type: "ACK_TRIGGER_RESULT" });
+  const actions: Action[] = [{ type: "ESCAPE_MATCH" }];
+  if (state.round.phase === "skill-offer" && state.playerSkills.offer) {
+    for (const definitionId of state.playerSkills.offer.candidateDefinitionIds) {
+      const selected = state.playerSkills.offer.selectedDefinitionIds.includes(definitionId);
+      if (selected || !skillOfferSelectionError(state.playerSkills.offer, state.playerSkills.cards.length, definitionId)) {
+        actions.push({ type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId });
+      }
+    }
+    if (state.playerSkills.offer.selectedDefinitionIds.length > 0) actions.push({ type: "CONFIRM_SKILL_OFFER" });
+    actions.push({ type: "SKIP_SKILL_OFFER" });
+  }
+  if (state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood && !state.player.busted) actions.push({ type: "PLAYER_HIT" }, { type: "PLAYER_STAND" }); if (state.round.phase === "turns" && state.round.currentActor === "opponent") actions.push({ type: "AI_TURN" }); if (state.round.phase === "round-reveal") actions.push({ type: "ACK_ROUND_RESULT" }); if (state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger") actions.push({ type: "TRIGGER_ROULETTE" }); if (state.round.phase === "roulette-result") actions.push({ type: "ACK_TRIGGER_RESULT" });
   const window: "owner-turn" | "owner-roulette-reaction" | null = state.round.phase === "roulette-reaction" ? "owner-roulette-reaction" : state.round.phase === "turns" ? "owner-turn" : null;
-  if (window) for (const instance of state.abilities.instances) { const definition = getAbilityDefinition(instance.definitionId); const expectedOwner = window === "owner-roulette-reaction" ? state.round.outcome?.penaltyTarget : state.round.currentActor; if (definition?.activation.type === "action" && instance.owner === expectedOwner && (definition.activation.consume === "none" || state.skills.cards.some((card) => card.instanceId === instance.instanceId)) && canPlayAbility({ world: abilityWorld(state), runtime: state.abilities, instanceId: instance.instanceId, owner: instance.owner, window, ...abilityServices(state) })) actions.push({ type: "PLAY_ABILITY", instanceId: instance.instanceId }); }
+  if (window) for (const instance of state.abilities.instances) { const definition = getAbilityDefinition(instance.definitionId); const expectedOwner = window === "owner-roulette-reaction" ? state.round.outcome?.penaltyTarget : state.round.currentActor; if (definition?.activation.type === "action" && instance.owner === expectedOwner && (definition.activation.consume === "none" || state.playerSkills.cards.some((card) => card.instanceId === instance.instanceId)) && canPlayAbility({ world: abilityWorld(state), runtime: state.abilities, instanceId: instance.instanceId, owner: instance.owner, window, ...abilityServices(state) })) actions.push({ type: "PLAY_ABILITY", instanceId: instance.instanceId }); }
   return actions;
 }
 
@@ -338,6 +468,9 @@ export function gameReducer(state: MatchState, action: Action): MatchState {
   if (action.type === "ACK_TRIGGER_RESULT") { if (state.round.phase !== "roulette-result") return state; const next = append(state, { type: "TRIGGER_RESULT_ACKNOWLEDGED" }); return state.status === "finished" ? { ...next, view: "match-summary" } : startNextRound(next); }
   if (state.status !== "active" || state.scene !== "match") return state;
   switch (action.type) {
+    case "TOGGLE_SKILL_OFFER_SELECTION": return toggleSkillOfferSelection(state, action.definitionId);
+    case "CONFIRM_SKILL_OFFER": return resolveSkillOffer(state, false);
+    case "SKIP_SKILL_OFFER": return resolveSkillOffer(state, true);
     case "PLAYER_HIT": return state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood ? drawFor(state, "player") : state;
     case "PLAYER_STAND": { const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "player" && !checked.player.stood ? standFor(checked, "player") : checked; }
     case "AI_HIT": case "OPPONENT_HIT": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? drawFor(state, "opponent") : state;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createCard } from "../core/blackjack/card";
-import { createMatch } from "../core/match/reducer";
+import { createMatch, gameReducer } from "../core/match/reducer";
 import type { Card } from "../core/blackjack/types";
 import type { GameEvent, MatchState, RoundOutcome, RoundPhase } from "../core/match/types";
 import { DIALOGUE_EVENT_CODES } from "./types";
@@ -10,7 +10,7 @@ const card = (rank: Card["rank"], suit: Card["suit"] = "spades") => createCard(s
 
 function findMatch(predicate: (state: MatchState) => boolean): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
-    const state = createMatch(`dialogue-state-${index}`);
+    const state = gameReducer(createMatch(`dialogue-state-${index}`), { type: "SKIP_SKILL_OFFER" });
     if (predicate(state)) return state;
   }
   throw new Error("No dialogue fixture found");
@@ -45,12 +45,16 @@ function rouletteState(phase: "roulette-reaction" | "roulette-trigger"): MatchSt
   };
 }
 
-function triggerState(actor: "player" | "opponent", fired: boolean): MatchState {
+function triggerState(actor: "player" | "opponent", result: "fired" | "empty-chamber" | "misfire"): MatchState {
   const base = turnsMatch();
   return {
     ...base,
     round: { ...base.round, phase: "roulette-result" },
-    history: [...base.history, { type: "TRIGGER_PULLED", actor, probability: 0.5, fired }]
+    history: [...base.history, {
+      type: "TRIGGER_PULLED", actor, probability: result === "fired" ? 1 : 0,
+      baseProbability: result === "misfire" ? 0.5 : result === "fired" ? 1 : 0,
+      misfireChance: result === "misfire" ? 0.5 : 0, result, fired: result === "fired"
+    }]
   };
 }
 
@@ -58,8 +62,7 @@ const comparison = (winner: "player" | "opponent"): RoundOutcome => ({
   winner,
   reason: "comparison",
   penaltyTarget: winner === "player" ? "opponent" : "player",
-  bulletsAdded: 1,
-  playerSkillReward: winner === "player" ? 1 : 0
+  bulletsAdded: 1
 });
 
 describe("finite dialogue state resolver", () => {
@@ -74,7 +77,7 @@ describe("finite dialogue state resolver", () => {
     const bothTwentyOne = reveal(
       [card("2"), card("4"), card("5"), card("10")],
       [card("A", "hearts"), card("K", "hearts")],
-      { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 }
+      { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0}
     );
     const smallTwentyOneVersusTwenty = reveal(
       [card("2"), card("4"), card("5"), card("10")],
@@ -89,7 +92,7 @@ describe("finite dialogue state resolver", () => {
     const playerBust = reveal(
       [card("10"), card("9"), card("5")],
       [card("10", "hearts"), card("8", "hearts")],
-      { winner: "opponent", reason: "bust", penaltyTarget: "player", bulletsAdded: 1, playerSkillReward: 0 }
+      { winner: "opponent", reason: "bust", penaltyTarget: "player", bulletsAdded: 1}
     );
     const ordinaryWin = reveal([card("10"), card("8")], [card("10", "hearts"), card("7", "hearts")], comparison("player"));
     expect(resolveDialogueState(playerBust).event).toBe("PLAYER_BUST");
@@ -111,8 +114,8 @@ describe("finite dialogue state resolver", () => {
 
   it("returns exactly one registered pool for every match phase", () => {
     const phases: RoundPhase[] = [
-      "dealing", "initial-blackjack-check", "turns", "settlement", "round-reveal",
-      "roulette-reaction", "roulette-trigger", "roulette-result", "reward", "round-end"
+      "dealing", "skill-offer", "initial-blackjack-check", "turns", "settlement", "round-reveal",
+      "roulette-reaction", "roulette-trigger", "roulette-result", "round-end"
     ];
     const base = turnsMatch();
     for (const phase of phases) {
@@ -126,7 +129,7 @@ describe("finite dialogue state resolver", () => {
   it("has a reachable, non-overlapping state for every active dialogue pool", () => {
     const playerBlackjack = findMatch((state) => state.round.outcome?.reason === "blackjack" && state.round.outcome.winner === "player");
     const opponentBlackjack = findMatch((state) => state.round.outcome?.reason === "blackjack" && state.round.outcome.winner === "opponent");
-    const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 };
+    const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0};
     const states: MatchState[] = [
       turnsMatch(),
       withActions({ type: "PLAYER_HIT", value: 14 }),
@@ -136,16 +139,18 @@ describe("finite dialogue state resolver", () => {
       withActions({ type: "PLAYER_STOOD" }, { type: "OPPONENT_HIT", value: 12 }, { type: "OPPONENT_HIT", value: 16 }),
       playerBlackjack,
       opponentBlackjack,
-      reveal([card("10"), card("9"), card("5")], [card("10", "hearts"), card("8", "hearts")], { winner: "opponent", reason: "bust", penaltyTarget: "player", bulletsAdded: 1, playerSkillReward: 0 }),
-      reveal([card("10"), card("8")], [card("10", "hearts"), card("9", "hearts"), card("5", "clubs")], { winner: "player", reason: "bust", penaltyTarget: "opponent", bulletsAdded: 1, playerSkillReward: 1 }),
-      triggerState("player", false),
-      triggerState("opponent", false),
+      reveal([card("10"), card("9"), card("5")], [card("10", "hearts"), card("8", "hearts")], { winner: "opponent", reason: "bust", penaltyTarget: "player", bulletsAdded: 1}),
+      reveal([card("10"), card("8")], [card("10", "hearts"), card("9", "hearts"), card("5", "clubs")], { winner: "player", reason: "bust", penaltyTarget: "opponent", bulletsAdded: 1}),
+      triggerState("player", "empty-chamber"),
+      triggerState("opponent", "empty-chamber"),
+      triggerState("player", "misfire"),
+      triggerState("opponent", "misfire"),
       reveal([card("10"), card("7")], [card("10", "hearts"), card("8", "hearts")], comparison("opponent")),
       reveal([card("10"), card("7")], [card("9", "hearts"), card("8", "hearts")], push),
       rouletteState("roulette-reaction"),
       rouletteState("roulette-trigger"),
-      triggerState("player", true),
-      triggerState("opponent", true),
+      triggerState("player", "fired"),
+      triggerState("opponent", "fired"),
       reveal([card("A"), card("K")], [card("A", "hearts"), card("Q", "hearts")], push),
       reveal([card("10"), card("Q")], [card("10", "hearts"), card("9", "hearts")], comparison("player")),
       reveal([card("10"), card("3")], [card("8", "hearts"), card("5", "hearts")], push)

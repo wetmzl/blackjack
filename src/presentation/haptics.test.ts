@@ -10,10 +10,10 @@ describe("match haptics", () => {
     const confirmed: MatchState = { ...base, history: [...base.history, { type: "ROUND_RESULT_ACKNOWLEDGED" }] };
     presentMatchHaptics(base, confirmed, true, { vibrate });
 
-    const dry: MatchState = { ...confirmed, history: [...confirmed.history, { type: "TRIGGER_PULLED", actor: "player", probability: 0.5, fired: false }] };
+    const dry: MatchState = { ...confirmed, history: [...confirmed.history, { type: "TRIGGER_PULLED", actor: "player", probability: 0.5, baseProbability: 0.5, misfireChance: 0, result: "empty-chamber", fired: false }] };
     presentMatchHaptics(confirmed, dry, true, { vibrate });
 
-    const fired: MatchState = { ...dry, history: [...dry.history, { type: "TRIGGER_PULLED", actor: "opponent", probability: 1, fired: true }] };
+    const fired: MatchState = { ...dry, history: [...dry.history, { type: "TRIGGER_PULLED", actor: "opponent", probability: 1, baseProbability: 1, misfireChance: 0, result: "fired", fired: true }] };
     presentMatchHaptics(dry, fired, true, { vibrate });
     expect(vibrate.mock.calls).toEqual([[18], [[22, 35, 28]], [[70, 30, 120]]]);
   });

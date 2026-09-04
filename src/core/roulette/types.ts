@@ -10,6 +10,9 @@ export interface RouletteState {
 
 export interface TriggerResult {
   readonly fired: boolean;
+  readonly result: "fired" | "empty-chamber" | "misfire";
   readonly probability: number;
+  readonly baseProbability: number;
+  readonly misfireChance: number;
   readonly gun: GunState;
 }

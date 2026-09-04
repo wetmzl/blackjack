@@ -17,6 +17,24 @@
     "playerDefeat": "牌局在惊心动魄的较量中落下帷幕。艾丽妮按住剧烈起伏的胸口，眼眶泛红却拼命挺直腰杆，要求你履行承诺——然而这场来之不易的胜利，马上就会被彻底撤销。",
     "escaped": "策展人中途离席。艾丽妮愣愣地看着空荡荡的对面，长舒了一口气，强忍着泪水默默向神明祈祷。"
   },
+  "infoBar": {
+    "sourceAbilityId": "ai-sword-and-handcannon",
+    "label": "本轮哑火概率",
+    "description": "若艾丽妮在本轮承受轮盘惩罚，策展人本轮每次 Hit 会增加手枪33%的哑火概率。",
+    "format": "percent",
+    "value": {
+      "type": "number",
+      "value": {
+        "type": "min",
+        "left": 1,
+        "right": {
+          "type": "multiply",
+          "left": { "type": "round-hit-count", "target": "rival" },
+          "right": 0.33
+        }
+      }
+    }
+  },
   "trophyGallery": {
     "headshot": "/assets/characters/irene-trophy-gallery-headshot.png",
     "fullBody": "/assets/characters/irene-trophy-gallery-full-subject.png",
@@ -84,8 +102,8 @@
     "B": 1,
     "C": 1
   },
-  "mechanics": [
-    { "definitionId": "sword-and-handcannon", "enabled": true, "parameters": {} }
+  "aiSkills": [
+    { "definitionId": "ai-sword-and-handcannon", "enabled": true, "parameters": {} }
   ],
   "dialogue": {
     "MATCH_START": [
@@ -162,12 +180,18 @@
       "没响……策展人，下一次可就未必这么幸运了！",
       "空枪存活！别急着放松，策展人先生，马上你就要开下一枪，直到你履行拯救伊比利亚的誓言！"
     ],
+    "PLAYER_TRIGGER_MISFIRED": [
+      "……是哑火，不是空膛。你的能力改变了这次击发，但审判还没有结束。"
+    ],
     "OPPONENT_SURVIVED_TRIGGER": [
       "呜……嗯，我还活着！",
       "……呜，太好了……在海嗣危机没有彻底解决之前，我绝不能死在这里！",
       "……呼……呼……我还可以继续战斗！",
       "腿软得差点跪在地上……但神明保佑了我！我还活着！",
       "……我还活着吗？……整理呼吸，继续！"
+    ],
+    "OPPONENT_TRIGGER_MISFIRED": [
+      "击锤落下却没有击发……是那份能力救了我这一次。"
     ],
     "PLAYER_WIN_ROUND": [
       "……（深吸一口气）一发子弹而已，我的意志远比钢铁坚硬！",

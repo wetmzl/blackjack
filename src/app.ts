@@ -3,13 +3,15 @@ import { handValue } from "./core/blackjack/hand";
 import type { Card } from "./core/blackjack/types";
 import type { MatchHistoryRecord } from "./core/match/history";
 import { buildObservation } from "./core/ai/observation";
-import { abilityWorld, createMatch, getLegalActions } from "./core/match/reducer";
+import { abilityWorld, createMatch, getLegalActions, getRoundHitCounts, getSkillOfferSelectionError } from "./core/match/reducer";
 import type { Action, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
-import { getSkillDefinition, SKILL_DEFINITIONS, isActiveSkill, isPassiveSkill } from "./core/skills/definitions";
-import { skillsUnlockedForVictory, unlockedSkillIdsForDefeats, validateLoadout } from "./core/skills/skills";
+import { getPlayerSkillDefinition, PLAYER_SKILL_DEFINITIONS } from "./core/skills/definitions";
+import { playerSkillsUnlockedForVictory, unlockedPlayerSkillIdsForDefeats, PLAYER_SKILL_INVENTORY_CAPACITY } from "./core/skills/skills";
+import { TALENT_DEFINITIONS } from "./core/talents/definitions";
 import { getAbilityDefinition } from "./core/abilities/registry";
 import { isAbilityBlockedByStatus } from "./core/abilities/engine";
+import { resolveAbilityInfoValue, type ResolvedInfoBarValue } from "./core/abilities/info-bar";
 import { chooseDialogue } from "./dialogue/types";
 import { resolveDialogueState } from "./dialogue/state";
 import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstDefeat, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForDefeat, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
@@ -73,6 +75,12 @@ function uiError(error: unknown, fallback: string): string {
   return fallback;
 }
 function cardLabel(card: Card): string { return `${card.rank}${card.suit === "hearts" ? "♥" : card.suit === "diamonds" ? "♦" : card.suit === "clubs" ? "♣" : "♠"}`; }
+function suitPresentation(suit: Card["suit"]): { readonly symbol: string; readonly label: string; readonly red: boolean } {
+  if (suit === "hearts") return { symbol: "♥", label: "红桃", red: true };
+  if (suit === "diamonds") return { symbol: "♦", label: "方块", red: true };
+  if (suit === "clubs") return { symbol: "♣", label: "梅花", red: false };
+  return { symbol: "♠", label: "黑桃", red: false };
+}
 function cardMarkup(card: Card | null, hidden = false, revealedSuit?: Card["suit"]): string {
   if (hidden || !card) {
     if (hidden && revealedSuit) {
@@ -84,6 +92,33 @@ function cardMarkup(card: Card | null, hidden = false, revealedSuit?: Card["suit
   }
   const red = card.suit === "hearts" || card.suit === "diamonds";
   return `<span class="card ${red ? "red" : ""}" data-card-origin="${card.origin}" aria-label="${cardLabel(card)}"><b>${escapeHtml(card.rank)}</b><em>${card.suit === "hearts" ? "♥" : card.suit === "diamonds" ? "♦" : card.suit === "clubs" ? "♣" : "♠"}</em></span>`;
+}
+function infoBarValueText(value: ResolvedInfoBarValue, format: "number" | "percent" = "number"): string {
+  if (value === null) return "暂无";
+  if (typeof value === "number") return format === "percent" ? `${Math.round(value * 100)}%` : String(value);
+  if (typeof value === "string") return suitPresentation(value).label;
+  return cardLabel(value);
+}
+function infoBarValueMarkup(value: ResolvedInfoBarValue, format: "number" | "percent" = "number"): string {
+  if (value === null) return `<span class="ai-info-empty">—</span>`;
+  if (typeof value === "number") return `<strong class="ai-info-number">${escapeHtml(infoBarValueText(value, format))}</strong>`;
+  const suit = suitPresentation(typeof value === "string" ? value : value.suit);
+  if (typeof value === "string") return `<span class="ai-info-suit ${suit.red ? "red" : "black"}" aria-label="${suit.label}"><span aria-hidden="true">${suit.symbol}</span><small>${suit.label}</small></span>`;
+  return `<span class="ai-info-card ${suit.red ? "red" : "black"}" data-card-origin="${value.origin}" aria-label="${escapeHtml(cardLabel(value))}"><b>${escapeHtml(value.rank)}</b><em>${suit.symbol}</em></span>`;
+}
+function resolveCharacterInfoBarValue(character: CharacterDefinition, state: MatchState): ResolvedInfoBarValue {
+  if (!character.infoBar) return null;
+  const sourceActive = state.abilities.instances.some((instance) => instance.owner === "opponent" && instance.definitionId === character.infoBar?.sourceAbilityId && instance.ttl?.remaining !== 0);
+  return resolveAbilityInfoValue(character.infoBar.value, abilityWorld(state), "opponent", {
+    roundHitCounts: getRoundHitCounts(state),
+    sourceActive
+  });
+}
+function characterInfoBarMarkup(character: CharacterDefinition, value: ResolvedInfoBarValue): string {
+  if (!character.infoBar) return "";
+  const format = character.infoBar.format ?? "number";
+  const accessibleValue = infoBarValueText(value, format);
+  return `<section class="ai-info-bar" aria-label="${escapeHtml(character.infoBar.label)}：${escapeHtml(accessibleValue)}"><span class="ai-info-label">${escapeHtml(character.infoBar.label)}</span><output class="ai-info-value" aria-label="当前值：${escapeHtml(accessibleValue)}">${infoBarValueMarkup(value, format)}</output><button class="ai-info-button" type="button" data-ai-info aria-label="查看${escapeHtml(character.infoBar.label)}说明">i</button></section>`;
 }
 function revealedOpponentSuit(state: MatchState): Card["suit"] | undefined {
   let start = -1;
@@ -102,7 +137,7 @@ function showNextSkillGain(): void {
   announcement.id = "skill-gain-announcement";
   announcement.className = "skill-gain-announcement";
   announcement.setAttribute("role", "status");
-  announcement.textContent = `获得技能牌：${getSkillDefinition(skillId)?.name ?? skillId}`;
+  announcement.textContent = `获得技能牌：${getPlayerSkillDefinition(skillId)?.name ?? skillId}`;
   document.body.append(announcement);
   skillGainTimer = window.setTimeout(() => {
     announcement.remove(); skillGainTimer = undefined; showNextSkillGain();
@@ -137,25 +172,26 @@ function toggleFullscreen(): void {
   void document.documentElement.requestFullscreen().catch(() => present("全屏请求未获允许。"));
 }
 const PHASE_LABELS: Readonly<Record<MatchState["round"]["phase"], string>> = {
-  dealing: "发牌中", "initial-blackjack-check": "检查黑杰克", turns: "行动阶段", settlement: "结算中",
+  dealing: "发牌中", "skill-offer": "技能选择", "initial-blackjack-check": "检查黑杰克", turns: "行动阶段", settlement: "结算中",
   "round-reveal": "翻牌结果", "roulette-reaction": "轮盘反应", "roulette-trigger": "准备扣扳机",
-  "roulette-result": "扳机结果", reward: "奖励结算", "round-end": "等待下一轮"
+  "roulette-result": "扳机结果", "round-end": "等待下一轮"
 };
 function phaseLabel(phase: MatchState["round"]["phase"]): string { return PHASE_LABELS[phase]; }
 const ACTION_LABELS: Readonly<Record<Action["type"], string>> = {
   PLAYER_HIT: "策展人 Hit 要牌", PLAYER_STAND: "策展人 Stand 停牌", AI_TURN: "对手行动一次",
   AI_HIT: "对手 Hit 要牌", OPPONENT_HIT: "对手 Hit 要牌", AI_STAND: "对手 Stand 停牌", OPPONENT_STAND: "对手 Stand 停牌",
-  PLAY_ABILITY: "使用能力", TRIGGER_ROULETTE: "扣下扳机", ACK_ROUND_RESULT: "确认本轮结果",
+  PLAY_ABILITY: "使用能力", TOGGLE_SKILL_OFFER_SELECTION: "选择技能", CONFIRM_SKILL_OFFER: "确认技能选择", SKIP_SKILL_OFFER: "放弃技能选择", TRIGGER_ROULETTE: "扣下扳机", ACK_ROUND_RESULT: "确认本轮结果",
   ACK_TRIGGER_RESULT: "确认扳机结果", CONTINUE_ROUND: "进入下一轮", ESCAPE_MATCH: "逃离对局", ACK_MATCH_RESULT: "确认最终结果"
 };
 const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
-  ABILITY_PLAYED: "使用能力", ABILITY_TRIGGERED: "能力触发", ABILITY_RESOLUTION_FAILED: "能力解析失败",
+  ABILITY_PLAYED: "使用能力", ABILITY_TRIGGERED: "能力触发", ABILITY_EXPIRED: "能力耗尽", ABILITY_RESOLUTION_FAILED: "能力解析失败",
   STATUS_ADDED: "获得状态", STATUS_REMOVED: "状态移除", PENDING_EVENT_MODIFIED: "修改待结算事件", PENDING_EVENT_CANCELLED: "取消待结算事件",
   ROUND_STARTED: "本轮开始", CARD_DEALT: "发牌", INITIAL_BLACKJACK_CHECK: "检查黑杰克",
   PLAYER_HIT: "策展人 Hit 要牌", OPPONENT_HIT: "对手 Hit 要牌", PLAYER_STOOD: "策展人 Stand 停牌", OPPONENT_STOOD: "对手 Stand 停牌",
   BLACKJACK: "黑杰克", BUST: "爆牌", ROUND_RESOLVED: "本轮结算", ROUND_RESULT_ACKNOWLEDGED: "已确认本轮结果",
   BULLET_ADDED: "装填子弹", TRIGGER_PULLED: "已扣下扳机", TRIGGER_SURVIVED: "空枪幸存", TRIGGER_RESULT_ACKNOWLEDGED: "已确认扳机结果",
   PARTICIPANT_KILLED: "参与者倒下", SKILL_GAINED: "获得技能", MATCH_FINISHED: "对局结束",
+  SKILL_OFFER_CREATED: "生成技能候选", SKILL_OFFER_SELECTION_CHANGED: "修改技能选择", SKILL_OFFER_RESOLVED: "完成技能选择",
   MATCH_ESCAPED: "策展人离席", MATCH_RESULT_ACKNOWLEDGED: "已确认最终结果", AI_DECISION: "对手完成决策",
   CARD_SUIT_REVEALED: "识破暗牌花色"
 };
@@ -178,50 +214,14 @@ function historyResultLabel(record: MatchHistoryRecord): string { return record.
 function historyDate(timestamp: string): string { return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp)); }
 
 function renderSkillList(): string {
-  const unlocked = new Set(unlockedSkillIdsForDefeats(save.defeats));
-  const equipped = new Set(save.profile.equippedSkillIds);
-  const activeCount = [...equipped].filter(isActiveSkill).length;
-  const passiveCount = [...equipped].filter(isPassiveSkill).length;
-  const cards = SKILL_DEFINITIONS.map((skill) => {
+  const unlocked = new Set(unlockedPlayerSkillIdsForDefeats(save.defeats));
+  const cards = PLAYER_SKILL_DEFINITIONS.map((skill) => {
     const available = unlocked.has(skill.id);
-    const checked = equipped.has(skill.id);
     const source = skill.unlock ? `解锁来源：${skill.unlock.label}` : "初始技能";
-    return `<div class="loadout-skill ${available ? "" : "locked"}"><label class="loadout-checkbox"><input type="checkbox" data-equip-skill="${escapeHtml(skill.id)}" aria-label="装备${escapeHtml(skill.name)}" ${checked ? "checked" : ""} ${available ? "" : "disabled"}></label><div><details class="profile-ability"><summary><strong>${escapeHtml(skill.name)}</strong><span>：${escapeHtml(skill.description)}</span></summary><p>${escapeHtml(skill.profileLore)}</p></details><small>${skill.category === "passive" ? "被动" : "主动"} · ${escapeHtml(source)}</small></div></div>`;
+    return `<div class="loadout-skill ${available ? "" : "locked"}"><div><details class="profile-ability"><summary><strong>${escapeHtml(skill.name)}</strong><span>：${escapeHtml(skill.description)}</span></summary><p>${escapeHtml(skill.profileLore)}</p></details><small>${skill.category === "passive" ? "被动" : "主动"} · ${escapeHtml(skill.primaryDomain)} · ${escapeHtml(source)} · ${available ? "已解锁，可在牌局中掉落" : "尚未解锁"}</small></div></div>`;
   }).join("");
-  return `<p class="loadout-count">已装备 ${activeCount + passiveCount} / 4　主动 ${activeCount}　被动 ${passiveCount} / 1</p><div class="loadout-list">${cards}</div><p class="status-line" id="skill-status"></p>`;
-}
-
-function refreshLoadoutCount(): void {
-  const node = root.querySelector<HTMLElement>(".loadout-count");
-  if (!node) return;
-  const equipped = save.profile.equippedSkillIds;
-  const active = equipped.filter(isActiveSkill).length;
-  const passive = equipped.filter(isPassiveSkill).length;
-  node.textContent = `已装备 ${equipped.length} / 4　主动 ${active}　被动 ${passive} / 1`;
-}
-
-async function updateLoadout(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const id = input.dataset.equipSkill;
-  if (!id) return;
-  const unlockedSkillIds = unlockedSkillIdsForDefeats(save.defeats);
-  const unlocked = new Set(unlockedSkillIds);
-  const equipped = new Set(save.profile.equippedSkillIds);
-  if (!unlocked.has(id)) { input.checked = false; return; }
-  if (input.checked) equipped.add(id); else equipped.delete(id);
-  const ids = [...equipped];
-  const status = root.querySelector<HTMLParagraphElement>("#skill-status");
-  const validation = validateLoadout(unlockedSkillIds, ids);
-  if (!validation.valid) {
-    input.checked = !input.checked;
-    refreshLoadoutCount();
-    if (status) status.textContent = validation.reason === "too-many-passives" ? "被动技能最多装备 1 个。" : validation.reason === "too-many" ? "最多装备 4 个技能。" : "只能装备已解锁技能。";
-    return;
-  }
-  save = { ...save, profile: { ...save.profile, equippedSkillIds: [...validation.equippedSkillIds] }, updatedAt: new Date().toISOString() };
-  await repository.saveLongTerm(save);
-  refreshLoadoutCount();
-  if (status) status.textContent = "技能配置已保存。";
+  const talents = TALENT_DEFINITIONS.filter((talent) => save.profile.talentIds.includes(talent.id)).map((talent) => `<div class="loadout-skill talent"><div><details class="profile-ability"><summary><strong>${escapeHtml(talent.name)}</strong><span>：${escapeHtml(talent.description)}</span></summary><p>${escapeHtml(talent.profileLore ?? talent.description)}</p></details><small>天赋 · 不占用技能牌位置</small></div></div>`).join("");
+  return `<p class="loadout-count">局内候选来自全部已解锁技能；天赋不进入技能牌库。</p>${talents ? `<h3>天赋</h3><div class="loadout-list">${talents}</div>` : ""}<h3>Player Skill Catalog</h3><div class="loadout-list">${cards}</div>`;
 }
 
 function openSkillManagement(): void {
@@ -229,7 +229,6 @@ function openSkillManagement(): void {
   const content = root.querySelector<HTMLDivElement>("#skill-content");
   if (!dialog || !content) return;
   content.innerHTML = renderSkillList();
-  content.querySelectorAll<HTMLInputElement>("[data-equip-skill]").forEach((input) => input.addEventListener("change", (event) => void updateLoadout(event)));
   dialog.showModal();
 }
 
@@ -339,15 +338,25 @@ function startTypewriter(text: string): void {
 function presentDelta(before: MatchState, after: MatchState): void {
   const events = after.history.slice(before.history.length);
   enqueueSkillGains(events);
+  const trigger = events.find((candidate) => candidate.type === "TRIGGER_PULLED");
+  const expired = events.find((candidate) => candidate.type === "ABILITY_EXPIRED");
   const abilityNotice = abilityTriggerNotice(events, currentCharacter.name);
-  if (abilityNotice) { present(abilityNotice, "gold", 2200); return; }
-  const event = events.find((candidate) => candidate.type === "PENDING_EVENT_CANCELLED") ?? events.find((candidate) => candidate.type === "TRIGGER_PULLED") ?? events.find((candidate) => candidate.type === "BUST") ?? events.find((candidate) => candidate.type === "BLACKJACK") ?? events.find((candidate) => candidate.type === "BULLET_ADDED") ?? events.find((candidate) => candidate.type === "TRIGGER_SURVIVED");
+  if (abilityNotice) {
+    const triggerResult = trigger?.type === "TRIGGER_PULLED"
+      ? trigger.result === "fired" ? "；砰！" : trigger.result === "misfire" ? "；哑火——击锤落下，子弹却没有击发" : "；咔哒……空膛"
+      : "";
+    const exhausted = expired?.type === "ABILITY_EXPIRED" ? "（效果已耗尽）" : "";
+    present(`${abilityNotice}${triggerResult}${exhausted}`, trigger?.type === "TRIGGER_PULLED" && trigger.fired ? "danger" : "gold", 2600);
+    return;
+  }
+  const event = events.find((candidate) => candidate.type === "PENDING_EVENT_CANCELLED") ?? trigger ?? events.find((candidate) => candidate.type === "BUST") ?? events.find((candidate) => candidate.type === "BLACKJACK") ?? events.find((candidate) => candidate.type === "BULLET_ADDED") ?? events.find((candidate) => candidate.type === "TRIGGER_SURVIVED") ?? expired;
   if (event) {
     if (event.type === "BUST") present(`${event.actor === "player" ? "策展人" : currentCharacter.name} 爆牌`, "danger");
     else if (event.type === "BLACKJACK") present("黑杰克", "gold");
     else if (event.type === "BULLET_ADDED") present(`已装填 ${event.amount} 发子弹`, "danger");
-    else if (event.type === "TRIGGER_PULLED") present(event.fired ? "砰！" : "咔哒……", event.fired ? "danger" : "gold");
+    else if (event.type === "TRIGGER_PULLED") present(event.result === "fired" ? "砰！" : event.result === "misfire" ? "哑火——击锤落下，子弹却没有击发" : "咔哒……空膛", event.fired ? "danger" : "gold");
     else if (event.type === "TRIGGER_SURVIVED") present("空枪，暂时活下来了", "gold");
+    else if (event.type === "ABILITY_EXPIRED") present(`${getAbilityDefinition(event.definitionId)?.name ?? "被动技能"}的效果已耗尽`, "gold");
     else if (event.type === "PENDING_EVENT_CANCELLED") {
       const source = before.abilities.instances.find((instance) => instance.instanceId === event.sourceInstanceId);
       present(`${source ? getAbilityDefinition(source.definitionId)?.name ?? "能力" : "能力"}：免除本次扳机`, "gold");
@@ -355,7 +364,7 @@ function presentDelta(before: MatchState, after: MatchState): void {
     return;
   }
   const played = events.find((candidate) => candidate.type === "ABILITY_PLAYED");
-  if (played) { present(`已使用技能：${getSkillDefinition(played.definitionId)?.name ?? "未知技能"}`, "gold"); return; }
+  if (played) { present(`已使用技能：${getPlayerSkillDefinition(played.definitionId)?.name ?? "未知技能"}`, "gold"); return; }
   if (events.some((candidate) => candidate.type === "CARD_DEALT" && candidate.actor === "player") && handValue(after.player.hand) === 21) present("21 · 自动停牌", "gold");
 }
 function wireActions(container: ParentNode, handler: (action: Action) => void): void { container.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => element.addEventListener("click", () => handler(JSON.parse(element.dataset.action ?? "{}") as Action))); }
@@ -442,7 +451,7 @@ async function startResourcePackDownload(button: HTMLButtonElement): Promise<voi
 }
 
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>两张牌正好 21 点是黑杰克；入场会获得技能牌，普通胜利获得 1 张，黑杰克获得 2 张。技能牌只来自本轮携带的主动技能。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的牌组</p><h2>技能管理</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是接近 21 点但不要爆牌。用 Hit 要牌，准备好后用 Stand 停牌。</p><p>每轮开始前会出现一次技能选择：开局、普通胜利与平局三选一，黑杰克胜利三选二，失败二选一。局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2>技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
 }
 
 function randomUnit(): number {
@@ -502,7 +511,7 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   const characterCards = guestCharacters.map((character) => characterCardMarkup(character)).join("");
   const defeatedCards = defeatedCharacters.map((character) => characterCardMarkup(character, { defeated: true })).join("");
   root.innerHTML = layer === "menu"
-    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>Blackjack & Roulette</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能管理</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.defeats.length} 件</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
+    ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>Blackjack & Roulette</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能与天赋</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.defeats.length} 件</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
     : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">他们带着未竟的执念走进古堡，<br>换上指定的服装，等待终焉赌局开场。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="guest-section" aria-labelledby="guest-title"><div class="guest-heading"><div><p class="kicker">等待入场</p><h2 id="guest-title">候场宾客</h2></div><button type="button" class="quiet-button" data-refresh-guests aria-label="刷新候场宾客">刷新</button></div><section class="character-list">${characterCards || `<div class="empty-history"><span>◇</span><p>暂时没有可赴约的宾客。</p></div>`}</section></section><section class="guest-section defeated-section" aria-labelledby="defeated-title"><div class="guest-heading"><div><p class="kicker">回想</p><h2 id="defeated-title">已死亡宾客</h2></div></div><section class="character-list">${defeatedCards || `<div class="empty-history"><span>◇</span><p>完成胜利后，宾客会按首次击败时间记录在这里。</p></div>`}</section></section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${defeatedCharacters.length} 名已击败宾客</span></footer>${lobbyDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-enter-duel]")?.addEventListener("click", () => { guestSelectionIds = []; renderLobby("characters"); });
   root.querySelector<HTMLButtonElement>("[data-lobby-home]")?.addEventListener("click", () => renderLobby("menu"));
@@ -713,7 +722,7 @@ async function openProfile(id: string): Promise<void> {
     selectedCharacterId = character.id;
     const content = root.querySelector<HTMLDivElement>("#profile-content");
     if (content) {
-      const abilities = character.mechanics
+      const abilities = character.aiSkills
         .filter((binding) => binding.enabled)
         .map((binding) => getAbilityDefinition(binding.definitionId))
         .filter((definition): definition is NonNullable<ReturnType<typeof getAbilityDefinition>> => Boolean(definition));
@@ -768,7 +777,13 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
     selectedCharacterId = character.id;
     lastAction = null;
     lastDomainEvent = null;
-    const match = createMatch(secureSeed(), { opponentId: character.id, aiProfile: character.ai, equippedSkillIds: save.profile.equippedSkillIds, opponentMechanics: character.mechanics });
+    const match = createMatch(secureSeed(), {
+      opponentId: character.id,
+      aiProfile: character.ai,
+      unlockedPlayerSkillIds: unlockedPlayerSkillIdsForDefeats(save.defeats),
+      talentIds: save.profile.talentIds,
+      opponentAiSkills: character.aiSkills
+    });
     await resumeMatch(match, character);
     const openingAbilityNotice = abilityTriggerNotice(match.history, character.name);
     if (openingAbilityNotice) present(openingAbilityNotice, "gold", 2200);
@@ -799,29 +814,29 @@ function renderMatch(state: MatchState): void {
   const opponentSuit = revealedOpponentSuit(state);
   const opponentCards = reveal ? state.opponent.hand.cards.map((card) => cardMarkup(card)).join("") : observation.opponent.cards.map((card, index) => cardMarkup(card ?? state.opponent.hand.cards[index] ?? null, index > 0, index === 1 ? opponentSuit : undefined)).join("");
   const playerCards = state.player.hand.cards.map((card) => cardMarkup(card)).join("");
-  const counts = new Map<string, number>(); state.skills.cards.forEach((card) => { const id = card.definitionId; counts.set(id, (counts.get(id) ?? 0) + 1); });
-  const activeSkills = [...new Set(state.skills.equippedSkillIds)].filter((id) => isActiveSkill(id)).map((id) => {
-    const count = counts.get(id) ?? 0;
-    const skill = getSkillDefinition(id);
+  const skills = state.playerSkills.cards.map((card, index) => {
+    const skill = getPlayerSkillDefinition(card.definitionId);
     if (!skill) return "";
-    const firstCard = state.skills.cards.find((card) => card.definitionId === id);
-    const action = firstCard
-      ? { type: "PLAY_ABILITY" as const, instanceId: firstCard.instanceId }
-      : { type: "PLAY_ABILITY" as const, instanceId: `unavailable-${id}` };
+    if (skill.category === "passive") {
+      const ttl = state.abilities.instances.find((instance) => instance.instanceId === card.instanceId)?.ttl;
+      const ttlLabel = ttl ? ttl.type === "triggers" ? `剩${ttl.remaining}次` : `剩${ttl.remaining}轮` : "被动";
+      return `<span class="skill-tile passive" data-skill-instance="${escapeHtml(card.instanceId)}"><span class="skill-card passive-card" aria-label="被动技能${escapeHtml(skill.name)}，${escapeHtml(ttlLabel)}"><b>${escapeHtml(skill.name)}</b><small>${escapeHtml(ttlLabel)}</small></span><button class="skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
+    }
+    const action = { type: "PLAY_ABILITY" as const, instanceId: card.instanceId };
     const enabled = legal(state, action);
     const ability = getAbilityDefinition(skill.id);
-    const statusBlocked = Boolean(firstCard && ability && isAbilityBlockedByStatus(abilityWorld(state), firstCard.owner, ability));
+    const statusBlocked = Boolean(ability && isAbilityBlockedByStatus(abilityWorld(state), card.owner, ability));
     const interaction = statusBlocked
       ? `data-skill-blocked="true" aria-disabled="true"`
       : `data-action='${JSON.stringify(action)}' ${enabled ? "" : "disabled"}`;
-    return `<span class="skill-tile ${enabled ? "" : "is-disabled"}"><button class="skill-card" data-skill-id="${escapeHtml(skill.id)}" ${interaction} aria-label="${statusBlocked ? "技能被禁用：" : "使用"}${escapeHtml(skill.name)}"><b>${escapeHtml(skill.name)}</b><small>×${count}</small></button><button class="skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
+    return `<span class="skill-tile ${enabled ? "" : "is-disabled"}" data-skill-instance="${escapeHtml(card.instanceId)}" style="--skill-index:${index}"><button class="skill-card" data-skill-id="${escapeHtml(skill.id)}" ${interaction} aria-label="${statusBlocked ? "技能被禁用：" : "使用"}${escapeHtml(skill.name)}"><b>${escapeHtml(skill.name)}</b><small>主动</small></button><button class="skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
   }).join("");
-  const passiveSkills = state.skills.equippedSkillIds.map((id) => getSkillDefinition(id)).filter((skill): skill is NonNullable<typeof skill> => Boolean(skill && skill.category === "passive")).map((skill) => `<span class="skill-tile passive"><span class="skill-card passive-card"><b>${escapeHtml(skill.name)}</b><small>被动</small></span><button class="skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`).join("");
-  const skills = activeSkills + passiveSkills;
-  const totalSkills = state.skills.cards.length + state.skills.equippedSkillIds.filter((id) => isPassiveSkill(id)).length;
-  const advice = state.skills.advice ? `<div class="skill-advice" aria-live="polite">猎手直觉：建议 ${state.skills.advice === "hit" ? "Hit 要牌" : "Stand 停牌"}</div>` : "";
+  const totalSkills = state.playerSkills.cards.length;
+  const advice = state.playerSkills.advice ? `<div class="skill-advice" aria-live="polite">猎手直觉：建议 ${state.playerSkills.advice === "hit" ? "Hit 要牌" : "Stand 停牌"}</div>` : "";
   let controls: string;
-  if (state.round.phase === "round-reveal") {
+  if (state.round.phase === "skill-offer") {
+    controls = "";
+  } else if (state.round.phase === "round-reveal") {
     controls = actionButton("确认结果", { type: "ACK_ROUND_RESULT" }, state, "primary-button");
   } else if (state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger") {
     controls = actionButton(state.round.outcome?.penaltyTarget === "opponent" ? "静观好戏" : "扣下扳机", { type: "TRIGGER_ROULETTE" }, state, "primary-button");
@@ -836,15 +851,34 @@ function renderMatch(state: MatchState): void {
   }
   const dialogue = currentDialogue(state);
   const key = dialogueKey(state);
-  const shouldType = key !== lastDialogueKey;
+  const shouldType = state.round.phase !== "skill-offer" && key !== lastDialogueKey;
+  const dialogueMarkup = state.round.phase === "skill-offer" || shouldType ? "" : escapeHtml(dialogue);
   const staffProp = state.round.phase === "roulette-trigger" && state.round.outcome?.penaltyTarget === "opponent"
     ? `<img class="trigger-prop" style="--revolver-top:${character.revolverPlacement.top}px;--revolver-left:${character.revolverPlacement.left}px;--revolver-mobile-top:${character.revolverPlacement.mobileTop}px;--revolver-mobile-left:${character.revolverPlacement.mobileLeft}px" src="${character.assets.staffRevolver}" alt="工作人员用 7mm 左轮对准 ${character.name} 的太阳穴" />` : "";
   const notice = state.round.phase === "round-reveal" ? roundResultText(state, character.name) : "";
   const gunStatuses = `<section class="roulette-status" aria-label="轮盘弹巢状态">${gunStatusMarkup(character.name, state.roulette.opponent.bullets, state.roulette.opponent.capacity)}${gunStatusMarkup("策展人", state.roulette.player.bullets, state.roulette.player.capacity)}</section>`;
+  const resolvedInfoBarValue = resolveCharacterInfoBarValue(character, state);
+  const infoBar = characterInfoBarMarkup(character, resolvedInfoBarValue);
   const skillDrawerMarkup = `<aside class="skill-sidebar ${skillDrawerOpen ? "is-open" : ""}" aria-label="技能抽屉"><button class="skill-drawer-toggle" type="button" aria-expanded="${skillDrawerOpen}" aria-label="${skillDrawerOpen ? "收起" : "展开"}技能抽屉，共 ${totalSkills} 张"><span class="skill-drawer-arrow" aria-hidden="true">${skillDrawerOpen ? ">" : "<"}</span><span class="skill-drawer-badge"${skillDrawerOpen ? " hidden" : ""}>${totalSkills}</span></button><div class="skill-drawer-content">${skills || "<span class='empty-skills'>暂无技能卡</span>"}</div></aside>`;
-  root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${shouldType ? "" : escapeHtml(dialogue)}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} <strong>${reveal ? handValue(state.opponent.hand) : observation.opponent.value ?? "?"}</strong></span><div class="cards">${opponentCards}</div></div></section><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 <strong>${handValue(state.player.hand)}</strong></span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${devHud(state)}</main>${skillDrawerMarkup}`;
+  const offer = state.playerSkills.offer;
+  const offerCards = offer?.candidateDefinitionIds.map((id) => {
+    const skill = getPlayerSkillDefinition(id);
+    if (!skill) return "";
+    const selected = offer.selectedDefinitionIds.includes(id);
+    return `<span class="skill-offer-tile"><button type="button" class="skill-offer-card ${selected ? "is-selected" : ""}" data-offer-candidate="${escapeHtml(id)}" aria-pressed="${selected}"><span>${skill.category === "active" ? "主动" : "被动"}</span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.primaryDomain)}</small></button><button class="skill-info offer-skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
+  }).join("") ?? "";
+  const remainingSlots = PLAYER_SKILL_INVENTORY_CAPACITY - totalSkills;
+  const offerEntering = lastAction?.type !== "TOGGLE_SKILL_OFFER_SELECTION";
+  const offerMarkup = offer ? `<section class="skill-offer-backdrop ${offerEntering ? "is-entering" : ""}"><div class="skill-offer-modal" role="dialog" aria-modal="true" aria-labelledby="skill-offer-title"><p class="eyebrow">SKILL OFFER // 第 ${state.roundIndex + 1} 轮</p><h2 id="skill-offer-title">选择技能牌</h2><p>可选 ${offer.maxSelections} 张 · 技能牌库 ${totalSkills} / ${PLAYER_SKILL_INVENTORY_CAPACITY} · 剩余 ${remainingSlots} 格</p><div class="skill-offer-grid">${offerCards || "<p class='empty-skills'>当前没有可掉落的技能。</p>"}</div><div class="skill-offer-actions">${actionButton("放弃", { type: "SKIP_SKILL_OFFER" }, state, "secondary-button")}${actionButton(`确认 (${offer.selectedDefinitionIds.length})`, { type: "CONFIRM_SKILL_OFFER" }, state, "primary-button")}</div></div></section>` : "";
+  root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}${infoBar}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${dialogueMarkup}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} <strong>${reveal ? handValue(state.opponent.hand) : observation.opponent.value ?? "?"}</strong></span><div class="cards">${opponentCards}</div></div></section><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 <strong>${handValue(state.player.hand)}</strong></span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${character.infoBar ? `<dialog id="ai-info-dialog" class="modal ai-info-modal" aria-labelledby="ai-info-title"><button class="modal-close" type="button" data-ai-info-close aria-label="关闭机制信息说明">×</button><p class="eyebrow">${escapeHtml(character.name)} // 机制信息</p><h2 id="ai-info-title">${escapeHtml(character.infoBar.label)}</h2><div class="ai-info-current"><span>当前值</span><output aria-label="当前值：${escapeHtml(infoBarValueText(resolvedInfoBarValue, character.infoBar.format))}">${infoBarValueMarkup(resolvedInfoBarValue, character.infoBar.format)}</output></div><p>${escapeHtml(character.infoBar.description)}</p></dialog>` : ""}${devHud(state)}</main>${skillDrawerMarkup}${offerMarkup}`;
   wireActions(root, requestDispatch); root.querySelector<HTMLButtonElement>("[data-copy-debug]")?.addEventListener("click", () => { const text = root.querySelector<HTMLTextAreaElement>("#debug-json")?.value ?? ""; void navigator.clipboard?.writeText(text); });
   root.querySelectorAll<HTMLButtonElement>("[data-skill-blocked]").forEach((button) => button.addEventListener("click", () => present("技能被禁用", "danger")));
+  root.querySelectorAll<HTMLButtonElement>("[data-offer-candidate]").forEach((button) => button.addEventListener("click", () => {
+    const definitionId = button.dataset.offerCandidate ?? "";
+    const error = getSkillOfferSelectionError(state, definitionId);
+    if (error) { present(error === "inventory-full" ? "技能牌库溢出" : "已达到本次选择上限", "danger"); return; }
+    requestDispatch({ type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId });
+  }));
   attachFullscreenListener(); syncFullscreenButton();
   root.querySelector<HTMLButtonElement>("[data-fullscreen]")?.addEventListener("click", toggleFullscreen);
   const skillDrawer = root.querySelector<HTMLElement>(".skill-sidebar");
@@ -860,7 +894,7 @@ function renderMatch(state: MatchState): void {
     skillDrawerToggle.setAttribute("aria-label", `${skillDrawerOpen ? "收起" : "展开"}技能抽屉，共 ${totalSkills} 张`);
   });
   root.querySelectorAll<HTMLButtonElement>("[data-skill-info]").forEach((button) => button.addEventListener("click", () => {
-    const skill = getSkillDefinition(button.dataset.skillInfo ?? "");
+    const skill = getPlayerSkillDefinition(button.dataset.skillInfo ?? "");
     const dialog = root.querySelector<HTMLDialogElement>("#skill-info-dialog");
     if (!skill || !dialog) return;
     const kind = root.querySelector("#skill-info-kind");
@@ -874,12 +908,19 @@ function renderMatch(state: MatchState): void {
     if (description) description.textContent = skill.description;
     if (lore) lore.textContent = skill.profileLore;
     if (usage) usage.textContent = skill.usage;
-    if (status) status.textContent = skill.category === "active" ? `当前数量：${counts.get(skill.id) ?? 0} 张` : "当前状态：已装备";
+    if (status) {
+      const instanceTtl = state.abilities.instances.find((instance) => instance.definitionId === skill.id && instance.owner === "player")?.ttl;
+      const ttl = instanceTtl ?? (skill.ttl ? { type: skill.ttl.type, remaining: skill.ttl.amount } : undefined);
+      const ttlText = ttl ? ttl.type === "triggers" ? `，剩余 ${ttl.remaining} 次触发` : `，剩余 ${ttl.remaining} 轮` : "";
+      status.textContent = skill.category === "active" ? "主动技能牌：使用后消耗此实例" : `被动技能牌：占用牌库位置并持续生效${ttlText}`;
+    }
     const details = dialog.querySelector<HTMLDetailsElement>(".profile-ability");
     if (details) details.open = false;
     dialog.showModal();
   }));
   root.querySelector<HTMLButtonElement>("[data-skill-close]")?.addEventListener("click", () => root.querySelector<HTMLDialogElement>("#skill-info-dialog")?.close());
+  root.querySelector<HTMLButtonElement>("[data-ai-info]")?.addEventListener("click", () => root.querySelector<HTMLDialogElement>("#ai-info-dialog")?.showModal());
+  root.querySelector<HTMLButtonElement>("[data-ai-info-close]")?.addEventListener("click", () => root.querySelector<HTMLDialogElement>("#ai-info-dialog")?.close());
   if (shouldType) { lastDialogueKey = key; startTypewriter(dialogue); }
 }
 function devHud(state: MatchState): string {
@@ -898,16 +939,16 @@ function renderSummary(state: MatchState): void {
   const image = playerWon ? currentCharacter.assets.defeatedSummary : escaped ? currentCharacter.assets.conflicted : currentCharacter.assets.relaxed;
   const imageAlt = playerWon ? `${currentCharacter.name} 全身无力地瘫坐在椅子上` : currentCharacter.name;
   const summaryCopy = escaped ? currentCharacter.matchSummary.escaped : playerWon ? currentCharacter.matchSummary.playerVictory : currentCharacter.matchSummary.playerDefeat;
-  const alreadyUnlocked = new Set(unlockedSkillIdsForDefeats(save.defeats));
+  const alreadyUnlocked = new Set(unlockedPlayerSkillIdsForDefeats(save.defeats));
   const newlyUnlocked = playerWon && !escaped
-    ? skillsUnlockedForVictory(state.opponentId, winner, escaped).filter((id) => !alreadyUnlocked.has(id))
+    ? playerSkillsUnlockedForVictory(state.opponentId, winner, escaped).filter((id) => !alreadyUnlocked.has(id))
     : [];
   const newlyUnlockedCharacters = playerWon && !escaped ? newlyUnlockedForDefeat(save.defeats, state.opponentId) : [];
   const characterUnlockPanel = newlyUnlockedCharacters.length
     ? `<section class="unlock-panel character-unlock-panel" aria-live="polite"><p class="eyebrow">新角色已解锁</p>${newlyUnlockedCharacters.map((id) => { const character = getCharacterMetadata(id); if (!character) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(character.name)}</strong><span>${escapeHtml(character.tier)}级与会者 · 已可在候场宾客中邀请</span><small>${escapeHtml(unlockConditionLabel(character.unlock))}</small></div>`; }).join("")}</section>`
     : "";
   const unlockPanel = newlyUnlocked.length
-    ? `<section class="unlock-panel" aria-live="polite"><p class="eyebrow">新技能已解锁</p>${newlyUnlocked.map((id) => { const skill = getSkillDefinition(id); if (!skill) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(skill.name)}</strong><span>${skill.category === "active" ? "主动" : "被动"} · ${escapeHtml(skill.description)}</span><small>${escapeHtml(skill.unlock?.label ?? "胜利奖励")}</small></div>`; }).join("")}</section>`
+    ? `<section class="unlock-panel" aria-live="polite"><p class="eyebrow">新技能已解锁</p>${newlyUnlocked.map((id) => { const skill = getPlayerSkillDefinition(id); if (!skill) return ""; return `<div class="unlock-skill"><strong>${escapeHtml(skill.name)}</strong><span>${skill.category === "active" ? "主动" : "被动"} · ${escapeHtml(skill.description)}</span><small>${escapeHtml(skill.unlock?.label ?? "胜利奖励")}</small></div>`; }).join("")}</section>`
     : "";
   const summaryButton = (label: string, destination: "trophy" | "rewind" | "lobby", className: string): string => {
     const action: Action = { type: "ACK_MATCH_RESULT" };

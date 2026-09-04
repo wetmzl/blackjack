@@ -19,8 +19,7 @@ const COMPARISON: RoundOutcome = {
   winner: "player",
   reason: "comparison",
   penaltyTarget: "opponent",
-  bulletsAdded: 1,
-  playerSkillReward: 1
+  bulletsAdded: 1
 };
 
 describe("match audio presentation mapping", () => {
@@ -35,7 +34,6 @@ describe("match audio presentation mapping", () => {
     const audio = new RecordingAudio();
     presentMatchAudio(audio, before, after);
     expect(audio.calls).toEqual([
-      "play:shuffle:0",
       "play:cardFlip:0",
       "play:blackjack:160",
       "play:bust:160"
@@ -60,7 +58,7 @@ describe("match audio presentation mapping", () => {
 
   it("starts player suspense only after accepting the penalty, then stops it for a dry chamber", () => {
     const base = createMatch("audio-trigger");
-    const playerPenalty: RoundOutcome = { ...COMPARISON, winner: "opponent", penaltyTarget: "player", playerSkillReward: 0 };
+    const playerPenalty: RoundOutcome = { ...COMPARISON, winner: "opponent", penaltyTarget: "player"};
     const reveal = { ...base, round: { ...base.round, phase: "round-reveal" as const, outcome: playerPenalty } };
     const audio = new RecordingAudio();
     syncMatchAudioState(audio, reveal);
@@ -70,18 +68,18 @@ describe("match audio presentation mapping", () => {
     presentMatchAudio(audio, reveal, waiting);
     expect(audio.calls).toEqual(["heartbeat:stop", "heartbeat:start"]);
 
-    const result = withEvents(waiting, "roulette-result", { type: "TRIGGER_PULLED", actor: "player", probability: 1 / 6, fired: false });
+    const result = withEvents(waiting, "roulette-result", { type: "TRIGGER_PULLED", actor: "player", probability: 1 / 6, baseProbability: 1 / 6, misfireChance: 0, result: "empty-chamber", fired: false });
     presentMatchAudio(audio, waiting, result);
     expect(audio.calls).toEqual(["heartbeat:stop", "heartbeat:start", "heartbeat:stop", "play:dryFire:0"]);
   });
 
   it("confirms a push with Stand, then shuffles without starting heartbeat", () => {
-    const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0, playerSkillReward: 0 };
+    const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0};
     const revealBase = createMatch("audio-push");
     const reveal = { ...revealBase, round: { ...revealBase.round, phase: "round-reveal" as const, outcome: push } };
-    const next = withEvents(reveal, "turns",
+    const next = withEvents(reveal, "skill-offer",
       { type: "ROUND_RESULT_ACKNOWLEDGED" },
-      { type: "ROUND_STARTED", roundIndex: 1 }
+      { type: "SKILL_OFFER_CREATED", offerId: "offer-1", reason: "push", candidateDefinitionIds: [], maxSelections: 1 }
     );
     const audio = new RecordingAudio();
     presentMatchAudio(audio, reveal, next);
@@ -90,7 +88,7 @@ describe("match audio presentation mapping", () => {
 
   it("plays gunshot immediately and result only when the final summary opens", () => {
     const waiting = withEvents(createMatch("audio-gunshot"), "roulette-trigger");
-    const fired = withEvents(waiting, "roulette-result", { type: "TRIGGER_PULLED", actor: "opponent", probability: 1, fired: true });
+    const fired = withEvents(waiting, "roulette-result", { type: "TRIGGER_PULLED", actor: "opponent", probability: 1, baseProbability: 1, misfireChance: 0, result: "fired", fired: true });
     const audio = new RecordingAudio();
     presentMatchAudio(audio, waiting, fired);
     expect(audio.calls).toEqual(["heartbeat:stop", "play:gunshot:0"]);
@@ -98,5 +96,16 @@ describe("match audio presentation mapping", () => {
     const summary = { ...fired, status: "finished" as const, view: "match-summary" as const };
     presentMatchAudio(audio, fired, summary);
     expect(audio.calls).toEqual(["heartbeat:stop", "play:gunshot:0", "play:result:0"]);
+  });
+
+  it("routes an ability-caused misfire to its own replaceable cue", () => {
+    const waiting = withEvents(createMatch("audio-misfire"), "roulette-trigger");
+    const misfired = withEvents(waiting, "roulette-result", {
+      type: "TRIGGER_PULLED", actor: "player", probability: 1 / 3, baseProbability: 2 / 3,
+      misfireChance: 1 / 3, result: "misfire", fired: false
+    });
+    const audio = new RecordingAudio();
+    presentMatchAudio(audio, waiting, misfired);
+    expect(audio.calls).toEqual(["heartbeat:stop", "play:misfire:0"]);
   });
 });

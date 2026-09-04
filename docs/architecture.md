@@ -49,7 +49,7 @@ DOM render / presentation / autosave
 - `GameEvent` 是对白、历史、调试和演出的事实记录，状态仍由 reducer 决定。
 - 已完成对局从牌桌确认进入 `match-summary`，再次确认后才切到 `lobby` 并由持久化层生成历史摘要。
 
-`MatchState` 的核心组成包括双方状态、牌堆、两把左轮、技能表现外观、能力运行时、轮次状态、历史、AI 配置、整局/每手 AI 噪声和各随机流快照。`execution-room` 是保留的表现层视图，当前致命演出仍在牌桌完成。
+`MatchState` 的核心组成包括双方状态、牌堆、两把左轮、玩家技能库存与当前 Skill Offer、天赋 ID、能力运行时、轮次状态、历史、AI 配置、整局/每手 AI 噪声和各随机流快照。`skill-offer` 是正式轮次阶段，只有确认选择或放弃后 reducer 才发初始手牌。`execution-room` 是保留的表现层视图，当前致命演出仍在牌桌完成。
 
 ## 确定性与信息边界
 
@@ -69,9 +69,15 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 全屏战利品鉴赏采用表现层分层合成：应用固定加载共享 `trophy-gallery-coffin.png` 作为底图，角色 JSON 的 `trophyGallery.fullBody` 与可选 `poses` 只提供同尺寸透明角色层。局部记录坐标只绑定默认 `fullBody`，姿势切换不进入领域状态或存档。
 
+## 技能与 Offer 边界
+
+`src/core/skills/` 负责 Player Skill 投影、解锁集合、10 张卡牌容量、Offer 基础规则和确定性加权无放回抽取。候选读取建局时保存的全部已解锁 Player Skill，不读取大厅装备状态。Offer 的候选数、可选数、库存空位和选择错误都由核心逻辑决定，UI 只渲染并提交 `TOGGLE/CONFIRM/SKIP_SKILL_OFFER` Action。
+
+权重和规则修正是能力 Definition 的通用扩展点。核心收集当前活动的 Player Skill、AI Skill 与 Talent 实例上的 modifier；技能 `primaryDomain` 和开放式 `tags` 使用同一匹配命名空间，所有命中权重因子累乘。候选生成只依赖可保存的 loot RNG，不写具体技能或角色 ID。
+
 ## 能力底座
 
-玩家技能、角色机制和状态共享 `src/core/abilities/`：
+Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行原语，但前三者拥有互斥的 Definition 类型、目录和 ID：
 
 - `types.ts` 定义封闭的触发器、条件、选择器、效果与运行时类型。
 - `schema.ts` 严格校验 JSON，拒绝额外字段与非法参数。
@@ -83,13 +89,17 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 能力使用 `owner` / `rival` 等相对语义，不写死玩家、与会者或角色。待抽牌、待装填和待扣扳机通过受控 pending event 修改；单条能力解析失败时保持原子性，基础行动仍可安全继续。
 
+被动 Player Skill 与被动 AI Skill 的 Definition 必须声明按回合或按成功触发次数计算的有限 TTL。实例化时把初始值写入运行时；规则成功提交后才扣触发 TTL，`on-round-end` 完成后才扣回合 TTL。归零实例不再进入普通规则收集，玩家实例同时移除对应真实卡牌并释放库存位；该实例创建的状态同步过期，随后可安全回收来源实例。Talent 和主动卡不使用 TTL。
+
 显式 Stand 会广播 `after-stand`。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
 
 表现层以 `ABILITY_TRIGGERED` 为唯一的技能发动事实，统一在牌桌中央组合显示发动者、技能名和定义中的 `triggerNotice`（缺省时使用 `description`）。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
 
+角色 JSON 可选的单个 `infoBar` 是 AI Skill 的持续信息投影，不进入 `MatchState` 或存档。它通过 `sourceAbilityId` 绑定角色已启用的 AI Skill；实例 TTL 归零后投影失效。`core/abilities/info-bar.ts` 使用与能力解释器相同的 hand/gun adapter，并接收核心层从当前轮历史计算的 Hit 计数，把声明式数值表达式、概率、花色或牌解析为当前显示值；UI 只负责格式化和打开角色数据中的说明弹窗。未声明时不渲染空信息栏，核心逻辑与表现层都不得按角色 ID 特判。
+
 `replace-pending-draw` 的 `create-derived-card` fallback 只在实体牌堆没有合适候选时创建衍生牌。衍生牌不修改实体牌堆、不进入弃牌堆，离开手牌或本轮结束后不作为实体牌保存回牌堆。
 
-能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。能力事件还提供爆牌检查、扳机前待处理修改，以及主动能力成功后的观察广播；标量表达式和衍生牌效果均由能力 RNG 确定性解析。新增能力流程见 [新增能力工作流](adding-an-ability.md)。
+能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。能力事件还提供爆牌检查、扳机前待处理修改、TTL 到期事实，以及主动能力成功后的观察广播；标量表达式和衍生牌效果均由能力 RNG 确定性解析。修改子弹判定的规则必须在 `before-trigger-pull` 提交，最终 `TRIGGER_PULLED` 明确记录命中、能力哑火或自然空膛，表现层据此选择独立文案和音频 cue。新增能力流程见 [新增能力工作流](adding-an-ability.md)。
 
 ## 持久化
 
@@ -101,7 +111,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 - 运行时档：format、运行时 schema version、角色与技能引用、牌、轮次、左轮和事件结构；
 - 运行时能力实例、状态来源、参数、目录版本和卡牌实例一致性。
 
-当前长期 Schema 版本为 7，运行时 Schema 版本为 1。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
+当前长期 Schema 版本为 8，运行时 Schema 版本为 3。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
 
 ## PWA 与资源缓存
 

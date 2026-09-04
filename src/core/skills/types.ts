@@ -1,8 +1,9 @@
+import type { AbilityTtl, SkillCardInstance, SkillOfferReason } from "../abilities/types";
+
 export type SkillTiming = "player-turn" | "roulette-reaction";
 export type SkillCategory = "active" | "passive";
-import type { SkillCardInstance } from "../abilities/types";
 
-export interface SkillDefinition {
+export interface PlayerSkillDefinition {
   readonly id: string;
   readonly name: string;
   readonly description: string;
@@ -12,18 +13,36 @@ export interface SkillDefinition {
   readonly usage: string;
   readonly category: SkillCategory;
   readonly timing: readonly SkillTiming[];
+  readonly primaryDomain: "blackjack" | "roulette" | "information" | "skill-economy" | "rule-control";
+  readonly tags: readonly string[];
+  readonly drop: { readonly enabled: boolean; readonly baseWeight: number };
+  readonly stackable: boolean;
+  readonly ttl?: AbilityTtl;
   /** Optional data-driven unlock source. Undefined means an initial skill. */
   readonly unlock?: { readonly opponentId: string; readonly label: string };
   readonly hidden: boolean;
 }
 
-export interface SkillInventory {
-  /** Card instances are stable across duplicate draws. */
+export interface SkillOfferRule {
+  readonly candidateCount: number;
+  readonly selectionCount: number;
+}
+
+export interface SkillOffer {
+  readonly id: string;
+  readonly reason: SkillOfferReason;
+  readonly candidateDefinitionIds: readonly string[];
+  readonly maxSelections: number;
+  readonly selectedDefinitionIds: readonly string[];
+}
+
+export interface PlayerSkillInventory {
+  /** Every active and passive card occupies one stable inventory slot. */
   readonly cards: readonly SkillCardInstance[];
-  readonly equippedSkillIds: readonly string[];
+  /** Durable unlock snapshot used by deterministic offer generation. */
+  readonly unlockedDefinitionIds: readonly string[];
+  readonly offer: SkillOffer | null;
   readonly advice: "hit" | "stand" | null;
 }
 
-export interface SkillUseResult {
-  readonly inventory: SkillInventory;
-}
+export type SkillOfferSelectionError = "selection-limit" | "inventory-full";
