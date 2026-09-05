@@ -7,7 +7,7 @@ import type { AbilityRuntimeState } from "../abilities/types";
 
 export type AppScene = "lobby" | "match" | "trophy-room";
 export type MatchView = "table" | "execution-room" | "match-summary";
-export type RoundPhase = "dealing" | "skill-offer" | "initial-blackjack-check" | "turns" | "settlement" | "round-reveal" | "roulette-reaction" | "roulette-trigger" | "roulette-result" | "round-end";
+export type RoundPhase = "dealing" | "initial-blackjack-check" | "turns" | "settlement" | "round-reveal" | "roulette-reaction" | "roulette-trigger" | "roulette-result" | "round-end";
 /** Narrative mapping: player is the Curator; opponent is the invited attendee. */
 export type Actor = "player" | "opponent";
 
@@ -84,9 +84,9 @@ export type GameEvent =
   /** Compatibility event name; actor=player never means the Curator physically dies. */
   | { readonly type: "PARTICIPANT_KILLED"; readonly actor: Actor }
   | { readonly type: "SKILL_GAINED"; readonly skillId: string }
-  | { readonly type: "SKILL_OFFER_CREATED"; readonly offerId: string; readonly reason: import("../abilities/types").SkillOfferReason; readonly candidateDefinitionIds: readonly string[]; readonly maxSelections: number }
-  | { readonly type: "SKILL_OFFER_SELECTION_CHANGED"; readonly offerId: string; readonly selectedDefinitionIds: readonly string[] }
-  | { readonly type: "SKILL_OFFER_RESOLVED"; readonly offerId: string; readonly selectedDefinitionIds: readonly string[]; readonly skipped: boolean }
+  | { readonly type: "SKILL_DRAWS_ADDED"; readonly reason: "blackjack" | "win" | "loss" | "push"; readonly amount: number }
+  | { readonly type: "SKILL_DRAW_OPENED"; readonly offerId: string; readonly candidateDefinitionIds: readonly string[] }
+  | { readonly type: "SKILL_DRAW_RESOLVED"; readonly offerId: string; readonly selectedDefinitionId: string }
   | { readonly type: "MATCH_FINISHED"; readonly reason: MatchEndReason }
   | { readonly type: "MATCH_ESCAPED" }
   | { readonly type: "MATCH_RESULT_ACKNOWLEDGED" }
@@ -99,9 +99,8 @@ export type Action =
   | { readonly type: "AI_HIT" | "OPPONENT_HIT" }
   | { readonly type: "AI_STAND" | "OPPONENT_STAND" }
   | { readonly type: "PLAY_ABILITY"; readonly instanceId: string; readonly selections?: Readonly<Record<string, string | number>> }
-  | { readonly type: "TOGGLE_SKILL_OFFER_SELECTION"; readonly definitionId: string }
-  | { readonly type: "CONFIRM_SKILL_OFFER" }
-  | { readonly type: "SKIP_SKILL_OFFER" }
+  | { readonly type: "OPEN_SKILL_DRAW" }
+  | { readonly type: "SELECT_SKILL_DRAW"; readonly definitionId: string }
   | { readonly type: "TRIGGER_ROULETTE" }
   | { readonly type: "ACK_ROUND_RESULT" }
   | { readonly type: "ACK_TRIGGER_RESULT" }

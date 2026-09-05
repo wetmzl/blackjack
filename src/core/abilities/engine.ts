@@ -37,7 +37,7 @@ function collect(runtime: AbilityRuntimeState, trigger: AbilityEventContext["tri
   return rules.sort((left, right) => (left.rule.priority ?? 0) - (right.rule.priority ?? 0) || left.instance.createdAtSequence - right.instance.createdAtSequence || left.index - right.index);
 }
 
-export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly drawSkillCards?: import("./effects").EffectContext["drawSkillCards"]; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; }
+export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; }
 export interface AbilityResolution extends AbilityEffectResult { readonly triggered: readonly string[]; }
 
 export interface PlayAbilityInput extends Omit<AbilityResolutionInput, "event" | "directInstanceId"> {
@@ -131,7 +131,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
     if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId)) continue;
     try {
       const abilityRng = SeededRng.fromSnapshot(runtime.rng);
-      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, drawSkillCards: input.drawSkillCards, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger, comparison: pendingComparison });
+      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger, comparison: pendingComparison });
       world = result.world;
       pendingDraw = result.pendingDraw;
       pendingLoad = result.pendingLoad;

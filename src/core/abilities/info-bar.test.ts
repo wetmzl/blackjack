@@ -15,7 +15,7 @@ const world: AbilityWorld = {
     opponent: { cards: [{ suit: "spades", rank: "5", origin: "shoe" }, { suit: "diamonds", rank: "6", origin: "shoe" }] }
   },
   guns: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 3 } },
-  shoe: { cards: [], cursor: 0, shuffleIndex: 0 }, cards: [], statuses: []
+  shoe: { cards: [], cursor: 0, shuffleIndex: 0 }, cards: [], skillDraws: 0, statuses: []
 };
 
 describe("character information bar", () => {

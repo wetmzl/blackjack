@@ -8,7 +8,7 @@ import { calculateAiThreshold, decideAiAction, sampleAiNoise } from "../ai/polic
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
-import { createMatch as createOfferedMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, resolveRound, type CreateMatchOptions } from "./reducer";
+import { createMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, resolveRound } from "./reducer";
 import { canPlayAbility, playAbility } from "../abilities/engine";
 import { fixedCardValue } from "../abilities/card-zone-adapter";
 import { abilityTriggerNotice } from "../../presentation/ability-notices";
@@ -18,7 +18,6 @@ const W_DIALOGUE = wData.dialogue;
 
 const card = (rank: Parameters<typeof createCard>[1], suit: Parameters<typeof createCard>[0] = "spades") => createCard(suit, rank);
 const skillCard = (definitionId: string, instanceId = `test-${definitionId}`) => ({ kind: "player-skill" as const, definitionId, owner: "player" as const, instanceId });
-const createMatch = (seed: string, options: CreateMatchOptions = {}) => gameReducer(createOfferedMatch(seed, options), { type: "SKIP_SKILL_OFFER" });
 
 function withHands(state: MatchState, playerCards: Card[], opponentCards: Card[], actor: "player" | "opponent" = "player"): MatchState {
   const player: ParticipantState = { id: "player", hand: createHand(playerCards), stood: false, busted: false };
@@ -160,7 +159,7 @@ describe("createMatch and legal actions", () => {
     expect(next.shoe.cursor).toBe(1);
   });
 
-  it("deals only after the opening offer is resolved and starts with the opponent", () => {
+  it("deals immediately without an opening skill card and starts with the opponent", () => {
     const state = createMatch(findSeed((candidate) => candidate.round.phase === "turns"));
     expect(state.round.phase).toBe("turns");
     expect(state.round.starter).toBe("opponent");
@@ -168,7 +167,8 @@ describe("createMatch and legal actions", () => {
     expect(state.player.hand.cards).toHaveLength(2);
     expect(state.opponent.hand.cards).toHaveLength(2);
     expect(state.playerSkills.cards).toHaveLength(0);
-    expect(state.history).toContainEqual(expect.objectContaining({ type: "SKILL_OFFER_RESOLVED", skipped: true }));
+    expect(state.playerSkills.drawCount).toBe(0);
+    expect(state.playerSkills.drawOffer).toBeNull();
     expect(getLegalActions(state)).toEqual(expect.arrayContaining([{ type: "AI_TURN" }, { type: "ESCAPE_MATCH" }]));
     expect(getLegalActions(state)).not.toContainEqual({ type: "PLAYER_HIT" });
   });
@@ -237,8 +237,7 @@ describe("createMatch and legal actions", () => {
     for (let index = 0; index < 10_000 && !nextRound; index += 1) {
       const candidate = createMatch(`night-queen-next-round-${index}`, { opponentAiSkills: [{ definitionId: "w-night-queen", enabled: true, parameters: {} }] });
       const pushed = resolveRound(withHands(candidate, [card("10"), card("7")], [card("10"), card("7")]), { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0});
-      const offered = gameReducer(pushed, { type: "ACK_ROUND_RESULT" });
-      const started = gameReducer(offered, { type: "SKIP_SKILL_OFFER" });
+      const started = gameReducer(pushed, { type: "ACK_ROUND_RESULT" });
       if (started.round.index === 1 && started.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen" && event.ruleId === "complete-to-twenty-one") && started.opponent.hand.cards.at(-1)?.origin === "derived") nextRound = started;
     }
     expect(nextRound).toBeDefined();
@@ -267,10 +266,8 @@ describe("createMatch and legal actions", () => {
     const next = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
     expect(next.round.index).toBe(1);
     expect(next.round.starter).toBe("opponent");
-    expect(next.round.phase).toBe("skill-offer");
-    expect(next.round.currentActor).toBeNull();
-    const started = gameReducer(next, { type: "SKIP_SKILL_OFFER" });
-    expect(started.round.currentActor).toBe("opponent");
+    expect(next.round.phase).toBe("turns");
+    expect(next.round.currentActor).toBe("opponent");
   });
 
   it("applies Platinum's accumulated stand advantage when equal base totals enter comparison", () => {
@@ -313,7 +310,7 @@ describe("createMatch and legal actions", () => {
     expect(reveal.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "carnival-index", ruleId: "reward-rival-reaching-index" }));
 
     const nextRound = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
-    expect(nextRound.round.phase).toBe("skill-offer");
+    expect(nextRound.round.phase).toBe("turns");
     expect(nextRound.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "carnival-index-value", stacks: 19 }));
   });
 
@@ -1068,7 +1065,7 @@ describe("character mechanic integration", () => {
       playerSkills: { ...first.playerSkills, cards: [...first.playerSkills.cards, secondCard] },
       abilities: { ...first.abilities, instances: [...first.abilities.instances, { ...secondCard, createdAtSequence: first.abilities.sequence + 1, parameters: {} }], sequence: first.abilities.sequence + 1 }
     };
-    const secondInput = { world: { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, statuses: state.abilities.statuses }, runtime: state.abilities, instanceId: "second-skill", owner: "player" as const, window: "owner-turn" as const, publishAdvice: () => "hit" as const };
+    const secondInput = { world: { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, skillDraws: state.playerSkills.drawCount, statuses: state.abilities.statuses }, runtime: state.abilities, instanceId: "second-skill", owner: "player" as const, window: "owner-turn" as const, publishAdvice: () => "hit" as const };
     expect(canPlayAbility(secondInput)).toBe(false);
     expect(() => playAbility(secondInput)).toThrow();
     expect(gameReducer(state, { type: "PLAY_ABILITY", instanceId: "second-skill" })).toBe(state);

@@ -42,8 +42,7 @@
     "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
     "drop": { "type": "object", "additionalProperties": false, "required": ["enabled", "baseWeight"], "properties": { "enabled": { "type": "boolean" }, "baseWeight": { "type": "number", "exclusiveMinimum": 0 } } },
     "stackable": { "type": "boolean" },
-    "skillOfferWeightModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["tag", "factor"], "properties": { "tag": { "type": "string", "minLength": 1 }, "factor": { "type": "number", "minimum": 0 } } } },
-    "skillOfferRuleModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["reason"], "anyOf": [{ "required": ["candidateCountDelta"] }, { "required": ["selectionCountDelta"] }], "properties": { "reason": { "enum": ["opening", "normal-win", "blackjack-win", "loss", "push", "any"] }, "candidateCountDelta": { "type": "integer" }, "selectionCountDelta": { "type": "integer" } } } },
+    "skillDrawWeightModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["tag", "factor"], "properties": { "tag": { "type": "string", "minLength": 1 }, "factor": { "type": "number", "minimum": 0 } } } },
     "unlock": {
       "type": "object",
       "additionalProperties": false,
@@ -80,7 +79,7 @@
       { "type": "object", "additionalProperties": false, "required": ["type", "condition"], "properties": { "type": { "const": "not" }, "condition": { "$ref": "#/definitions/condition" } } }
     ] },
     "effect": { "oneOf": [
-      { "type": "object", "additionalProperties": false, "required": ["type", "target", "amount"], "properties": { "type": { "const": "draw-skill-cards" }, "target": { "$ref": "#/definitions/actor" }, "amount": { "$ref": "#/definitions/scalar" } } },
+      { "type": "object", "additionalProperties": false, "required": ["type", "target", "amount"], "properties": { "type": { "const": "add-skill-draws" }, "target": { "$ref": "#/definitions/actor" }, "amount": { "$ref": "#/definitions/scalar" } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "target", "policy"], "properties": { "type": { "const": "publish-action-advice" }, "target": { "$ref": "#/definitions/actor" }, "policy": { "const": "current-optimal-hit-stand" } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "target", "card", "source", "candidate", "pick"], "properties": { "type": { "const": "replace-hand-card" }, "target": { "$ref": "#/definitions/actor" }, "card": { "const": "last-card" }, "source": { "const": "remaining-draw-pile" }, "candidate": { "$ref": "#/definitions/candidate" }, "pick": { "const": "uniform-ability-rng" } } },
       { "type": "object", "additionalProperties": false, "required": ["type", "target", "statusDefinitionId"], "properties": { "type": { "enum": ["add-status", "remove-status"] }, "target": { "$ref": "#/definitions/actor" }, "statusDefinitionId": { "type": "string", "minLength": 1 }, "amount": { "$ref": "#/definitions/scalar" }, "parameters": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } } } },

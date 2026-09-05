@@ -39,10 +39,12 @@ Player Skill catalog and offer pool.
 Every Player Skill and AI Skill declares one `primaryDomain` and at least one
 open-ended tag. Player Skills additionally declare `drop.enabled`, positive
 `drop.baseWeight`, and `stackable`; active cards may repeat, while a held
-non-stackable passive is excluded from later offers. Definitions in any of the
-three domains may declare `skillOfferWeightModifiers` and
-`skillOfferRuleModifiers`. Primary domains and tags share the offer matching
-namespace, and every matching weight factor multiplies rather than overrides.
+non-stackable passive is excluded from later draws. Definitions in any of the
+three domains may declare `skillDrawWeightModifiers`. Primary domains and tags
+share the draw matching namespace, and every matching weight factor multiplies
+rather than overrides. The draw candidate count is a single core constant and
+is not modified by round outcomes or abilities. Use the generic
+`add-skill-draws` effect when a data-driven Talent or ability grants draws.
 
 Every passive Player Skill or AI Skill must declare a positive finite `ttl` as
 either `{ "type": "rounds", "amount": N }` or

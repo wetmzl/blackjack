@@ -1,44 +1,35 @@
-import type { AbilityDefinition, SkillOfferReason, SkillOfferRuleModifier, SkillOfferWeightModifier } from "../abilities/types";
+import type { AbilityDefinition, SkillDrawWeightModifier } from "../abilities/types";
 import type { SeededRng, RngSnapshot } from "../rng/seeded";
 import type { CharacterDefeatRecord } from "../progression/defeats";
 import { INITIAL_PLAYER_SKILL_IDS, PLAYER_SKILL_DEFINITIONS } from "./definitions";
-import type { PlayerSkillDefinition, SkillOffer, SkillOfferRule, SkillOfferSelectionError } from "./types";
+import type { PlayerSkillDefinition, SkillDrawOffer } from "./types";
 
 export const PLAYER_SKILL_INVENTORY_CAPACITY = 10;
-
-const BASE_OFFER_RULES: Readonly<Record<SkillOfferReason, SkillOfferRule>> = Object.freeze({
-  opening: { candidateCount: 3, selectionCount: 1 },
-  "normal-win": { candidateCount: 3, selectionCount: 1 },
-  "blackjack-win": { candidateCount: 3, selectionCount: 2 },
-  loss: { candidateCount: 2, selectionCount: 1 },
-  push: { candidateCount: 3, selectionCount: 1 }
-});
-
-export function resolveSkillOfferRule(reason: SkillOfferReason, modifiers: readonly SkillOfferRuleModifier[] = []): SkillOfferRule {
-  const base = BASE_OFFER_RULES[reason];
-  const relevant = modifiers.filter((modifier) => modifier.reason === "any" || modifier.reason === reason);
-  const candidateCount = relevant.reduce((value, modifier) => value + (modifier.candidateCountDelta ?? 0), base.candidateCount);
-  const selectionCount = relevant.reduce((value, modifier) => value + (modifier.selectionCountDelta ?? 0), base.selectionCount);
-  return { candidateCount: Math.max(1, Math.min(4, candidateCount)), selectionCount: Math.max(1, Math.min(4, selectionCount)) };
-}
+export const SKILL_DRAW_CANDIDATE_COUNT = 3;
 
 /** Primary domains participate in the same matching namespace as open tags. */
 export function playerSkillHasTag(skill: PlayerSkillDefinition, tag: string): boolean {
   return skill.primaryDomain === tag || skill.tags.includes(tag);
 }
 
-export function calculatePlayerSkillWeight(skill: PlayerSkillDefinition, modifiers: readonly SkillOfferWeightModifier[]): number {
+export function calculatePlayerSkillWeight(skill: PlayerSkillDefinition, modifiers: readonly SkillDrawWeightModifier[]): number {
   return modifiers.reduce((weight, modifier) => playerSkillHasTag(skill, modifier.tag) ? weight * modifier.factor : weight, skill.drop.baseWeight);
 }
 
-export function collectSkillOfferModifiers(definitions: readonly AbilityDefinition[]): {
-  readonly weights: readonly SkillOfferWeightModifier[];
-  readonly rules: readonly SkillOfferRuleModifier[];
-} {
-  return {
-    weights: definitions.flatMap((definition) => definition.skillOfferWeightModifiers ?? []),
-    rules: definitions.flatMap((definition) => definition.skillOfferRuleModifiers ?? [])
-  };
+export function canGenerateSkillDraw(
+  unlockedDefinitionIds: readonly string[],
+  heldDefinitionIds: readonly string[],
+  weightModifiers: readonly SkillDrawWeightModifier[] = []
+): boolean {
+  const unlocked = new Set(unlockedDefinitionIds);
+  const held = new Set(heldDefinitionIds);
+  return PLAYER_SKILL_DEFINITIONS.some((skill) => unlocked.has(skill.id) && skill.drop.enabled
+    && (skill.category === "active" || skill.stackable || !held.has(skill.id))
+    && calculatePlayerSkillWeight(skill, weightModifiers) > 0);
+}
+
+export function collectSkillDrawWeightModifiers(definitions: readonly AbilityDefinition[]): readonly SkillDrawWeightModifier[] {
+  return definitions.flatMap((definition) => definition.skillDrawWeightModifiers ?? []);
 }
 
 function weightedPickIndex(weights: readonly number[], rng: SeededRng): number {
@@ -52,48 +43,30 @@ function weightedPickIndex(weights: readonly number[], rng: SeededRng): number {
   return weights.length - 1;
 }
 
-export function generateSkillOffer(
+export function generateSkillDrawOffer(
   rng: SeededRng,
-  reason: SkillOfferReason,
   unlockedDefinitionIds: readonly string[],
   heldDefinitionIds: readonly string[],
-  weightModifiers: readonly SkillOfferWeightModifier[] = [],
-  ruleModifiers: readonly SkillOfferRuleModifier[] = [],
-  offerId = `skill-offer-${reason}`
-): { readonly offer: SkillOffer; readonly rng: RngSnapshot } {
+  weightModifiers: readonly SkillDrawWeightModifier[] = [],
+  offerId = "skill-draw"
+): { readonly offer: SkillDrawOffer; readonly rng: RngSnapshot } {
   const unlocked = new Set(unlockedDefinitionIds);
   const held = new Set(heldDefinitionIds);
-  const rule = resolveSkillOfferRule(reason, ruleModifiers);
   const pool = PLAYER_SKILL_DEFINITIONS.filter((skill) => unlocked.has(skill.id) && skill.drop.enabled)
     .filter((skill) => skill.category === "active" || skill.stackable || !held.has(skill.id))
     .map((skill) => ({ skill, weight: calculatePlayerSkillWeight(skill, weightModifiers) }))
     .filter((candidate) => candidate.weight > 0);
   const candidates: PlayerSkillDefinition[] = [];
-  while (pool.length > 0 && candidates.length < rule.candidateCount) {
+  while (pool.length > 0 && candidates.length < SKILL_DRAW_CANDIDATE_COUNT) {
     const index = weightedPickIndex(pool.map((candidate) => candidate.weight), rng);
     candidates.push(pool[index]!.skill);
     pool.splice(index, 1);
   }
   const candidateDefinitionIds = candidates.map((skill) => skill.id);
   return {
-    offer: {
-      id: offerId, reason, candidateDefinitionIds,
-      maxSelections: Math.min(
-        rule.selectionCount,
-        candidateDefinitionIds.length,
-        Math.max(0, PLAYER_SKILL_INVENTORY_CAPACITY - heldDefinitionIds.length)
-      ),
-      selectedDefinitionIds: []
-    },
+    offer: { id: offerId, candidateDefinitionIds },
     rng: rng.snapshot()
   };
-}
-
-export function skillOfferSelectionError(offer: SkillOffer, currentCardCount: number, definitionId: string): SkillOfferSelectionError | null {
-  if (offer.selectedDefinitionIds.includes(definitionId)) return null;
-  if (currentCardCount + offer.selectedDefinitionIds.length >= PLAYER_SKILL_INVENTORY_CAPACITY) return "inventory-full";
-  if (offer.selectedDefinitionIds.length >= offer.maxSelections) return "selection-limit";
-  return null;
 }
 
 /** Returns skills newly unlocked by a confirmed, non-escaped victory. */

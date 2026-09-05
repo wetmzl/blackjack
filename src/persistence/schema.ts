@@ -11,7 +11,7 @@ import characterCatalog from "../content/characters/catalog.json" with { type: "
 export const LONG_TERM_SAVE_FORMAT = "house-of-chances-save" as const;
 export const RUNTIME_SAVE_FORMAT = "house-of-chances-runtime" as const;
 export const CURRENT_LONG_TERM_SCHEMA_VERSION = 8 as const;
-export const CURRENT_RUNTIME_SCHEMA_VERSION = 3 as const;
+export const CURRENT_RUNTIME_SCHEMA_VERSION = 4 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -42,7 +42,7 @@ const RoundOutcomeSchema = z.object({
 }).strict();
 const RoundSchema = z.object({
   index: z.number().int().min(0),
-  phase: z.enum(["dealing", "skill-offer", "initial-blackjack-check", "turns", "settlement", "round-reveal", "roulette-reaction", "roulette-trigger", "roulette-result", "round-end"]),
+  phase: z.enum(["dealing", "initial-blackjack-check", "turns", "settlement", "round-reveal", "roulette-reaction", "roulette-trigger", "roulette-result", "round-end"]),
   starter: z.enum(["player", "opponent"]),
   currentActor: z.enum(["player", "opponent"]).nullable(),
   player: ParticipantSchema,
@@ -114,9 +114,9 @@ const GameEventSchema = z.union([
   z.object({ type: z.literal("TRIGGER_RESULT_ACKNOWLEDGED") }).strict(),
   z.object({ type: z.literal("PARTICIPANT_KILLED"), actor: z.enum(["player", "opponent"]) }).strict(),
   z.object({ type: z.literal("SKILL_GAINED"), skillId: z.string().min(1) }).strict(),
-  z.object({ type: z.literal("SKILL_OFFER_CREATED"), offerId: z.string().min(1), reason: z.enum(["opening", "normal-win", "blackjack-win", "loss", "push"]), candidateDefinitionIds: z.array(z.string().min(1)).max(4), maxSelections: z.number().int().min(0).max(4) }).strict(),
-  z.object({ type: z.literal("SKILL_OFFER_SELECTION_CHANGED"), offerId: z.string().min(1), selectedDefinitionIds: z.array(z.string().min(1)).max(4) }).strict(),
-  z.object({ type: z.literal("SKILL_OFFER_RESOLVED"), offerId: z.string().min(1), selectedDefinitionIds: z.array(z.string().min(1)).max(4), skipped: z.boolean() }).strict(),
+  z.object({ type: z.literal("SKILL_DRAWS_ADDED"), reason: z.enum(["blackjack", "win", "loss", "push"]), amount: z.number().int().positive() }).strict(),
+  z.object({ type: z.literal("SKILL_DRAW_OPENED"), offerId: z.string().min(1), candidateDefinitionIds: z.array(z.string().min(1)).min(1).max(3) }).strict(),
+  z.object({ type: z.literal("SKILL_DRAW_RESOLVED"), offerId: z.string().min(1), selectedDefinitionId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("MATCH_FINISHED"), reason: z.enum(["player-killed", "opponent-killed", "escaped"]) }).strict(),
   z.object({ type: z.literal("MATCH_ESCAPED"), }).strict(),
   z.object({ type: z.literal("MATCH_RESULT_ACKNOWLEDGED"), }).strict(),
@@ -130,7 +130,8 @@ export const MatchStateSchema = z.object({
   player: ParticipantSchema, opponent: ParticipantSchema, shoe: ShoeSchema, roulette: RouletteSchema,
   playerSkills: z.object({
     unlockedDefinitionIds: z.array(z.string().min(1)), cards: z.array(AbilityCardSchema).max(PLAYER_SKILL_INVENTORY_CAPACITY),
-    offer: z.object({ id: z.string().min(1), reason: z.enum(["opening", "normal-win", "blackjack-win", "loss", "push"]), candidateDefinitionIds: z.array(z.string().min(1)).max(4), maxSelections: z.number().int().min(0).max(4), selectedDefinitionIds: z.array(z.string().min(1)).max(4) }).strict().nullable(),
+    drawCount: z.number().int().min(0),
+    drawOffer: z.object({ id: z.string().min(1), candidateDefinitionIds: z.array(z.string().min(1)).min(1).max(3) }).strict().nullable(),
     advice: z.enum(["hit", "stand"]).nullable()
   }).strict().superRefine((skills, ctx) => {
     if (new Set(skills.unlockedDefinitionIds).size !== skills.unlockedDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unlockedDefinitionIds"], message: "duplicate unlocked Player Skill" });
@@ -146,18 +147,16 @@ export const MatchStateSchema = z.object({
       else if (skill.category === "passive" && !skill.stackable && passiveIds.has(skill.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cards", index], message: "non-stackable passive Player Skill is duplicated" });
       else if (skill.category === "passive") passiveIds.add(skill.id);
     }
-    const offer = skills.offer;
+    const offer = skills.drawOffer;
     if (offer) {
-      if (new Set(offer.candidateDefinitionIds).size !== offer.candidateDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "candidateDefinitionIds"], message: "duplicate offer candidate" });
-      if (new Set(offer.selectedDefinitionIds).size !== offer.selectedDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "selectedDefinitionIds"], message: "duplicate offer selection" });
+      if (new Set(offer.candidateDefinitionIds).size !== offer.candidateDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["drawOffer", "candidateDefinitionIds"], message: "duplicate draw candidate" });
       offer.candidateDefinitionIds.forEach((id, index) => {
         const skill = getPlayerSkillDefinition(id);
-        if (!skill || !skills.unlockedDefinitionIds.includes(id) || !skill.drop.enabled) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "candidateDefinitionIds", index], message: "offer candidate is not an unlocked droppable Player Skill" });
-        else if (skill.category === "passive" && !skill.stackable && skills.cards.some((card) => card.definitionId === id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "candidateDefinitionIds", index], message: "held non-stackable passive cannot be offered" });
+        if (!skill || !skills.unlockedDefinitionIds.includes(id) || !skill.drop.enabled) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["drawOffer", "candidateDefinitionIds", index], message: "draw candidate is not an unlocked droppable Player Skill" });
+        else if (skill.category === "passive" && !skill.stackable && skills.cards.some((card) => card.definitionId === id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["drawOffer", "candidateDefinitionIds", index], message: "held non-stackable passive cannot be offered" });
       });
-      if (offer.maxSelections > offer.candidateDefinitionIds.length || offer.maxSelections > PLAYER_SKILL_INVENTORY_CAPACITY - skills.cards.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "maxSelections"], message: "offer selection limit exceeds candidates or inventory capacity" });
-      if (offer.selectedDefinitionIds.length > offer.maxSelections || offer.selectedDefinitionIds.some((id) => !offer.candidateDefinitionIds.includes(id))) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "selectedDefinitionIds"], message: "invalid offer selection" });
-      if (skills.cards.length + offer.selectedDefinitionIds.length > PLAYER_SKILL_INVENTORY_CAPACITY) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["offer", "selectedDefinitionIds"], message: "skill inventory overflow" });
+      if (skills.drawCount === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["drawCount"], message: "an open draw requires an available draw count" });
+      if (skills.cards.length >= PLAYER_SKILL_INVENTORY_CAPACITY) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["drawOffer"], message: "a full inventory cannot keep a draw open" });
     }
   }),
   talentIds: z.array(z.string().min(1)), round: RoundSchema,
@@ -178,7 +177,7 @@ export const MatchStateSchema = z.object({
     const isStatusSource = match.abilities.statuses.some((status) => status.sourceInstanceId === instance.instanceId);
     if (instance.kind === "player-skill" && !isStatusSource && !match.playerSkills.cards.some((card) => card.instanceId === instance.instanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["abilities", "instances", index], message: "Player Skill runtime instance has no card" });
   });
-  if ((match.round.phase === "skill-offer") !== (match.playerSkills.offer !== null)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["playerSkills", "offer"], message: "offer presence must match skill-offer phase" });
+  if (match.playerSkills.drawOffer && (match.round.phase !== "turns" || match.round.currentActor !== "player")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["playerSkills", "drawOffer"], message: "a skill draw can only be open during the player's turn" });
   if (new Set(match.talentIds).size !== match.talentIds.length || match.talentIds.some((id) => !getTalentDefinition(id))) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["talentIds"], message: "invalid Talent list" });
   for (const id of match.talentIds) if (!match.abilities.instances.some((instance) => instance.kind === "talent" && instance.definitionId === id && instance.owner === "player")) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["talentIds"], message: "Talent runtime instance is missing" });
 });

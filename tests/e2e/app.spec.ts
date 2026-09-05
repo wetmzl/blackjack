@@ -21,7 +21,7 @@ const wDialogue = wCharacterData.dialogue;
 
 function findTurnsMatch(prefix: string) {
   for (let index = 0; index < 10_000; index += 1) {
-    const match = gameReducer(createMatch(`${prefix}-${index}`), { type: "SKIP_SKILL_OFFER" });
+    const match = createMatch(`${prefix}-${index}`);
     if (match.round.phase === "turns" && match.round.currentActor === "opponent") return match;
   }
   throw new Error("No deterministic turns fixture found");
@@ -29,7 +29,7 @@ function findTurnsMatch(prefix: string) {
 
 function findPlayerBlackjackMatch() {
   for (let index = 0; index < 10_000; index += 1) {
-    const match = gameReducer(createMatch(`e2e-player-blackjack-${index}`), { type: "SKIP_SKILL_OFFER" });
+    const match = createMatch(`e2e-player-blackjack-${index}`);
     if (match.round.outcome?.reason === "blackjack" && match.round.outcome.winner === "player") return match;
   }
   throw new Error("No deterministic player Blackjack fixture found");
@@ -37,7 +37,7 @@ function findPlayerBlackjackMatch() {
 
 function wInfoBarMatch(): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
-    const dealt = gameReducer(createMatch(`e2e-w-info-${index}`, { opponentId: "w", opponentAiSkills: wCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    const dealt = createMatch(`e2e-w-info-${index}`, { opponentId: "w", opponentAiSkills: wCharacterData.aiSkills });
     if (dealt.round.phase !== "turns" || dealt.round.currentActor !== "opponent") continue;
     const hit = gameReducer(dealt, { type: "AI_HIT" });
     if (hit.round.phase !== "turns" || hit.opponent.hand.cards.length !== dealt.opponent.hand.cards.length + 1) continue;
@@ -48,7 +48,7 @@ function wInfoBarMatch(): MatchState {
 
 function ireneInfoBarMatch(): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
-    const dealt = gameReducer(createMatch(`e2e-irene-info-${index}`, { opponentId: "irene", opponentAiSkills: ireneCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    const dealt = createMatch(`e2e-irene-info-${index}`, { opponentId: "irene", opponentAiSkills: ireneCharacterData.aiSkills });
     if (dealt.round.phase !== "turns") continue;
     return {
       ...dealt,
@@ -61,7 +61,7 @@ function ireneInfoBarMatch(): MatchState {
 
 function lapplandInfoBarMatch(): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
-    const dealt = gameReducer(createMatch(`e2e-lappland-info-${index}`, { opponentId: "lappland-the-decadenza", opponentAiSkills: lapplandCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    const dealt = createMatch(`e2e-lappland-info-${index}`, { opponentId: "lappland-the-decadenza", opponentAiSkills: lapplandCharacterData.aiSkills });
     if (dealt.round.phase !== "turns") continue;
     const source = dealt.abilities.instances.find((instance) => instance.definitionId === "carnival-index");
     if (!source) continue;
@@ -88,7 +88,7 @@ function lapplandInfoBarMatch(): MatchState {
 
 function hoOlheyakInfoBarMatch(suit: "hearts" | "spades" = "hearts"): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
-    const dealt = gameReducer(createMatch(`e2e-ho-olheyak-info-${index}`, { opponentId: "ho-olheyak", opponentAiSkills: hoOlheyakCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    const dealt = createMatch(`e2e-ho-olheyak-info-${index}`, { opponentId: "ho-olheyak", opponentAiSkills: hoOlheyakCharacterData.aiSkills });
     if (dealt.round.phase !== "turns") continue;
     const source = dealt.abilities.instances.find((instance) => instance.definitionId === "ho-olheyak-inheritance-terminal");
     if (!source) continue;
@@ -181,18 +181,16 @@ async function inviteCharacter(page: Page, id: string): Promise<void> {
   await expect(page.locator("#profile")).toBeVisible();
 }
 
-async function resolveOpeningSkillOffer(page: Page): Promise<void> {
-  const skip = page.locator("button[data-action*='SKIP_SKILL_OFFER']");
-  await expect(skip).toBeVisible({ timeout: 8_000 });
-  await skip.click();
-  await expect(skip).toHaveCount(0);
+async function waitForInitialDeal(page: Page): Promise<void> {
+  await expect(page.locator(".player-zone .card")).toHaveCount(2, { timeout: 8_000 });
+  await expect(page.locator(".skill-draw-modal")).toHaveCount(0);
 }
 
 async function startCharacter(page: Page, id: string): Promise<void> {
   await inviteCharacter(page, id);
   await page.locator("[data-profile-start]").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  await resolveOpeningSkillOffer(page);
+  await waitForInitialDeal(page);
 }
 
 async function openLobbySettings(page: Page): Promise<void> {
@@ -327,8 +325,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   expect(Object.values(profileFonts).every((font) => !/(songti|stsong|simsun|noto serif)/i.test(font))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  await expect(page.locator(".skill-offer-modal")).toContainText("可选 2 张");
-  await resolveOpeningSkillOffer(page);
+  await waitForInitialDeal(page);
   await expect(page.locator(".player-zone .card")).toHaveCount(2);
   await expect(page.locator(".table-shell .gun-row")).toHaveCount(0);
   await expect(page.locator(".table-shell .felt-divider")).toHaveCount(0);
@@ -461,7 +458,7 @@ test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌",
   await expect(blackCard).toHaveCSS("color", "rgb(21, 26, 30)");
 });
 
-test("新对局中早有准备将首次技能选择提升为三选二", async ({ page }) => {
+test("早有准备提供一次主动抽卡且单击候选立即确认", async ({ page }) => {
   await page.addInitScript(() => {
     const target = window as typeof window & { __skillGainEntries: Array<{ text: string; at: number }> };
     target.__skillGainEntries = [];
@@ -478,21 +475,56 @@ test("新对局中早有准备将首次技能选择提升为三选二", async ({
   await inviteCharacter(page, "texas");
   await page.locator("[data-profile-start]").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  const offer = page.locator(".skill-offer-modal");
-  await expect(offer.locator("[data-offer-candidate]")).toHaveCount(3);
-  await expect(offer).toContainText("可选 2 张");
-  await offer.locator("[data-offer-candidate]").nth(0).click();
-  await offer.locator("[data-offer-candidate]").nth(1).click();
-  await offer.locator("button[data-action*='CONFIRM_SKILL_OFFER']").click();
-  const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: string[] }; talentIds: string[] } };
-  const expectedInitialGains = 2;
-  expect(initialMatchDebug.relevantMatchState.playerSkills.cards).toHaveLength(expectedInitialGains);
+  const drawButton = page.locator(".draw-skill-button");
+  await expect(drawButton).toBeEnabled({ timeout: 8_000 });
+  await expect(drawButton).toHaveAttribute("aria-label", "抽取技能，剩余 1 次");
+  await expect(drawButton.locator(".draw-skill-badge")).toHaveText("1");
+  await drawButton.click();
+  const offer = page.locator(".skill-draw-modal");
+  await expect(offer.getByRole("heading")).toHaveText("选一张你心仪的技能卡");
+  await expect(offer.locator(".skill-draw-card")).toHaveCount(3);
+  await expect(offer.getByRole("button", { name: /放弃|确认/ })).toHaveCount(0);
+  await offer.locator(".skill-draw-card").first().click();
+  await expect(offer).toHaveCount(0);
+  const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: string[]; drawCount: number }; talentIds: string[] } };
+  expect(initialMatchDebug.relevantMatchState.playerSkills.cards).toHaveLength(1);
+  expect(initialMatchDebug.relevantMatchState.playerSkills.drawCount).toBe(0);
   expect(initialMatchDebug.relevantMatchState.talentIds).toContain("early-preparation");
-  await expect.poll(() => page.evaluate(() => (window as typeof window & { __skillGainEntries: unknown[] }).__skillGainEntries.length), { timeout: 5_000 }).toBe(expectedInitialGains);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __skillGainEntries: unknown[] }).__skillGainEntries.length), { timeout: 5_000 }).toBe(1);
   const entries = await page.evaluate(() => (window as typeof window & { __skillGainEntries: Array<{ text: string; at: number }> }).__skillGainEntries);
   expect(entries.every((entry) => entry.text.startsWith("获得技能牌："))).toBe(true);
-  expect(entries[1]!.at - entries[0]!.at).toBeGreaterThanOrEqual(900);
   await expect(page.locator("#skill-gain-announcement")).toHaveCount(0, { timeout: 2_500 });
+});
+
+test("技能牌库满时保留抽卡次数并禁用抽取按钮", async ({ page }) => {
+  const source = findTurnsMatch("full-skill-draw-ui");
+  const cards = Array.from({ length: 10 }, (_, index) => ({
+    kind: "player-skill" as const,
+    definitionId: "hunter-instinct",
+    owner: "player" as const,
+    instanceId: `full-skill-draw-${index}`
+  }));
+  const baseSequence = source.abilities.sequence;
+  const activeMatch: MatchState = {
+    ...source,
+    round: { ...source.round, phase: "turns", currentActor: "player" },
+    playerSkills: { ...source.playerSkills, cards, drawCount: 3, drawOffer: null },
+    abilities: {
+      ...source.abilities,
+      instances: [
+        ...source.abilities.instances.filter((instance) => instance.kind !== "player-skill"),
+        ...cards.map((card, index) => ({ ...card, createdAtSequence: baseSequence + index + 1, parameters: {} }))
+      ],
+      sequence: baseSequence + cards.length
+    }
+  };
+  await page.goto("/");
+  await installRuntimeSave(page, activeMatch);
+  const drawButton = page.locator(".draw-skill-button");
+  await expect(drawButton).toBeDisabled();
+  await expect(drawButton).toHaveAttribute("aria-label", "抽取技能，剩余 3 次");
+  await expect(drawButton.locator(".draw-skill-badge")).toHaveText("3");
+  await expect(page.locator(".skill-draw-modal")).toHaveCount(0);
 });
 
 test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ page }) => {
@@ -629,7 +661,7 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
   await expect(profile.locator("#profile-content")).toHaveText(/\S+/);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  await resolveOpeningSkillOffer(page);
+  await waitForInitialDeal(page);
   await expect(page.locator(".character-strip .eyebrow")).toContainText("年 // S级");
   await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted|mocking)\.png/);
 });
@@ -677,7 +709,7 @@ test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ pa
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)$/.test(path))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  await resolveOpeningSkillOffer(page);
+  await waitForInitialDeal(page);
   await expect(page.locator(".character-strip .eyebrow")).toContainText("翎羽 // B级");
   await expect(page.locator("#dialogue-text")).toHaveAttribute("data-typing", "false", { timeout: 5_000 });
   await expect(page.locator("#dialogue-text")).not.toContainText("台词占位");
@@ -942,7 +974,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   const activeMatch: MatchState = {
     ...source,
     round: { ...source.round, currentActor: "player" },
-    playerSkills: { ...source.playerSkills, unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "hunter-instinct"])], cards: [hunterCard] },
+    playerSkills: { ...source.playerSkills, unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "hunter-instinct"])], cards: [hunterCard], drawCount: 2 },
     abilities: {
       ...source.abilities,
       instances: [...source.abilities.instances.filter((instance) => !oldCardIds.has(instance.instanceId)), { ...hunterCard, createdAtSequence: hunterSequence, parameters: {} }],
@@ -957,6 +989,13 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
   await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(1);
+  const actionButtons = page.locator(".table-action-controls > button");
+  await expect(actionButtons).toHaveCount(3);
+  await expect(page.locator(".draw-skill-button")).toHaveAttribute("aria-label", "抽取技能，剩余 2 次");
+  const actionWidths = await actionButtons.evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().width));
+  expect(actionWidths[0]).toBeGreaterThan(actionWidths[2] * 2);
+  expect(actionWidths[1]).toBeGreaterThan(actionWidths[2] * 2);
+  await expect(page.locator(".draw-skill-badge")).toHaveText("2");
   const debugBefore = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
   const playerCardElement = await page.locator(".player-zone .card").first().elementHandle();
   expect(playerCardElement).not.toBeNull();
@@ -1136,19 +1175,17 @@ test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => 
   await page.getByRole("button", { name: /Stand 停牌/ }).click();
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
   await page.getByRole("button", { name: "确认结果" }).click();
-  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "skill-offer");
-  await resolveOpeningSkillOffer(page);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "turns");
   await expect(page.locator(".opponent-zone .card-back").first()).not.toHaveClass(/revealed-suit/);
 });
 
 test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给出短暂警告", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
-  const base = gameReducer(createMatch("e2e-silent-drizzle", {
+  const base = createMatch("e2e-silent-drizzle", {
     opponentId: "texas",
     unlockedPlayerSkillIds: ["hunter-instinct"],
     opponentAiSkills: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
-  }), { type: "SKIP_SKILL_OFFER" });
+  });
   const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-silent-drizzle-hunter" };
   const sequence = base.abilities.sequence + 1;
   const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
@@ -1464,7 +1501,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   });
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  const activeMatch = gameReducer(createMatch("e2e-full-match"), { type: "SKIP_SKILL_OFFER" });
+  const activeMatch = createMatch("e2e-full-match");
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "active-match.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
@@ -1476,12 +1513,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   let sawTriggerResult = false;
   for (let step = 0; step < 260 && !(await page.locator("main.summary-shell").count()); step += 1) {
     const phase = await page.locator("main.table-shell").getAttribute("data-phase").catch(() => null);
-    if (phase === "skill-offer") {
-      const skip = page.locator("button[data-action*='SKIP_SKILL_OFFER']:not([disabled])");
-      if (await skip.count()) await skip.click();
-      else await page.waitForTimeout(80);
-    }
-    else if (phase === "round-reveal") {
+    if (phase === "round-reveal") {
       sawReveal = true;
       await expect(page.locator(".round-notice")).toBeVisible();
       await expect(page.locator(".round-notice")).toContainText(/本轮|平局|获胜|爆牌|黑杰克/);

@@ -42,7 +42,6 @@ export function presentMatchAudio(audio: MatchAudioPort, before: MatchState, aft
   }
 
   const roundStarted = events.some((event) => event.type === "ROUND_STARTED");
-  const offerCreated = events.some((event) => event.type === "SKILL_OFFER_CREATED");
   const resultAcknowledged = events.some((event) => event.type === "ROUND_RESULT_ACKNOWLEDGED");
   const playerHit = events.some((event) => event.type === "PLAYER_HIT");
   const opponentHit = events.some((event) => event.type === "OPPONENT_HIT");
@@ -51,7 +50,7 @@ export function presentMatchAudio(audio: MatchAudioPort, before: MatchState, aft
     || (events.some((event) => event.type === "OPPONENT_STOOD") && !opponentHit);
 
   if (resultAcknowledged) audio.play("stand");
-  if (offerCreated) audio.play("shuffle", resultAcknowledged ? CONFIRMED_PUSH_SHUFFLE_DELAY_MS : 0);
+  if (roundStarted) audio.play("shuffle", resultAcknowledged ? CONFIRMED_PUSH_SHUFFLE_DELAY_MS : 0);
   if (hit) audio.play("cardFlip");
   if (manualStand) audio.play("stand");
   if (events.some((event) => event.type === "BLACKJACK")) audio.play("blackjack", roundStarted ? FOLLOW_UP_CUE_DELAY_MS : 0);

@@ -49,7 +49,7 @@ DOM render / presentation / autosave
 - `GameEvent` 是对白、历史、调试和演出的事实记录，状态仍由 reducer 决定。
 - 已完成对局从牌桌确认进入 `match-summary`，再次确认后才切到 `lobby` 并由持久化层生成历史摘要。
 
-`MatchState` 的核心组成包括双方状态、牌堆、两把左轮、玩家技能库存与当前 Skill Offer、天赋 ID、能力运行时、轮次状态、历史、AI 配置、整局/每手 AI 噪声和各随机流快照。`skill-offer` 是正式轮次阶段，只有确认选择或放弃后 reducer 才发初始手牌。`execution-room` 是保留的表现层视图，当前致命演出仍在牌桌完成。
+`MatchState` 的核心组成包括双方状态、牌堆、两把左轮、玩家技能库存、剩余抽卡次数与当前抽卡候选、天赋 ID、能力运行时、轮次状态、历史、AI 配置、整局/每手 AI 噪声和各随机流快照。抽卡弹窗是玩家行动阶段上的持久化覆盖层，不是独立轮次阶段；打开弹窗后必须选择一张候选，完成后继续同一次行动。`execution-room` 是保留的表现层视图，当前致命演出仍在牌桌完成。
 
 ## 确定性与信息边界
 
@@ -69,9 +69,9 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 全屏战利品鉴赏采用表现层分层合成：应用固定加载共享 `trophy-gallery-coffin.png` 作为底图，角色 JSON 的 `trophyGallery.fullBody` 与可选 `poses` 只提供同尺寸透明角色层。局部记录坐标只绑定默认 `fullBody`，姿势切换不进入领域状态或存档。
 
-## 技能与 Offer 边界
+## 技能与抽卡边界
 
-`src/core/skills/` 负责 Player Skill 投影、解锁集合、10 张卡牌容量、Offer 基础规则和确定性加权无放回抽取。候选读取建局时保存的全部已解锁 Player Skill，不读取大厅装备状态。Offer 的候选数、可选数、库存空位和选择错误都由核心逻辑决定，UI 只渲染并提交 `TOGGLE/CONFIRM/SKIP_SKILL_OFFER` Action。
+`src/core/skills/` 负责 Player Skill 投影、解锁集合、10 张卡牌容量和确定性加权无放回抽取。候选读取建局时保存的全部已解锁 Player Skill，不读取大厅装备状态。候选数固定为 3；抽卡次数、库存空位和选择合法性都由核心逻辑决定，UI 只提交 `OPEN_SKILL_DRAW` 与 `SELECT_SKILL_DRAW` Action。
 
 权重和规则修正是能力 Definition 的通用扩展点。核心收集当前活动的 Player Skill、AI Skill 与 Talent 实例上的 modifier；技能 `primaryDomain` 和开放式 `tags` 使用同一匹配命名空间，所有命中权重因子累乘。候选生成只依赖可保存的 loot RNG，不写具体技能或角色 ID。
 

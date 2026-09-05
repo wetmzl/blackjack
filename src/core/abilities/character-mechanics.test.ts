@@ -10,7 +10,7 @@ import { AbilityDefinitionSchema } from "./schema";
 const hand = (...cards: Array<ReturnType<typeof createCard>>) => createHand(cards);
 const instance = (definitionId: string, owner: "player" | "opponent" = "opponent"): AbilityInstance => ({ kind: "ai-skill", definitionId, owner, instanceId: `${definitionId}-${owner}`, createdAtSequence: 1, parameters: {} });
 function world(player = hand(createCard("spades", "10")), opponent = hand(createCard("hearts", "9"))): AbilityWorld {
-  return { hands: { player, opponent }, guns: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 1 } }, shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 }, cards: [], statuses: [] };
+  return { hands: { player, opponent }, guns: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 1 } }, shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 }, cards: [], skillDraws: 0, statuses: [] };
 }
 function resolve(definitionId: string, owner: "player" | "opponent", event: Parameters<typeof resolveAbilityEvent>[0]["event"], pending: Partial<Parameters<typeof resolveAbilityEvent>[0]> = {}, worlds?: AbilityWorld) {
   const ability = instance(definitionId, owner);

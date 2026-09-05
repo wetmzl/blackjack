@@ -1,4 +1,4 @@
-import type { AbilityTtl, SkillCardInstance, SkillOfferReason } from "../abilities/types";
+import type { AbilityTtl, SkillCardInstance } from "../abilities/types";
 
 export type SkillTiming = "player-turn" | "roulette-reaction";
 export type SkillCategory = "active" | "passive";
@@ -23,26 +23,18 @@ export interface PlayerSkillDefinition {
   readonly hidden: boolean;
 }
 
-export interface SkillOfferRule {
-  readonly candidateCount: number;
-  readonly selectionCount: number;
-}
-
-export interface SkillOffer {
+export interface SkillDrawOffer {
   readonly id: string;
-  readonly reason: SkillOfferReason;
   readonly candidateDefinitionIds: readonly string[];
-  readonly maxSelections: number;
-  readonly selectedDefinitionIds: readonly string[];
 }
 
 export interface PlayerSkillInventory {
   /** Every active and passive card occupies one stable inventory slot. */
   readonly cards: readonly SkillCardInstance[];
-  /** Durable unlock snapshot used by deterministic offer generation. */
+  /** Durable unlock snapshot used by deterministic draw generation. */
   readonly unlockedDefinitionIds: readonly string[];
-  readonly offer: SkillOffer | null;
+  /** Earned draws that have not yet been exchanged for a skill card. */
+  readonly drawCount: number;
+  readonly drawOffer: SkillDrawOffer | null;
   readonly advice: "hit" | "stand" | null;
 }
-
-export type SkillOfferSelectionError = "selection-limit" | "inventory-full";

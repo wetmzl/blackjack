@@ -10,13 +10,7 @@ export type AbilityTtl =
   | { readonly type: "rounds"; readonly amount: number }
   | { readonly type: "triggers"; readonly amount: number };
 export interface AbilityInstanceTtl { readonly type: AbilityTtl["type"]; readonly remaining: number; }
-export type SkillOfferReason = "opening" | "normal-win" | "blackjack-win" | "loss" | "push";
-export interface SkillOfferWeightModifier { readonly tag: string; readonly factor: number; }
-export interface SkillOfferRuleModifier {
-  readonly reason: SkillOfferReason | "any";
-  readonly candidateCountDelta?: number;
-  readonly selectionCountDelta?: number;
-}
+export interface SkillDrawWeightModifier { readonly tag: string; readonly factor: number; }
 export type AbilityTrigger =
   | "on-match-created" | "on-ability-played" | "before-card-draw" | "after-card-draw"
   | "after-hand-changed" | "after-stand" | "before-bust-check" | "before-round-resolution" | "before-bullet-load" | "after-bullet-load"
@@ -82,7 +76,7 @@ export type Condition =
   | { readonly type: "not"; readonly condition: Condition };
 
 export type Effect =
-  | { readonly type: "draw-skill-cards"; readonly target: ActorSelector; readonly amount: ScalarValue }
+  | { readonly type: "add-skill-draws"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "publish-action-advice"; readonly target: ActorSelector; readonly policy: "current-optimal-hit-stand" }
   | { readonly type: "replace-hand-card"; readonly target: ActorSelector; readonly card: CardSelector; readonly source: CardSource; readonly candidate: CardCandidate; readonly pick: RandomPick }
   | { readonly type: "swap-last-hand-card-with-draw-pile-top"; readonly target: ActorSelector }
@@ -128,9 +122,8 @@ interface AbilityDefinitionBase {
   /** Finite lifetime for passive/automatic skills. Talents and active cards do not use TTL. */
   readonly ttl?: AbilityTtl;
   readonly rules: readonly AbilityRule[];
-  /** Shared extension point consumed by the Skill Offer domain, not the ability interpreter. */
-  readonly skillOfferWeightModifiers?: readonly SkillOfferWeightModifier[];
-  readonly skillOfferRuleModifiers?: readonly SkillOfferRuleModifier[];
+  /** Shared extension point consumed by skill-draw candidate generation, not the ability interpreter. */
+  readonly skillDrawWeightModifiers?: readonly SkillDrawWeightModifier[];
 }
 export interface PlayerSkillAbilityDefinition extends AbilityDefinitionBase {
   readonly sourceKind: "player-skill";
@@ -153,7 +146,7 @@ export interface PendingTrigger { readonly id: string; readonly actor: AbilityAc
 export interface PendingComparison { readonly id: string; readonly scores: Readonly<Record<AbilityActor, number>>; }
 export interface AbilityEventContext { readonly trigger: AbilityTrigger | "after-ability-played"; readonly sourceEventId: string; readonly eventActor?: AbilityActor; readonly playedAbilityKind?: AbilitySourceKind; readonly roundHitCounts?: Readonly<Record<AbilityActor, number>>; readonly roundOutcome?: { readonly reason: "blackjack" | "bust" | "comparison" | "push"; readonly penaltyTarget: AbilityActor | null; readonly comparisonScores?: Readonly<Record<AbilityActor, number>> }; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; }
 
-export interface AbilityWorld { readonly hands: Readonly<Record<AbilityActor, Hand>>; readonly guns: Readonly<Record<AbilityActor, GunState>>; readonly shoe: ShoeState; readonly cards: readonly SkillCardInstance[]; readonly statuses: readonly AbilityStatus[]; readonly advice?: "hit" | "stand" | null; }
+export interface AbilityWorld { readonly hands: Readonly<Record<AbilityActor, Hand>>; readonly guns: Readonly<Record<AbilityActor, GunState>>; readonly shoe: ShoeState; readonly cards: readonly SkillCardInstance[]; readonly skillDraws: number; readonly statuses: readonly AbilityStatus[]; readonly advice?: "hit" | "stand" | null; }
 export interface AbilityEffectResult { readonly world: AbilityWorld; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly runtime: AbilityRuntimeState; readonly events: readonly AbilityDomainEvent[]; }
 export type AbilityDomainEvent =
   | { readonly type: "ABILITY_PLAYED"; readonly instanceId: string; readonly definitionId: string; readonly owner: AbilityActor }

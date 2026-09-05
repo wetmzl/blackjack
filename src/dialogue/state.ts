@@ -105,7 +105,6 @@ export function resolveDialogueState(state: MatchState): ResolvedDialogueState {
     case "turns":
       return turnDialogue(state, roundStartIndex);
     case "dealing":
-    case "skill-offer":
     case "initial-blackjack-check":
     case "settlement":
     case "round-end":

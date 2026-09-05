@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createCard } from "../core/blackjack/card";
-import { createMatch, gameReducer } from "../core/match/reducer";
+import { createMatch } from "../core/match/reducer";
 import type { Card } from "../core/blackjack/types";
 import type { GameEvent, MatchState, RoundOutcome, RoundPhase } from "../core/match/types";
 import { DIALOGUE_EVENT_CODES } from "./types";
@@ -10,7 +10,7 @@ const card = (rank: Card["rank"], suit: Card["suit"] = "spades") => createCard(s
 
 function findMatch(predicate: (state: MatchState) => boolean): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
-    const state = gameReducer(createMatch(`dialogue-state-${index}`), { type: "SKIP_SKILL_OFFER" });
+    const state = createMatch(`dialogue-state-${index}`);
     if (predicate(state)) return state;
   }
   throw new Error("No dialogue fixture found");
@@ -114,7 +114,7 @@ describe("finite dialogue state resolver", () => {
 
   it("returns exactly one registered pool for every match phase", () => {
     const phases: RoundPhase[] = [
-      "dealing", "skill-offer", "initial-blackjack-check", "turns", "settlement", "round-reveal",
+      "dealing", "initial-blackjack-check", "turns", "settlement", "round-reveal",
       "roulette-reaction", "roulette-trigger", "roulette-result", "round-end"
     ];
     const base = turnsMatch();

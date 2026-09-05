@@ -4,7 +4,7 @@ import type { Card } from "../blackjack/types";
 import { deriveRng, SeededRng } from "../rng/seeded";
 import { addBullets, createGun, pullTrigger } from "../roulette/roulette";
 import { getPlayerSkillDefinition, INITIAL_PLAYER_SKILL_IDS } from "../skills/definitions";
-import { collectSkillOfferModifiers, generateSkillOffer, PLAYER_SKILL_INVENTORY_CAPACITY, skillOfferSelectionError } from "../skills/skills";
+import { canGenerateSkillDraw, collectSkillDrawWeightModifiers, generateSkillDrawOffer, PLAYER_SKILL_INVENTORY_CAPACITY } from "../skills/skills";
 import { decideAiAction, sampleAiNoise } from "../ai/policy";
 import { buildObservation } from "../ai/observation";
 import { decideOptimalAction } from "../ai/policy";
@@ -12,7 +12,7 @@ import { getRoundStarter } from "../blackjack/round";
 import { advanceRoundAbilityTtls, createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances, isAbilityInstanceExpired } from "../abilities/runtime";
 import { getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
-import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance, SkillOfferReason } from "../abilities/types";
+import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
 import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
@@ -67,11 +67,11 @@ function setPhase(state: MatchState, phase: RoundPhase, currentActor: Actor | nu
   return withRound({ ...lifecycle, abilities: garbageCollectAbilityInstances(lifecycle.abilities, lifecycle.playerSkills.cards) }, { ...lifecycle.round, phase, currentActor });
 }
 
-export function abilityWorld(state: MatchState): AbilityWorld { return { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, statuses: state.abilities.statuses, advice: state.playerSkills.advice }; }
+export function abilityWorld(state: MatchState): AbilityWorld { return { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, skillDraws: state.playerSkills.drawCount, statuses: state.abilities.statuses, advice: state.playerSkills.advice }; }
 export function commitAbilityWorld(state: MatchState, world: AbilityWorld): MatchState {
   const player = { ...state.player, hand: world.hands.player };
   const opponent = { ...state.opponent, hand: world.hands.opponent };
-  return { ...state, player, opponent, round: { ...state.round, player, opponent }, shoe: world.shoe, roulette: world.guns, playerSkills: playerSkillState(state, { cards: [...world.cards], advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
+  return { ...state, player, opponent, round: { ...state.round, player, opponent }, shoe: world.shoe, roulette: world.guns, playerSkills: playerSkillState(state, { cards: [...world.cards], drawCount: world.skillDraws, advice: world.advice ?? null }), abilities: { ...state.abilities, statuses: [...world.statuses] } };
 }
 
 function changedHandActors(before: AbilityWorld, after: AbilityWorld): Actor[] {
@@ -100,26 +100,8 @@ function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourc
   }, state);
 }
 
-function drawSkillCards(state: MatchState, owner: Actor, amount: number, world: AbilityWorld, rng: SeededRng): readonly SkillCardInstance[] {
-  if (owner !== "player") return [];
-  const pool = state.playerSkills.unlockedDefinitionIds.filter((id) => getPlayerSkillDefinition(id)?.category === "active" && getPlayerSkillDefinition(id)?.drop.enabled);
-  const count = Math.min(Math.max(0, amount), PLAYER_SKILL_INVENTORY_CAPACITY - world.cards.length);
-  if (pool.length === 0 || count === 0) return [];
-  const result: SkillCardInstance[] = [];
-  const used = new Set([...state.abilities.instances.map((instance) => instance.instanceId), ...world.cards.map((card) => card.instanceId)]);
-  let serial = state.abilities.sequence;
-  for (let index = 0; index < count; index += 1) {
-    const definitionId = pool[rng.nextInt(pool.length)]!;
-    let instanceId = `ability-card-${++serial}`;
-    while (used.has(instanceId)) instanceId = `ability-card-${++serial}`;
-    used.add(instanceId);
-    result.push({ kind: "player-skill", definitionId, owner: "player", instanceId });
-  }
-  return result;
-}
 function abilityServices(state: MatchState) {
   return {
-    drawSkillCards: (owner: Actor, amount: number, world: AbilityWorld, rng: SeededRng) => drawSkillCards(state, owner, amount, world, rng),
     publishAdvice: (owner: Actor) => owner === "player" ? decideOptimalAction(buildObservation(state, "player")) : "stand" as const
   };
 }
@@ -158,6 +140,18 @@ function comparisonOutcome(scores: Readonly<Record<Actor, number>>): RoundOutcom
   return { winner, reason: winner === null ? "push" : "comparison", penaltyTarget: winner === null ? null : winner === "player" ? "opponent" : "player", bulletsAdded: winner === null ? 0 : 1, comparisonScores: scores };
 }
 
+function awardRoundSkillDraws(state: MatchState, outcome: RoundOutcome): MatchState {
+  const blackjackWin = outcome.winner === "player" && outcome.reason === "blackjack";
+  const amount = blackjackWin ? 2 : 1;
+  const reason = blackjackWin ? "blackjack" as const
+    : outcome.winner === null ? "push" as const
+      : outcome.winner === "player" ? "win" as const : "loss" as const;
+  return append({
+    ...state,
+    playerSkills: playerSkillState(state, { drawCount: state.playerSkills.drawCount + amount })
+  }, { type: "SKILL_DRAWS_ADDED", reason, amount });
+}
+
 export function resolveRound(state: MatchState, outcome: RoundOutcome, pointComparison?: PendingComparison): MatchState {
   const comparison = pointComparison ?? (outcome.reason === "comparison"
     ? { id: `comparison:${state.roundIndex}:${state.history.length}`, scores: { player: handValueAtLimit(state.player.hand, state.player.bustLimit ?? 21), opponent: handValueAtLimit(state.opponent.hand, state.opponent.bustLimit ?? 21) } }
@@ -174,7 +168,7 @@ export function resolveRound(state: MatchState, outcome: RoundOutcome, pointComp
     ? comparisonOutcome((prepared.pendingComparison ?? comparison)!.scores)
     : undefined;
   const finalOutcome = resolvedOutcome ?? outcome;
-  let next = prepared.state;
+  let next = awardRoundSkillDraws(prepared.state, finalOutcome);
   if (!finalOutcome.penaltyTarget) {
     next = append(withRound(next, { ...next.round, phase: "round-reveal", currentActor: null, outcome: finalOutcome }), { type: "ROUND_RESOLVED", outcome: finalOutcome });
     return next;
@@ -222,33 +216,38 @@ function standFor(state: MatchState, actor: Actor): MatchState {
   return next[other].stood ? resolveComparison(next) : setPhase(next, "turns", other);
 }
 
-function offerReasonForOutcome(outcome: RoundOutcome | null): SkillOfferReason {
-  if (!outcome) return "opening";
-  if (outcome.winner === null) return "push";
-  if (outcome.winner !== "player") return "loss";
-  return outcome.reason === "blackjack" ? "blackjack-win" : "normal-win";
-}
-
-function activeOfferDefinitions(state: MatchState) {
+function activeSkillDrawDefinitions(state: MatchState) {
   return state.abilities.instances
     .filter((instance) => !isAbilityInstanceExpired(instance))
     .map((instance) => getAbilityDefinition(instance.definitionId))
     .filter((definition): definition is NonNullable<typeof definition> => Boolean(definition));
 }
 
-function createOffer(state: MatchState, reason: SkillOfferReason): MatchState {
-  const modifiers = collectSkillOfferModifiers(activeOfferDefinitions(state));
-  const rng = SeededRng.fromSnapshot(state.rng.loot);
-  const result = generateSkillOffer(
-    rng, reason, state.playerSkills.unlockedDefinitionIds,
-    state.playerSkills.cards.map((card) => card.definitionId), modifiers.weights, modifiers.rules,
-    `skill-offer-${state.roundIndex}-${state.history.length}`
+function canOpenSkillDraw(state: MatchState): boolean {
+  if (state.playerSkills.drawOffer || state.playerSkills.drawCount <= 0 || state.playerSkills.cards.length >= PLAYER_SKILL_INVENTORY_CAPACITY) return false;
+  const modifiers = collectSkillDrawWeightModifiers(activeSkillDrawDefinitions(state));
+  return canGenerateSkillDraw(
+    state.playerSkills.unlockedDefinitionIds,
+    state.playerSkills.cards.map((card) => card.definitionId),
+    modifiers
   );
+}
+
+function openSkillDraw(state: MatchState): MatchState {
+  if (state.round.phase !== "turns" || state.round.currentActor !== "player" || !canOpenSkillDraw(state)) return state;
+  const modifiers = collectSkillDrawWeightModifiers(activeSkillDrawDefinitions(state));
+  const rng = SeededRng.fromSnapshot(state.rng.loot);
+  const result = generateSkillDrawOffer(
+    rng, state.playerSkills.unlockedDefinitionIds,
+    state.playerSkills.cards.map((card) => card.definitionId), modifiers,
+    `skill-draw-${state.roundIndex}-${state.history.length}`
+  );
+  if (result.offer.candidateDefinitionIds.length === 0) return state;
   return append({
     ...state,
-    playerSkills: playerSkillState(state, { offer: result.offer }),
+    playerSkills: playerSkillState(state, { drawOffer: result.offer }),
     rng: { ...state.rng, loot: result.rng }
-  }, { type: "SKILL_OFFER_CREATED", offerId: result.offer.id, reason, candidateDefinitionIds: result.offer.candidateDefinitionIds, maxSelections: result.offer.maxSelections });
+  }, { type: "SKILL_DRAW_OPENED", offerId: result.offer.id, candidateDefinitionIds: result.offer.candidateDefinitionIds });
 }
 
 function startNextRound(state: MatchState): MatchState {
@@ -263,14 +262,14 @@ function startNextRound(state: MatchState): MatchState {
   const index = state.roundIndex + 1;
   const player = participant("player", []);
   const opponent = participant("opponent", []);
-  const round: RoundState = { index, phase: "skill-offer", starter: getRoundStarter(index), currentActor: null, player, opponent, outcome: null };
+  const round: RoundState = { index, phase: "dealing", starter: getRoundStarter(index), currentActor: null, player, opponent, outcome: null };
   const ai = SeededRng.fromSnapshot(next.rng.ai);
   const playNoise = sampleAiNoise(ai);
   next = withRound({
-    ...next, abilities: runtime, playerSkills: playerSkillState(next, { advice: null, offer: null }),
+    ...next, abilities: runtime, playerSkills: playerSkillState(next, { advice: null, drawOffer: null }),
     rng: { ...next.rng, ai: ai.snapshot() }, aiNoise: { ...next.aiNoise, play: playNoise }
   }, round);
-  return createOffer(append(next, ...expired), offerReasonForOutcome(previousOutcome));
+  return dealCurrentRound(append(next, ...expired));
 }
 
 function dealCurrentRound(state: MatchState): MatchState {
@@ -366,6 +365,7 @@ export function getActiveBustLimit(state: MatchState, actor: Actor): number {
 }
 
 function play(state: MatchState, instanceId: string): MatchState {
+  if (state.playerSkills.drawOffer) return state;
   const instance = state.abilities.instances.find((candidate) => candidate.instanceId === instanceId); if (!instance) return state;
   if (state.round.phase === "roulette-reaction" && state.round.outcome?.penaltyTarget !== instance.owner) return state;
   const window = state.round.phase === "roulette-reaction" ? "owner-roulette-reaction" : state.round.phase === "turns" && state.round.currentActor === instance.owner ? "owner-turn" : null;
@@ -393,7 +393,7 @@ function play(state: MatchState, instanceId: string): MatchState {
   } catch { return state; }
 }
 
-function grantOfferSelections(state: MatchState, definitionIds: readonly string[]): MatchState {
+function grantSkillCards(state: MatchState, definitionIds: readonly string[]): MatchState {
   if (definitionIds.length === 0) return state;
   if (new Set(definitionIds).size !== definitionIds.length) return state;
   if (state.playerSkills.cards.length + definitionIds.length > PLAYER_SKILL_INVENTORY_CAPACITY) return state;
@@ -419,40 +419,16 @@ function grantOfferSelections(state: MatchState, definitionIds: readonly string[
   }, ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId })));
 }
 
-export function getSkillOfferSelectionError(state: MatchState, definitionId: string) {
-  const offer = state.playerSkills.offer;
-  if (!offer || !offer.candidateDefinitionIds.includes(definitionId)) return null;
-  return skillOfferSelectionError(offer, state.playerSkills.cards.length, definitionId);
-}
-
-function toggleSkillOfferSelection(state: MatchState, definitionId: string): MatchState {
-  const offer = state.playerSkills.offer;
-  if (state.round.phase !== "skill-offer" || !offer || !offer.candidateDefinitionIds.includes(definitionId)) return state;
-  const selected = offer.selectedDefinitionIds.includes(definitionId)
-    ? offer.selectedDefinitionIds.filter((id) => id !== definitionId)
-    : skillOfferSelectionError(offer, state.playerSkills.cards.length, definitionId)
-      ? offer.selectedDefinitionIds
-      : [...offer.selectedDefinitionIds, definitionId];
-  if (selected === offer.selectedDefinitionIds) return state;
-  const nextOffer = { ...offer, selectedDefinitionIds: selected };
-  return append({ ...state, playerSkills: playerSkillState(state, { offer: nextOffer }) }, {
-    type: "SKILL_OFFER_SELECTION_CHANGED", offerId: offer.id, selectedDefinitionIds: selected
-  });
-}
-
-function resolveSkillOffer(state: MatchState, skipped: boolean): MatchState {
-  const offer = state.playerSkills.offer;
-  if (state.round.phase !== "skill-offer" || !offer) return state;
-  if (!skipped && offer.selectedDefinitionIds.length === 0) return state;
-  const selected = skipped ? [] : offer.selectedDefinitionIds;
-  if (selected.length > offer.maxSelections || state.playerSkills.cards.length + selected.length > PLAYER_SKILL_INVENTORY_CAPACITY) return state;
-  if (selected.some((id) => !offer.candidateDefinitionIds.includes(id))) return state;
-  let next = grantOfferSelections(state, selected);
-  if (next === state && selected.length > 0) return state;
-  next = append({ ...next, playerSkills: playerSkillState(next, { offer: null }) }, {
-    type: "SKILL_OFFER_RESOLVED", offerId: offer.id, selectedDefinitionIds: selected, skipped
-  });
-  return dealCurrentRound(next);
+function selectSkillDraw(state: MatchState, definitionId: string): MatchState {
+  const offer = state.playerSkills.drawOffer;
+  if (!offer || !offer.candidateDefinitionIds.includes(definitionId)) return state;
+  if (state.playerSkills.drawCount <= 0 || state.playerSkills.cards.length >= PLAYER_SKILL_INVENTORY_CAPACITY) return state;
+  const next = grantSkillCards(state, [definitionId]);
+  if (next === state) return state;
+  return append({
+    ...next,
+    playerSkills: playerSkillState(next, { drawCount: next.playerSkills.drawCount - 1, drawOffer: null })
+  }, { type: "SKILL_DRAW_RESOLVED", offerId: offer.id, selectedDefinitionId: definitionId });
 }
 
 export function createMatch(seed: string, options: CreateMatchOptions = {}): MatchState {
@@ -475,24 +451,22 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
   }
   const player = participant("player", []);
   const opponent = participant("opponent", []);
-  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player, opponent, shoe, roulette: { player: createGun(), opponent: createGun() }, playerSkills: { unlockedDefinitionIds: unlocked, cards: [], offer: null, advice: null }, talentIds, abilities: runtime, round: { index: 0, phase: "skill-offer", starter: getRoundStarter(0), currentActor: null, player, opponent, outcome: null }, history: [], rng: { deck: deck.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
-  return createOffer(base, "opening");
+  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player, opponent, shoe, roulette: { player: createGun(), opponent: createGun() }, playerSkills: { unlockedDefinitionIds: unlocked, cards: [], drawCount: 0, drawOffer: null, advice: null }, talentIds, abilities: runtime, round: { index: 0, phase: "dealing", starter: getRoundStarter(0), currentActor: null, player, opponent, outcome: null }, history: [], rng: { deck: deck.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
+  return dealCurrentRound(base);
 }
 
 export function getLegalActions(state: MatchState): Action[] {
   if (state.scene !== "match") return []; if (state.status === "finished") return state.view === "table" && state.round.phase === "roulette-result" ? [{ type: "ACK_TRIGGER_RESULT" }] : state.view === "match-summary" ? [{ type: "ACK_MATCH_RESULT" }] : [];
   const actions: Action[] = [{ type: "ESCAPE_MATCH" }];
-  if (state.round.phase === "skill-offer" && state.playerSkills.offer) {
-    for (const definitionId of state.playerSkills.offer.candidateDefinitionIds) {
-      const selected = state.playerSkills.offer.selectedDefinitionIds.includes(definitionId);
-      if (selected || !skillOfferSelectionError(state.playerSkills.offer, state.playerSkills.cards.length, definitionId)) {
-        actions.push({ type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId });
-      }
-    }
-    if (state.playerSkills.offer.selectedDefinitionIds.length > 0) actions.push({ type: "CONFIRM_SKILL_OFFER" });
-    actions.push({ type: "SKIP_SKILL_OFFER" });
+  if (state.playerSkills.drawOffer) {
+    for (const definitionId of state.playerSkills.drawOffer.candidateDefinitionIds) actions.push({ type: "SELECT_SKILL_DRAW", definitionId });
+    return actions;
   }
-  if (state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood && !state.player.busted) actions.push({ type: "PLAYER_HIT" }, { type: "PLAYER_STAND" }); if (state.round.phase === "turns" && state.round.currentActor === "opponent") actions.push({ type: "AI_TURN" }); if (state.round.phase === "round-reveal") actions.push({ type: "ACK_ROUND_RESULT" }); if (state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger") actions.push({ type: "TRIGGER_ROULETTE" }); if (state.round.phase === "roulette-result") actions.push({ type: "ACK_TRIGGER_RESULT" });
+  if (state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood && !state.player.busted) {
+    actions.push({ type: "PLAYER_HIT" }, { type: "PLAYER_STAND" });
+    if (canOpenSkillDraw(state)) actions.push({ type: "OPEN_SKILL_DRAW" });
+  }
+  if (state.round.phase === "turns" && state.round.currentActor === "opponent") actions.push({ type: "AI_TURN" }); if (state.round.phase === "round-reveal") actions.push({ type: "ACK_ROUND_RESULT" }); if (state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger") actions.push({ type: "TRIGGER_ROULETTE" }); if (state.round.phase === "roulette-result") actions.push({ type: "ACK_TRIGGER_RESULT" });
   const window: "owner-turn" | "owner-roulette-reaction" | null = state.round.phase === "roulette-reaction" ? "owner-roulette-reaction" : state.round.phase === "turns" ? "owner-turn" : null;
   if (window) for (const instance of state.abilities.instances) { const definition = getAbilityDefinition(instance.definitionId); const expectedOwner = window === "owner-roulette-reaction" ? state.round.outcome?.penaltyTarget : state.round.currentActor; if (definition?.activation.type === "action" && instance.owner === expectedOwner && (definition.activation.consume === "none" || state.playerSkills.cards.some((card) => card.instanceId === instance.instanceId)) && canPlayAbility({ world: abilityWorld(state), runtime: state.abilities, instanceId: instance.instanceId, owner: instance.owner, window, ...abilityServices(state) })) actions.push({ type: "PLAY_ABILITY", instanceId: instance.instanceId }); }
   return actions;
@@ -505,11 +479,10 @@ export function gameReducer(state: MatchState, action: Action): MatchState {
   if (action.type === "ACK_TRIGGER_RESULT") { if (state.round.phase !== "roulette-result") return state; const next = append(state, { type: "TRIGGER_RESULT_ACKNOWLEDGED" }); return state.status === "finished" ? { ...next, view: "match-summary" } : startNextRound(next); }
   if (state.status !== "active" || state.scene !== "match") return state;
   switch (action.type) {
-    case "TOGGLE_SKILL_OFFER_SELECTION": return toggleSkillOfferSelection(state, action.definitionId);
-    case "CONFIRM_SKILL_OFFER": return resolveSkillOffer(state, false);
-    case "SKIP_SKILL_OFFER": return resolveSkillOffer(state, true);
-    case "PLAYER_HIT": return state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood ? drawFor(state, "player") : state;
-    case "PLAYER_STAND": { const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "player" && !checked.player.stood ? standFor(checked, "player") : checked; }
+    case "OPEN_SKILL_DRAW": return openSkillDraw(state);
+    case "SELECT_SKILL_DRAW": return selectSkillDraw(state, action.definitionId);
+    case "PLAYER_HIT": return !state.playerSkills.drawOffer && state.round.phase === "turns" && state.round.currentActor === "player" && !state.player.stood ? drawFor(state, "player") : state;
+    case "PLAYER_STAND": { if (state.playerSkills.drawOffer) return state; const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "player" && !checked.player.stood ? standFor(checked, "player") : checked; }
     case "AI_HIT": case "OPPONENT_HIT": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? drawFor(state, "opponent") : state;
     case "AI_STAND": case "OPPONENT_STAND": { const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "opponent" && !checked.opponent.stood ? standFor(checked, "opponent") : checked; }
     case "AI_TURN": { if (state.round.phase !== "turns" || state.round.currentActor !== "opponent") return state; const decision = decideAiAction(buildObservation(state, "opponent"), state.aiProfile, state.aiNoise); const next = append({ ...state, lastAiDecision: decision }, { type: "AI_DECISION", decision }); return decision.action === "hit" ? drawFor(next, "opponent") : standFor(next, "opponent"); }

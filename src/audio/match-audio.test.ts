@@ -34,6 +34,7 @@ describe("match audio presentation mapping", () => {
     const audio = new RecordingAudio();
     presentMatchAudio(audio, before, after);
     expect(audio.calls).toEqual([
+      "play:shuffle:0",
       "play:cardFlip:0",
       "play:blackjack:160",
       "play:bust:160"
@@ -77,9 +78,9 @@ describe("match audio presentation mapping", () => {
     const push: RoundOutcome = { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0};
     const revealBase = createMatch("audio-push");
     const reveal = { ...revealBase, round: { ...revealBase.round, phase: "round-reveal" as const, outcome: push } };
-    const next = withEvents(reveal, "skill-offer",
+    const next = withEvents(reveal, "turns",
       { type: "ROUND_RESULT_ACKNOWLEDGED" },
-      { type: "SKILL_OFFER_CREATED", offerId: "offer-1", reason: "push", candidateDefinitionIds: [], maxSelections: 1 }
+      { type: "ROUND_STARTED", roundIndex: reveal.roundIndex + 1 }
     );
     const audio = new RecordingAudio();
     presentMatchAudio(audio, reveal, next);

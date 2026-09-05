@@ -25,7 +25,7 @@ import { unlockedCharacterIdsForDefeats } from "../content/characters/unlocks";
 const NOW = "2026-08-30T00:00:00.000Z";
 
 function createActiveMatch(seed: string, options: Parameters<typeof createMatch>[1] = {}): MatchState {
-  return gameReducer(createMatch(seed, options), { type: "SKIP_SKILL_OFFER" });
+  return createMatch(seed, options);
 }
 
 describe("long-term save schema and JSON boundary", () => {
@@ -72,6 +72,17 @@ describe("runtime save schema and validation", () => {
     const withReveal = { ...match, history: [...match.history, { type: "CARD_SUIT_REVEALED" as const, viewer: "player" as const, target: "opponent" as const, cardIndex: 1, suit: "hearts" as const }] };
     const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(withReveal, NOW))) as unknown);
     expect(imported.activeMatch.history.at(-1)).toEqual(withReveal.history.at(-1));
+  });
+
+  it("round-trips an open skill draw without changing the player turn", () => {
+    let match = createMatch("open-skill-draw-save");
+    match = { ...match, round: { ...match.round, phase: "turns", currentActor: "player", outcome: null }, playerSkills: { ...match.playerSkills, drawCount: 1 } };
+    match = gameReducer(match, { type: "OPEN_SKILL_DRAW" });
+    expect(match.playerSkills.drawOffer?.candidateDefinitionIds).toHaveLength(3);
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(match, NOW))) as unknown);
+    expect(imported.activeMatch.playerSkills.drawOffer).toEqual(match.playerSkills.drawOffer);
+    expect(imported.activeMatch.playerSkills.drawCount).toBe(1);
+    expect(imported.activeMatch.round).toMatchObject({ phase: "turns", currentActor: "player" });
   });
 
   it("round-trips final point-comparison scores used by the table UI", () => {
@@ -131,9 +142,10 @@ describe("runtime save schema and validation", () => {
 
   it("keeps a runtime save valid after consuming a concrete ability card", () => {
     let match = createMatch("post-ability-save");
-    const candidate = match.playerSkills.offer!.candidateDefinitionIds[0]!;
-    match = gameReducer(match, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: candidate });
-    match = gameReducer(match, { type: "CONFIRM_SKILL_OFFER" });
+    match = { ...match, round: { ...match.round, phase: "turns", currentActor: "player" }, playerSkills: { ...match.playerSkills, drawCount: 1 } };
+    match = gameReducer(match, { type: "OPEN_SKILL_DRAW" });
+    const candidate = match.playerSkills.drawOffer!.candidateDefinitionIds[0]!;
+    match = gameReducer(match, { type: "SELECT_SKILL_DRAW", definitionId: candidate });
     for (let index = 0; index < 80; index += 1) {
       const action = getLegalActions(match).find((candidate) => candidate.type === "PLAY_ABILITY");
       if (action) { match = gameReducer(match, action); break; }
@@ -174,8 +186,9 @@ describe("runtime save schema and validation", () => {
     expect(() => validateRuntimeSave(overBudget)).toThrow(/TTL does not match/i);
 
     let playerMatch = createMatch("expired-player-card-save", { unlockedPlayerSkillIds: ["sword-and-handcannon"] });
-    playerMatch = gameReducer(playerMatch, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: "sword-and-handcannon" });
-    playerMatch = gameReducer(playerMatch, { type: "CONFIRM_SKILL_OFFER" });
+    playerMatch = { ...playerMatch, round: { ...playerMatch.round, phase: "turns", currentActor: "player" }, playerSkills: { ...playerMatch.playerSkills, drawCount: 1 } };
+    playerMatch = gameReducer(playerMatch, { type: "OPEN_SKILL_DRAW" });
+    playerMatch = gameReducer(playerMatch, { type: "SELECT_SKILL_DRAW", definitionId: "sword-and-handcannon" });
     const expiredCard = structuredClone(createRuntimeSave(playerMatch, NOW)) as unknown as Record<string, unknown>;
     const activeMatch = expiredCard.activeMatch as Record<string, unknown>;
     const playerCards = ((activeMatch.playerSkills as Record<string, unknown>).cards as Array<Record<string, unknown>>);

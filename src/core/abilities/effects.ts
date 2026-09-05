@@ -5,13 +5,12 @@ import { createDerivedCard } from "../blackjack/card";
 import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
 import { getStatusDefinition, type AbilityRegistry } from "./registry";
 import { resolveActor, resolveScalar, type ConditionContext } from "./conditions";
-import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, Effect, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "./types";
+import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, Effect, PendingComparison, PendingDraw, PendingLoad, PendingTrigger } from "./types";
 
 export interface EffectContext extends ConditionContext {
   readonly ruleId?: string;
   readonly rng: SeededRng;
   readonly runtime: AbilityRuntimeState;
-  readonly drawSkillCards?: (owner: "player" | "opponent", amount: number, world: AbilityWorld, rng: SeededRng) => readonly SkillCardInstance[];
   readonly publishAdvice?: (owner: "player" | "opponent", world: AbilityWorld) => "hit" | "stand";
   readonly registry?: AbilityRegistry;
 }
@@ -32,11 +31,10 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
   if (!actor) throw new Error(`Cannot resolve actor selector: ${effect.target}`);
   const changed = (effectType: string): void => { events.push({ type: "PENDING_EVENT_MODIFIED", eventId: draw?.id ?? load?.id ?? bust?.id ?? trigger?.id ?? context.event.sourceEventId, effectType, sourceInstanceId: context.ability.instanceId }); };
   switch (effect.type) {
-    case "draw-skill-cards": {
+    case "add-skill-draws": {
+      if (actor !== "player") throw new Error("Only the player can receive skill draws");
       const amount = Math.max(0, Math.floor(resolveScalar(effect.amount, context)));
-      if (!context.drawSkillCards) throw new Error("No skill card drawer configured");
-      const cards = context.drawSkillCards(actor, amount, world, context.rng);
-      world = { ...world, cards: [...world.cards, ...cards] };
+      world = { ...world, skillDraws: world.skillDraws + amount };
       break;
     }
     case "publish-action-advice":

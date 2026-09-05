@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../rng/seeded";
 import { ABILITY_DEFINITIONS, AI_SKILL_ABILITY_DEFINITIONS, getAbilityDefinition, PLAYER_SKILL_ABILITY_DEFINITIONS, TALENT_ABILITY_DEFINITIONS } from "../abilities/registry";
-import { createMatch, gameReducer, getSkillOfferSelectionError } from "../match/reducer";
+import { createMatch, gameReducer, getLegalActions, resolveRound } from "../match/reducer";
 import type { MatchState, RoundOutcome } from "../match/types";
 import { getPlayerSkillDefinition, INITIAL_PLAYER_SKILL_IDS, PLAYER_SKILL_DEFINITIONS } from "./definitions";
 import {
-  calculatePlayerSkillWeight, collectSkillOfferModifiers, generateSkillOffer, PLAYER_SKILL_INVENTORY_CAPACITY,
-  playerSkillsUnlockedForVictory, resolveSkillOfferRule, skillOfferSelectionError, unlockedPlayerSkillIdsForDefeats
+  calculatePlayerSkillWeight, collectSkillDrawWeightModifiers, generateSkillDrawOffer, PLAYER_SKILL_INVENTORY_CAPACITY,
+  playerSkillsUnlockedForVictory, SKILL_DRAW_CANDIDATE_COUNT, unlockedPlayerSkillIdsForDefeats
 } from "./skills";
 
 describe("separate ability domains", () => {
@@ -30,24 +30,7 @@ describe("separate ability domains", () => {
   });
 });
 
-describe("Skill Offer rules and weighted candidates", () => {
-  it.each([
-    ["opening", 3, 1],
-    ["normal-win", 3, 1],
-    ["blackjack-win", 3, 2],
-    ["loss", 2, 1],
-    ["push", 3, 1]
-  ] as const)("resolves %s as %i candidates / choose %i", (reason, candidates, selections) => {
-    expect(resolveSkillOfferRule(reason)).toEqual({ candidateCount: candidates, selectionCount: selections });
-  });
-
-  it("applies Early Preparation through a generic opening rule modifier", () => {
-    const talent = getAbilityDefinition("early-preparation")!;
-    const modifiers = collectSkillOfferModifiers([talent]);
-    expect(resolveSkillOfferRule("opening", modifiers.rules)).toEqual({ candidateCount: 3, selectionCount: 2 });
-    expect(resolveSkillOfferRule("normal-win", modifiers.rules)).toEqual({ candidateCount: 3, selectionCount: 1 });
-  });
-
+describe("skill draw weighted candidates", () => {
   it("multiplies every matching tag modifier, including repeated tags from multiple sources", () => {
     const skill = getPlayerSkillDefinition("switcheroo")!;
     expect(calculatePlayerSkillWeight(skill, [
@@ -60,128 +43,110 @@ describe("Skill Offer rules and weighted candidates", () => {
   it("collects tag weights declared by an AI Skill through the generic extension point", () => {
     const aiSkill = getAbilityDefinition("action-advice-mechanic")!;
     expect(aiSkill.sourceKind).toBe("ai-skill");
-    const modifiers = collectSkillOfferModifiers([aiSkill]);
-    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers.weights)).toBe(0.5);
-    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("switcheroo")!, modifiers.weights)).toBe(1);
+    const modifiers = collectSkillDrawWeightModifiers([aiSkill]);
+    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers)).toBe(0.5);
+    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("switcheroo")!, modifiers)).toBe(1);
   });
 
   it("multiplies modifiers from multiple AI Skills across multiple matching tags", () => {
-    const first = { ...getAbilityDefinition("bomb-maniac")!, skillOfferWeightModifiers: [
+    const first = { ...getAbilityDefinition("bomb-maniac")!, skillDrawWeightModifiers: [
       { tag: "information", factor: 0.5 }, { tag: "blackjack", factor: 2 }
     ] };
-    const second = { ...getAbilityDefinition("w-night-queen")!, skillOfferWeightModifiers: [
+    const second = { ...getAbilityDefinition("w-night-queen")!, skillDrawWeightModifiers: [
       { tag: "information", factor: 0.5 }
     ] };
-    const modifiers = collectSkillOfferModifiers([first, second]);
-    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers.weights)).toBe(0.5);
+    const modifiers = collectSkillDrawWeightModifiers([first, second]);
+    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers)).toBe(0.5);
   });
 
   it("draws unlocked droppable definitions without replacement and permits held active definitions", () => {
     const unlocked = PLAYER_SKILL_DEFINITIONS.map((skill) => skill.id);
-    const first = generateSkillOffer(createRng("weighted-offer"), "opening", unlocked, ["hunter-instinct"]);
-    expect(first.offer.candidateDefinitionIds).toHaveLength(3);
+    const first = generateSkillDrawOffer(createRng("weighted-offer"), unlocked, ["hunter-instinct"]);
+    expect(first.offer.candidateDefinitionIds).toHaveLength(SKILL_DRAW_CANDIDATE_COUNT);
     expect(new Set(first.offer.candidateDefinitionIds).size).toBe(3);
     expect(first.offer.candidateDefinitionIds.every((id) => unlocked.includes(id))).toBe(true);
     expect(first.offer.candidateDefinitionIds).not.toContain("rhodes-heartthrob");
-    expect(first).toEqual(generateSkillOffer(createRng("weighted-offer"), "opening", unlocked, ["hunter-instinct"]));
-    const activeRepeat = generateSkillOffer(createRng("held-active"), "opening", ["hunter-instinct", "switcheroo", "scent-of-a-woman"], ["hunter-instinct"]);
+    expect(first).toEqual(generateSkillDrawOffer(createRng("weighted-offer"), unlocked, ["hunter-instinct"]));
+    const activeRepeat = generateSkillDrawOffer(createRng("held-active"), ["hunter-instinct", "switcheroo", "scent-of-a-woman"], ["hunter-instinct"]);
     expect(activeRepeat.offer.candidateDefinitionIds).toContain("hunter-instinct");
   });
 
   it("excludes a held non-stackable passive but allows it before acquisition", () => {
     const unlocked = ["forge-heralds-the-year", "hunter-instinct", "switcheroo"];
-    const available = generateSkillOffer(createRng("passive-available"), "opening", unlocked, []).offer.candidateDefinitionIds;
-    const held = generateSkillOffer(createRng("passive-held"), "opening", unlocked, ["forge-heralds-the-year"]).offer.candidateDefinitionIds;
+    const available = generateSkillDrawOffer(createRng("passive-available"), unlocked, []).offer.candidateDefinitionIds;
+    const held = generateSkillDrawOffer(createRng("passive-held"), unlocked, ["forge-heralds-the-year"]).offer.candidateDefinitionIds;
     expect(available).toContain("forge-heralds-the-year");
     expect(held).not.toContain("forge-heralds-the-year");
   });
 
   it("handles zero-weight and undersized pools without duplicates or failure", () => {
-    const offer = generateSkillOffer(createRng("zero-weight"), "opening", ["hunter-instinct", "switcheroo"], [], [{ tag: "active-skill-card", factor: 0 }]).offer;
+    const offer = generateSkillDrawOffer(createRng("zero-weight"), ["hunter-instinct", "switcheroo"], [], [{ tag: "active-skill-card", factor: 0 }]).offer;
     expect(offer.candidateDefinitionIds).toEqual([]);
-    expect(offer.maxSelections).toBe(0);
   });
 });
 
-describe("Skill Offer selection and inventory", () => {
-  it("starts in an offer before dealing and supports select, cancel, confirm, and skip", () => {
-    const offered = createMatch("opening-offer");
-    expect(offered.round.phase).toBe("skill-offer");
-    expect(offered.player.hand.cards).toEqual([]);
-    expect(offered.history.some((event) => event.type === "ROUND_STARTED")).toBe(false);
-    const id = offered.playerSkills.offer!.candidateDefinitionIds[0]!;
-    const selected = gameReducer(offered, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: id });
-    expect(selected.playerSkills.offer?.selectedDefinitionIds).toEqual([id]);
-    const cancelled = gameReducer(selected, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: id });
-    expect(cancelled.playerSkills.offer?.selectedDefinitionIds).toEqual([]);
-    expect(gameReducer(offered, { type: "CONFIRM_SKILL_OFFER" })).toBe(offered);
-    const confirmed = gameReducer(selected, { type: "CONFIRM_SKILL_OFFER" });
-    expect(confirmed.playerSkills.cards).toHaveLength(1);
-    expect(confirmed.playerSkills.cards[0]?.definitionId).toBe(id);
-    expect(confirmed.round.phase).not.toBe("skill-offer");
-    expect(confirmed.history.some((event) => event.type === "ROUND_STARTED")).toBe(true);
-    expect(gameReducer(createMatch("opening-skip"), { type: "SKIP_SKILL_OFFER" }).history).toContainEqual(expect.objectContaining({ type: "SKILL_OFFER_RESOLVED", skipped: true }));
+describe("skill draw credits, selection, and inventory", () => {
+  function playerTurn(seed: string, options: Parameters<typeof createMatch>[1] = {}): MatchState {
+    for (let index = 0; index < 10_000; index += 1) {
+      const state = createMatch(`${seed}-${index}`, options);
+      if (state.round.phase === "turns") return { ...state, round: { ...state.round, currentActor: "player" } };
+    }
+    throw new Error("No deterministic turns fixture found");
+  }
+
+  it("deals immediately without an opening draw or skill card", () => {
+    const state = playerTurn("no-opening-draw");
+    expect(state.player.hand.cards).toHaveLength(2);
+    expect(state.history.some((event) => event.type === "ROUND_STARTED")).toBe(true);
+    expect(state.playerSkills).toMatchObject({ cards: [], drawCount: 0, drawOffer: null });
   });
 
-  it("raises the opening limit only when the Talent is owned", () => {
-    expect(createMatch("no-talent").playerSkills.offer?.maxSelections).toBe(1);
-    expect(createMatch("with-talent", { talentIds: ["early-preparation"] }).playerSkills.offer?.maxSelections).toBe(2);
+  it("Early Preparation grants one opening draw through its data-driven effect", () => {
+    const state = playerTurn("early-preparation", { talentIds: ["early-preparation"] });
+    expect(state.playerSkills.drawCount).toBe(1);
+    expect(state.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "early-preparation", ruleId: "grant-opening-skill-draw" }));
   });
 
   it.each([
-    [{ winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1 }, "normal-win", 3, 1],
-    [{ winner: "player", reason: "blackjack", penaltyTarget: "opponent", bulletsAdded: 2 }, "blackjack-win", 3, 2],
-    [{ winner: "opponent", reason: "comparison", penaltyTarget: "player", bulletsAdded: 1 }, "loss", 2, 1],
-    [{ winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 }, "push", 3, 1]
-  ] as const)("creates the next-round %s offer as %s", (outcome, reason, candidates, selections) => {
-    const active = gameReducer(createMatch(`next-offer-${reason}`), { type: "SKIP_SKILL_OFFER" });
-    const phase = outcome.penaltyTarget ? "roulette-result" as const : "round-reveal" as const;
-    const ended: MatchState = { ...active, round: { ...active.round, phase, currentActor: null, outcome: outcome as RoundOutcome } };
-    const offered = gameReducer(ended, outcome.penaltyTarget ? { type: "ACK_TRIGGER_RESULT" } : { type: "ACK_ROUND_RESULT" });
-    expect(offered.round.phase).toBe("skill-offer");
-    expect(offered.playerSkills.offer).toMatchObject({ reason, maxSelections: selections });
-    expect(offered.playerSkills.offer?.candidateDefinitionIds).toHaveLength(candidates);
-    expect(offered.player.hand.cards).toEqual([]);
+    [{ winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1 }, "win", 1],
+    [{ winner: "player", reason: "blackjack", penaltyTarget: "opponent", bulletsAdded: 2 }, "blackjack", 2],
+    [{ winner: "opponent", reason: "comparison", penaltyTarget: "player", bulletsAdded: 1 }, "loss", 1],
+    [{ winner: "opponent", reason: "blackjack", penaltyTarget: "player", bulletsAdded: 2 }, "loss", 1],
+    [{ winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 }, "push", 1]
+  ] as const)("awards a %s result as %i draw(s)", (outcome, reason, amount) => {
+    const active = playerTurn(`draw-reward-${reason}`);
+    const resolved = resolveRound({ ...active, playerSkills: { ...active.playerSkills, drawCount: 0 } }, outcome as RoundOutcome);
+    expect(resolved.playerSkills.drawCount).toBe(amount);
+    expect(resolved.history).toContainEqual({ type: "SKILL_DRAWS_ADDED", reason, amount });
   });
 
-  it("turns every confirmed choice into a distinct card and matching runtime instance", () => {
-    const offered = createMatch("real-card-instances", {
-      unlockedPlayerSkillIds: ["hunter-instinct", "switcheroo", "scent-of-a-woman"],
-      talentIds: ["early-preparation"]
-    });
-    const [first, second] = offered.playerSkills.offer!.candidateDefinitionIds;
-    let selected = gameReducer(offered, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: first! });
-    selected = gameReducer(selected, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: second! });
-    const confirmed = gameReducer(selected, { type: "CONFIRM_SKILL_OFFER" });
-    expect(confirmed.playerSkills.cards).toHaveLength(2);
-    expect(new Set(confirmed.playerSkills.cards.map((card) => card.instanceId)).size).toBe(2);
-    for (const card of confirmed.playerSkills.cards) {
-      expect(confirmed.abilities.instances).toContainEqual(expect.objectContaining({
-        kind: "player-skill", definitionId: card.definitionId, instanceId: card.instanceId, owner: "player"
-      }));
-    }
+  it("opens three fixed candidates and confirms exactly one card on click", () => {
+    const ready = playerTurn("single-click-draw", { unlockedPlayerSkillIds: ["hunter-instinct", "switcheroo", "scent-of-a-woman"] });
+    const charged = { ...ready, playerSkills: { ...ready.playerSkills, drawCount: 2 } };
+    const opened = gameReducer(charged, { type: "OPEN_SKILL_DRAW" });
+    expect(opened.playerSkills.drawOffer?.candidateDefinitionIds).toHaveLength(SKILL_DRAW_CANDIDATE_COUNT);
+    expect(getLegalActions(opened)).not.toContainEqual({ type: "PLAYER_HIT" });
+    expect(getLegalActions(opened)).not.toContainEqual({ type: "PLAYER_STAND" });
+    const id = opened.playerSkills.drawOffer!.candidateDefinitionIds[0]!;
+    const selected = gameReducer(opened, { type: "SELECT_SKILL_DRAW", definitionId: id });
+    expect(selected.playerSkills.cards).toHaveLength(1);
+    expect(selected.playerSkills.cards[0]?.definitionId).toBe(id);
+    expect(selected.playerSkills.drawCount).toBe(1);
+    expect(selected.playerSkills.drawOffer).toBeNull();
+    const card = selected.playerSkills.cards[0]!;
+    expect(selected.abilities.instances).toContainEqual(expect.objectContaining({
+      kind: "player-skill", definitionId: card.definitionId, instanceId: card.instanceId, owner: "player"
+    }));
   });
 
-  it("distinguishes selection limit from inventory overflow and permits cancellation", () => {
-    const offer = { id: "offer", reason: "blackjack-win" as const, candidateDefinitionIds: ["a", "b", "c"], maxSelections: 2, selectedDefinitionIds: ["a", "b"] };
-    expect(skillOfferSelectionError(offer, 0, "c")).toBe("selection-limit");
-    expect(skillOfferSelectionError({ ...offer, selectedDefinitionIds: ["a"] }, 9, "b")).toBe("inventory-full");
-    expect(skillOfferSelectionError(offer, PLAYER_SKILL_INVENTORY_CAPACITY, "a")).toBeNull();
-    expect(generateSkillOffer(createRng("one-slot"), "blackjack-win", ["hunter-instinct", "switcheroo", "scent-of-a-woman"], Array(9).fill("hunter-instinct")).offer.maxSelections).toBe(1);
-  });
-
-  it("keeps a full inventory offer visible while every new selection reports overflow", () => {
-    const offered = createMatch("full-offer");
+  it("disables drawing when the inventory is full and keeps earned draws", () => {
+    const ready = playerTurn("full-draw");
     const template = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const };
     const cards = Array.from({ length: PLAYER_SKILL_INVENTORY_CAPACITY }, (_, index) => ({ ...template, instanceId: "full-" + index }));
-    const full = { ...offered, playerSkills: { ...offered.playerSkills, cards } };
-    const id = full.playerSkills.offer!.candidateDefinitionIds[0]!;
-    const regenerated = generateSkillOffer(createRng("full-inventory"), "blackjack-win", full.playerSkills.unlockedDefinitionIds, cards.map((card) => card.definitionId)).offer;
-    expect(regenerated.candidateDefinitionIds.length).toBeGreaterThan(0);
-    expect(regenerated.maxSelections).toBe(0);
-    expect(getSkillOfferSelectionError(full, id)).toBe("inventory-full");
-    expect(gameReducer(full, { type: "TOGGLE_SKILL_OFFER_SELECTION", definitionId: id })).toBe(full);
-    expect(gameReducer(full, { type: "SKIP_SKILL_OFFER" }).round.phase).not.toBe("skill-offer");
+    const full = { ...ready, playerSkills: { ...ready.playerSkills, cards, drawCount: 3 } };
+    expect(getLegalActions(full)).not.toContainEqual({ type: "OPEN_SKILL_DRAW" });
+    expect(gameReducer(full, { type: "OPEN_SKILL_DRAW" })).toBe(full);
+    expect(full.playerSkills.drawCount).toBe(3);
   });
 });
 

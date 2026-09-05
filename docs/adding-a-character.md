@@ -86,7 +86,7 @@
 2. 在 `catalog.json` 添加唯一的 `id`、名称、副标题、等级、多个 `tags`、预览图、收藏横幅和数据文件名。`tier:<小写等级>` 会由目录自动生成，不能在自定义 tag 中重复声明。需要门槛时再配置 `unlock`：可使用 `defeat-any`、`defeat-any-tag`、`defeat-character` 或 `defeat-tag-percentage`；引用的角色和 tag 必须已经存在于同一目录。
 3. 为角色单独配置 AI 阈值参数 `P/A/B/C`、结算文案和 `revolverPlacement`；参数默认值为 `0/1/1/1`，含义与公式见 [玩法与叙事设计](game-design.md#ai-与信息权限)。选择页或牌局内立绘只有在实机验收明确要求时，才在 `catalog.json` 设置 `portraitScales.selection` 或 `portraitScales.table`。不要复制 W 的人物对白充数。
 4. `staffRevolver` 指向共享发牌员资源；根据紧张态头部位置分别校准桌面端和移动端坐标。
-5. 只有在任务明确要求时才新增该角色解锁的 Player Skill；通过其 `unlock.opponentId` 声明解锁来源，局内 Offer 会从全部已解锁且允许掉落的技能中生成候选。
+5. 只有在任务明确要求时才新增该角色解锁的 Player Skill；通过其 `unlock.opponentId` 声明解锁来源，局内抽卡会从全部已解锁且允许掉落的技能中生成候选。
 6. 深度收藏资源写入可选的 `trophyGallery`：`headshot`、透明角色层 `fullBody`、可选 `poses` 和 `closeups`。每个 `poses` 对象包含与会者内唯一 `id`、按钮名称和透明角色层路径；每个 `closeups` 对象必须包含与会者内唯一 `id`、名称、0–100 的 `x/y` 百分比坐标、方形图片和描述。两类数组都由 Schema 校验唯一 ID。
 
 角色档案中的技能栏由 `aiSkills` 自动生成：角色 JSON 只绑定 `{ definitionId, enabled, parameters }`，且 Definition 必须来自独立 AI Skill Catalog，不重复技能名称、规则或文案。技能名称与规则说明来自能力注册表；文学化的档案描写写在能力定义的可选 `profileLore` 字段中。只有 `enabled: true` 且能在注册表中找到的绑定会显示，未配置技能的角色不显示空栏。

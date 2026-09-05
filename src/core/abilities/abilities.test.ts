@@ -15,7 +15,7 @@ function world(cards: readonly SkillCardInstance[] = []): AbilityWorld {
   return {
     hands: { player: createHand([createCard("spades", "10")]), opponent: createHand([createCard("hearts", "9")]) },
     guns: { player: gun, opponent: { ...gun, bullets: 0 } },
-    shoe: { cards: [], cursor: 0, shuffleIndex: 1 }, cards, statuses: []
+    shoe: { cards: [], cursor: 0, shuffleIndex: 1 }, cards, skillDraws: 0, statuses: []
   };
 }
 
@@ -60,7 +60,7 @@ describe("ability schemas and immutable registry", () => {
   it("rejects unknown triggers, conditions, effects, selectors, and extra fields", () => {
     const base = {
       id: "schema-fixture", name: "schema", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
-      activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "rule", trigger: "on-match-created", effects: [{ type: "draw-skill-cards", target: "owner", amount: 1 }] }]
+      activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "rule", trigger: "on-match-created", effects: [{ type: "add-skill-draws", target: "owner", amount: 1 }] }]
     };
     expect(AbilityDefinitionSchema.safeParse(base).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案中的文学化技能描写。" }).success).toBe(true);
@@ -71,7 +71,7 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "unknown-trigger" }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "unknown-condition" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "unknown-effect", target: "owner" }] }] }).success).toBe(false);
-    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "draw-skill-cards", target: "player", amount: 1 }] }] }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "add-skill-draws", target: "player", amount: 1 }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, executable: "doSomething()" }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", primaryDomain: "rule-control", drop: { enabled: true, baseWeight: 1 }, stackable: false, activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "card" } }).success).toBe(false);
@@ -103,10 +103,10 @@ describe("ability schemas and immutable registry", () => {
       ...(!availability ? { ttl: { type: "rounds", amount: 2 } } : {}),
       rules: [{ id: "rule", trigger: "on-match-created", effects: [effect] }], tags: ["test-fixture"]
     });
-    expect(() => createAbilityRegistry([definition("reference-parameter", { type: "draw-skill-cards", target: "owner", amount: { type: "parameter", key: "missing" } })])).toThrow(/Unknown parameter/);
+    expect(() => createAbilityRegistry([definition("reference-parameter", { type: "add-skill-draws", target: "owner", amount: { type: "parameter", key: "missing" } })])).toThrow(/Unknown parameter/);
     expect(() => createAbilityRegistry([definition("reference-status", { type: "add-status", target: "owner", statusDefinitionId: "missing-status" })])).toThrow(/Unknown status/);
     expect(() => createAbilityRegistry([definition("reference-set-status", { type: "set-status-stacks", target: "owner", statusDefinitionId: "missing-status", amount: 1 })])).toThrow(/Unknown status/);
-    expect(() => createAbilityRegistry([definition("reference-ability", { type: "draw-skill-cards", target: "owner", amount: 1 }, [{ type: "owner-has-card", abilityId: "missing-ability" }])])).toThrow(/Unknown ability/);
+    expect(() => createAbilityRegistry([definition("reference-ability", { type: "add-skill-draws", target: "owner", amount: 1 }, [{ type: "owner-has-card", abilityId: "missing-ability" }])])).toThrow(/Unknown ability/);
   });
 
   it("enforces concrete instance source kinds during event collection", () => {

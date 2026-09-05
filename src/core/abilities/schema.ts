@@ -35,7 +35,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("not"), condition }).strict()
 ]));
 const effect = z.union([
-  z.object({ type: z.literal("draw-skill-cards"), target: actorSelector, amount: scalar }).strict(),
+  z.object({ type: z.literal("add-skill-draws"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("publish-action-advice"), target: actorSelector, policy: z.literal("current-optimal-hit-stand") }).strict(),
   z.object({ type: z.literal("replace-hand-card"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate, pick: z.literal("uniform-ability-rng") }).strict(),
   z.object({ type: z.literal("swap-last-hand-card-with-draw-pile-top"), target: actorSelector }).strict(),
@@ -74,17 +74,12 @@ const primaryDomain = z.enum(["blackjack", "roulette", "information", "skill-eco
 const tags = z.array(z.string().min(1)).min(1).superRefine((values, ctx) => {
   if (new Set(values).size !== values.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "ability tags must be unique" });
 });
-const skillOfferWeightModifier = z.object({ tag: z.string().min(1), factor: z.number().finite().nonnegative() }).strict();
-const skillOfferRuleModifier = z.object({
-  reason: z.enum(["opening", "normal-win", "blackjack-win", "loss", "push", "any"]),
-  candidateCountDelta: z.number().int().optional(),
-  selectionCountDelta: z.number().int().optional()
-}).strict().refine((value) => value.candidateCountDelta !== undefined || value.selectionCountDelta !== undefined, "offer modifier must change at least one count");
+const skillDrawWeightModifier = z.object({ tag: z.string().min(1), factor: z.number().finite().nonnegative() }).strict();
 const definitionBase = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), description: z.string().min(1),
   usage: z.string().min(1).optional(), triggerNotice: z.string().min(1).optional(), profileLore: z.string().min(1).optional(), hidden: z.boolean().default(false),
   primaryDomain, tags, parameters: z.record(parameterSpec).optional(), activation, ttl: abilityTtl.optional(), rules: z.array(AbilityRuleSchema),
-  skillOfferWeightModifiers: z.array(skillOfferWeightModifier).optional(), skillOfferRuleModifiers: z.array(skillOfferRuleModifier).optional()
+  skillDrawWeightModifiers: z.array(skillDrawWeightModifier).optional()
 });
 const playerSkillDefinition = definitionBase.extend({
   sourceKind: z.literal("player-skill"), drop: z.object({ enabled: z.boolean(), baseWeight: z.number().finite().positive() }).strict(), stackable: z.boolean().default(false),
