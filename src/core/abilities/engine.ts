@@ -3,7 +3,7 @@ import { allConditionsPass } from "./conditions";
 import { applyEffects } from "./effects";
 import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, type AbilityRegistry } from "./registry";
 import { addAbilityInstance, canConsumeRule, consumeAbilityTriggerTtl, consumeRule, isAbilityInstanceExpired } from "./runtime";
-import type { AbilityDefinition, AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger } from "./types";
+import type { AbilityDefinition, AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger } from "./types";
 
 const MAX_ABILITY_DEPTH = 16;
 export class AbilityResolutionError extends Error {
@@ -37,7 +37,7 @@ function collect(runtime: AbilityRuntimeState, trigger: AbilityEventContext["tri
   return rules.sort((left, right) => (left.rule.priority ?? 0) - (right.rule.priority ?? 0) || left.instance.createdAtSequence - right.instance.createdAtSequence || left.index - right.index);
 }
 
-export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly drawSkillCards?: import("./effects").EffectContext["drawSkillCards"]; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; }
+export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly drawSkillCards?: import("./effects").EffectContext["drawSkillCards"]; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; }
 export interface AbilityResolution extends AbilityEffectResult { readonly triggered: readonly string[]; }
 
 export interface PlayAbilityInput extends Omit<AbilityResolutionInput, "event" | "directInstanceId"> {
@@ -120,22 +120,24 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
   let pendingLoad = input.pendingLoad;
   let pendingBust = input.pendingBust;
   let pendingTrigger = input.pendingTrigger;
+  let pendingComparison = input.pendingComparison;
   let events: readonly AbilityDomainEvent[] = [];
   const triggered: string[] = [];
   for (const entry of collect(runtime, input.event.trigger, input.directInstanceId, input.registry)) {
     const liveInstance = runtime.instances.find((instance) => instance.instanceId === entry.instance.instanceId);
     if (!liveInstance || isAbilityInstanceExpired(liveInstance)) continue;
-    const context = { world, ability: liveInstance, event: input.event };
+    const context = { world, ability: liveInstance, event: { ...input.event, pendingDraw, pendingBust } };
     if (!allConditionsPass(entry.rule.conditions, context)) continue;
     if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId)) continue;
     try {
       const abilityRng = SeededRng.fromSnapshot(runtime.rng);
-      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, drawSkillCards: input.drawSkillCards, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger });
+      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, drawSkillCards: input.drawSkillCards, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger, comparison: pendingComparison });
       world = result.world;
       pendingDraw = result.pendingDraw;
       pendingLoad = result.pendingLoad;
       pendingBust = result.pendingBust;
       pendingTrigger = result.pendingTrigger;
+      pendingComparison = result.pendingComparison;
       runtime = { ...result.runtime, rng: abilityRng.snapshot() };
       runtime = consumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId);
       const ttl = consumeAbilityTriggerTtl(runtime, world.cards, entry.instance.instanceId, input.registry);
@@ -154,7 +156,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
       throw new AbilityResolutionError(`${entry.instance.instanceId}/${entry.rule.id}: ${reason}`, [...triggered, `${entry.instance.instanceId}:${entry.rule.id}`], { instanceId: entry.instance.instanceId, definitionId: entry.instance.definitionId, ruleId: entry.rule.id });
     }
   }
-  return { world, pendingDraw, pendingLoad, pendingBust, pendingTrigger, runtime, events, triggered };
+  return { world, pendingDraw, pendingLoad, pendingBust, pendingTrigger, pendingComparison, runtime, events, triggered };
 }
 
 export { MAX_ABILITY_DEPTH };

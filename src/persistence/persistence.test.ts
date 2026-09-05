@@ -74,6 +74,19 @@ describe("runtime save schema and validation", () => {
     expect(imported.activeMatch.history.at(-1)).toEqual(withReveal.history.at(-1));
   });
 
+  it("round-trips final point-comparison scores used by the table UI", () => {
+    const match = createActiveMatch("comparison-score-roundtrip");
+    const outcome = { winner: "opponent" as const, reason: "comparison" as const, penaltyTarget: "player" as const, bulletsAdded: 1, comparisonScores: { player: 17, opponent: 19 } };
+    const resolved = {
+      ...match,
+      round: { ...match.round, phase: "round-reveal" as const, currentActor: null, outcome },
+      history: [...match.history, { type: "ROUND_RESOLVED" as const, outcome }]
+    };
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(resolved, NOW))) as unknown);
+    expect(imported.activeMatch.round.outcome?.comparisonScores).toEqual({ player: 17, opponent: 19 });
+    expect(imported.activeMatch.history.at(-1)).toEqual({ type: "ROUND_RESOLVED", outcome });
+  });
+
   it("rejects malformed nested cards, RNG, guns, and unknown fields as runtime-only errors", () => {
     const invalidCard = structuredClone(createRuntimeSave(createActiveMatch("invalid-match"), NOW)) as unknown as Record<string, unknown>;
     const match = invalidCard.activeMatch as Record<string, unknown>;
@@ -147,7 +160,7 @@ describe("runtime save schema and validation", () => {
       opponentAiSkills: [{ definitionId: "ai-sword-and-handcannon", enabled: true, parameters: {} }]
     }), NOW);
     const aiInstance = aiRuntime.activeMatch.abilities.instances.find((instance) => instance.definitionId === "ai-sword-and-handcannon");
-    expect(aiInstance?.ttl).toEqual({ type: "triggers", remaining: 3 });
+    expect(aiInstance?.ttl).toEqual({ type: "triggers", remaining: 30 });
     expect(validateRuntimeSave(JSON.parse(JSON.stringify(aiRuntime)) as unknown).activeMatch).toEqual(aiRuntime.activeMatch);
 
     const missing = structuredClone(aiRuntime) as unknown as Record<string, unknown>;
@@ -157,7 +170,7 @@ describe("runtime save schema and validation", () => {
 
     const overBudget = structuredClone(aiRuntime) as unknown as Record<string, unknown>;
     const overBudgetInstances = (((overBudget.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).instances as Array<Record<string, unknown>>);
-    (overBudgetInstances.find((instance) => instance.definitionId === "ai-sword-and-handcannon")!.ttl as Record<string, unknown>).remaining = 4;
+    (overBudgetInstances.find((instance) => instance.definitionId === "ai-sword-and-handcannon")!.ttl as Record<string, unknown>).remaining = 31;
     expect(() => validateRuntimeSave(overBudget)).toThrow(/TTL does not match/i);
 
     let playerMatch = createMatch("expired-player-card-save", { unlockedPlayerSkillIds: ["sword-and-handcannon"] });
@@ -296,7 +309,7 @@ describe("boot and repositories", () => {
     expect(cleared.defeats).toEqual(completed.defeats);
     expect(cleared.profile).toEqual(completed.profile);
     expect(cleared.skipTutorial).toBe(true);
-    expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "texas", "irene", "nian", "plume"]);
+    expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza"]);
     expect(unlockedPlayerSkillIdsForDefeats(cleared.defeats)).toContain("blueberry-and-dark-chocolate");
     expect(cleared.updatedAt).toBe("2026-08-31T00:00:00.000Z");
   });

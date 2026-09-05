@@ -2,6 +2,8 @@ import { handCardCount, handTotal } from "./card-zone-adapter";
 import { gunBullets } from "./roulette-adapter";
 import type { AbilityInfoActor, AbilityInfoScalar, AbilityInfoValue, AbilityWorld } from "./types";
 import type { Card, Suit } from "../blackjack/types";
+import { RANKS, SUITS } from "../blackjack/types";
+import { createDerivedCard } from "../blackjack/card";
 
 export type ResolvedInfoBarValue = number | Card | Suit | null;
 export interface AbilityInfoResolutionContext {
@@ -28,15 +30,16 @@ function resolveNumber(value: AbilityInfoScalar, world: AbilityWorld, owner: "pl
     if (expression.type === "min") return Math.min(left, right);
     return Math.max(left, right);
   }
-  if (!(expression.type === "gun-bullets" || expression.type === "hand-total" || expression.type === "hand-card-count" || expression.type === "round-hit-count")) throw new Error(`Unsupported information-bar scalar: ${expression.type}`);
+  if (!(expression.type === "gun-bullets" || expression.type === "hand-total" || expression.type === "hand-card-count" || expression.type === "round-hit-count" || expression.type === "status-stacks")) throw new Error(`Unsupported information-bar scalar: ${expression.type}`);
   const actor = actorFor(expression.target, owner);
   if (expression.type === "gun-bullets") return gunBullets(world.guns[actor]);
   if (expression.type === "hand-total") return handTotal(world.hands[actor]);
   if (expression.type === "hand-card-count") return handCardCount(world.hands[actor]);
+  if (expression.type === "status-stacks") return world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === expression.statusDefinitionId)?.stacks ?? 0;
   return context.roundHitCounts?.[actor] ?? 0;
 }
 
-function selectedCard(value: Extract<AbilityInfoValue, { type: "card" | "suit" }>, world: AbilityWorld, owner: "player" | "opponent"): Card | null {
+function selectedCard(value: Extract<AbilityInfoValue, { target: AbilityInfoActor }>, world: AbilityWorld, owner: "player" | "opponent"): Card | null {
   const actor = actorFor(value.target, owner);
   const cards = world.hands[actor].cards;
   return value.card === "first-private-card" ? cards[1] ?? null : cards.at(-1) ?? null;
@@ -46,6 +49,17 @@ function selectedCard(value: Extract<AbilityInfoValue, { type: "card" | "suit" }
 export function resolveAbilityInfoValue(value: AbilityInfoValue, world: AbilityWorld, owner: "player" | "opponent" = "opponent", context: AbilityInfoResolutionContext = {}): ResolvedInfoBarValue {
   if (context.sourceActive === false) return value.type === "number" ? 0 : null;
   if (value.type === "number") return resolveNumber(value.value, world, owner, context);
-  const card = selectedCard(value, world, owner);
-  return card === null ? null : value.type === "card" ? card : card.suit;
+  if ("source" in value && value.source === "status-card") {
+    const status = world.statuses.find((entry) => entry.owner === owner && entry.statusDefinitionId === value.statusDefinitionId && entry.stacks > 0);
+    const rank = status?.parameters.rank;
+    const suit = status?.parameters.suit;
+    if (typeof rank !== "string" || typeof suit !== "string" || !RANKS.includes(rank as Card["rank"]) || !SUITS.includes(suit as Suit)) return null;
+    const card = createDerivedCard(suit as Suit, rank as Card["rank"]);
+    return value.type === "card" ? card : card.suit;
+  }
+  if (!("source" in value)) {
+    const card = selectedCard(value, world, owner);
+    return card === null ? null : value.type === "card" ? card : card.suit;
+  }
+  return null;
 }

@@ -1,0 +1,59 @@
+{
+  "id": "carnival-index",
+  "name": "狂欢指标",
+  "description": "狂欢指标初始为0。进入普通点数比较时，若策展人的牌面点数大于等于狂欢指标，策展人获得1点点数优势；否则拉普兰德获得2点点数优势。每轮结束时，狂欢指标替换为策展人该轮最终显示点数。",
+  "profileLore": "她把上一轮的终点留在桌上，像给下一幕竖起一块会移动的路牌。越过它的人得到掌声，退缩的人则把更大的优势送到她手里。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "blackjack",
+  "activation": { "type": "automatic" },
+  "rules": [
+    {
+      "id": "reward-rival-reaching-index",
+      "trigger": "before-round-resolution",
+      "triggerNotice": "策展人达到狂欢指标，本轮获得1点点数优势。",
+      "conditions": [
+        { "type": "round-reason-is", "value": "comparison" },
+        {
+          "type": "hand-total",
+          "target": "rival",
+          "operator": "gte",
+          "value": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "carnival-index-value" }
+        }
+      ],
+      "effects": [
+        { "type": "add-to-pending-comparison-score", "target": "rival", "amount": 1 }
+      ]
+    },
+    {
+      "id": "reward-owner-missed-index",
+      "trigger": "before-round-resolution",
+      "triggerNotice": "策展人未达到狂欢指标，拉普兰德本轮获得2点点数优势。",
+      "conditions": [
+        { "type": "round-reason-is", "value": "comparison" },
+        {
+          "type": "hand-total",
+          "target": "rival",
+          "operator": "lt",
+          "value": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "carnival-index-value" }
+        }
+      ],
+      "effects": [
+        { "type": "add-to-pending-comparison-score", "target": "owner", "amount": 2 }
+      ]
+    },
+    {
+      "id": "replace-index-at-round-end",
+      "trigger": "on-round-end",
+      "triggerNotice": "狂欢指标已替换为策展人上一轮的最终显示点数。",
+      "effects": [
+        {
+          "type": "set-status-stacks",
+          "target": "owner",
+          "statusDefinitionId": "carnival-index-value",
+          "amount": { "type": "round-final-score", "target": "rival" }
+        }
+      ]
+    }
+  ],
+  "tags": ["blackjack", "hand-value", "threshold", "ai-skill"]
+}

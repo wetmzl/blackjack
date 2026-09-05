@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CORE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const ABILITY_IDS = ["early-preparation", "hunter-instinct", "switcheroo", "rhodes-heartthrob", "night-queen", "scent-of-a-woman", "blueberry-and-dark-chocolate", "silent-drizzle", "bomb-maniac", "w-night-queen", "sword-and-handcannon", "forge-heralds-the-year", "ai-sword-and-handcannon", "ai-forge-heralds-the-year", "copper-seal", "copper-seal-sealed"] as const;
+const ABILITY_IDS = ["early-preparation", "hunter-instinct", "switcheroo", "rhodes-heartthrob", "night-queen", "scent-of-a-woman", "blueberry-and-dark-chocolate", "silent-drizzle", "bomb-maniac", "w-night-queen", "sword-and-handcannon", "forge-heralds-the-year", "ai-sword-and-handcannon", "ai-forge-heralds-the-year", "copper-seal", "platinum-vision", "platinum-vision-advantage", "carnival-index", "carnival-heats-up", "carnival-index-value", "copper-seal-sealed"] as const;
 
 function productionTypeScript(directory: string): string {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

@@ -1,0 +1,29 @@
+{
+  "id": "ho-olheyak-once-had-wings",
+  "name": "曾有羽翼",
+  "description": "若霍尔海雅记住的牌为J、Q或K，她本轮失败时不为自己装填子弹。",
+  "triggerNotice": "记忆中的人物牌让本轮装填归零。",
+  "profileLore": "有些牌面曾经属于翅膀，有些翅膀曾经属于她。只要那张牌还被记得，失败就不必留下弹药。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "roulette",
+  "activation": { "type": "automatic" },
+  "rules": [
+    {
+      "id": "skip-face-card-load",
+      "trigger": "before-bullet-load",
+      "conditions": [
+        { "type": "round-penalty-target-is", "target": "owner" },
+        {
+          "type": "any",
+          "conditions": [
+            { "type": "status-card-rank-is", "target": "owner", "statusDefinitionId": "ho-olheyak-memory-card", "rank": "J" },
+            { "type": "status-card-rank-is", "target": "owner", "statusDefinitionId": "ho-olheyak-memory-card", "rank": "Q" },
+            { "type": "status-card-rank-is", "target": "owner", "statusDefinitionId": "ho-olheyak-memory-card", "rank": "K" }
+          ]
+        }
+      ],
+      "effects": [{ "type": "multiply-pending-load", "target": "owner", "factor": 0 }]
+    }
+  ],
+  "tags": ["roulette", "load-control", "face-card", "ai-skill"]
+}

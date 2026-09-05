@@ -48,13 +48,15 @@ const infoBarScalar: z.ZodType<unknown> = z.lazy(() => z.union([
   z.number().finite(),
   z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(),
   z.object({ type: z.enum(["gun-bullets", "hand-total", "hand-card-count", "round-hit-count"]), target: infoBarActor }).strict(),
+  z.object({ type: z.literal("status-stacks"), target: infoBarActor, statusDefinitionId: z.string().min(1) }).strict(),
   z.object({ type: z.enum(["add", "subtract", "multiply", "min", "max"]), left: infoBarScalar, right: infoBarScalar }).strict()
 ]));
 const infoBar = z.object({
   sourceAbilityId: z.string().min(1), label: z.string().min(1), description: z.string().min(1), format: z.enum(["number", "percent"]).optional(),
   value: z.union([
     z.object({ type: z.literal("number"), value: infoBarScalar }).strict(),
-    z.object({ type: z.enum(["card", "suit"]), target: infoBarActor, card: z.enum(["last-card", "first-private-card"]) }).strict()
+    z.object({ type: z.enum(["card", "suit"]), target: infoBarActor, card: z.enum(["last-card", "first-private-card"]) }).strict(),
+    z.object({ type: z.enum(["card", "suit"]), source: z.literal("status-card"), statusDefinitionId: z.string().min(1) }).strict()
   ])
 }).strict().superRefine((bar, ctx) => {
   if (bar.format === "percent" && bar.value.type !== "number") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["format"], message: "百分比格式只适用于数值信息" });

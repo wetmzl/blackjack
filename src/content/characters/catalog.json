@@ -56,6 +56,37 @@
         "table": 1.3
       },
       "dataFile": "plume.json"
+    },
+    {
+      "id": "platinum",
+      "name": "白金",
+      "subtitle": "厌倦追杀与加班的无胄盟狙击手，只想赌一场真正的辞职",
+      "tier": "A",
+      "tags": ["kazimierz", "bow"],
+      "previewImage": "/assets/characters/platinum-relaxed.png",
+      "trophyImage": "/assets/characters/platinum-trophy-defeated.png",
+      "dataFile": "platinum.json"
+    },
+    {
+      "id": "lappland-the-decadenza",
+      "name": "拉普兰德",
+      "subtitle": "来自叙拉古的孤狼，只为一场连自己也猜不到结局的狂欢赴约",
+      "tier": "S",
+      "tags": ["siracusa", "lupo", "chaotic"],
+      "previewImage": "/assets/characters/lappland-the-decadenza-relaxed.png",
+      "trophyImage": "/assets/characters/lappland-the-decadenza-trophy-defeated.png",
+      "dataFile": "lappland-the-decadenza.json"
+    },
+    {
+      "id": "ho-olheyak",
+      "name": "霍尔海雅",
+      "subtitle": "曾经拥有羽翼的历史学者，向牌桌索回一段被遗忘的传承",
+      "tier": "S",
+      "tags": ["columbia", "historian", "memory"],
+      "unlock": { "type": "defeat-any-tag", "tag": "tier:s" },
+      "previewImage": "/assets/characters/ho-olheyak-relaxed.png",
+      "trophyImage": "/assets/characters/ho-olheyak-trophy-defeated.png",
+      "dataFile": "ho-olheyak.json"
     }
   ]
 }

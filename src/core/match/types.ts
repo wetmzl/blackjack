@@ -26,6 +26,8 @@ export interface RoundOutcome {
   readonly reason: RoundReason;
   readonly penaltyTarget: Actor | null;
   readonly bulletsAdded: number;
+  /** Final totals used by point comparison, after all score modifiers. */
+  readonly comparisonScores?: Readonly<Record<Actor, number>>;
 }
 
 export interface RoundState {

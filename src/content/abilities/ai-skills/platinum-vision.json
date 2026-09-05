@@ -1,0 +1,59 @@
+{
+  "id": "platinum-vision",
+  "name": "天马视域",
+  "description": "若策展人在一轮中没有主动选择 Hit，并在第一手选择 Stand，白金获得1点可累加的点数优势。策展人选择 Hit 后，白金的点数优势全部清空；进行点数比较时，白金的点数视为原始点数加上点数优势。",
+  "triggerNotice": "白金获得1点点数优势。",
+  "profileLore": "她曾经用视线丈量过无数目标与射界。现在，她只需要看清策展人什么时候会停手，以及自己还能把这份优势留多久。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "blackjack",
+  "activation": { "type": "automatic" },
+  "ttl": { "type": "rounds", "amount": 9999 },
+  "rules": [
+    {
+      "id": "gain-stand-advantage",
+      "trigger": "after-stand",
+      "conditions": [
+        { "type": "actor-is", "actor": "rival" },
+        { "type": "round-hit-count", "target": "rival", "operator": "eq", "value": 0 }
+      ],
+      "effects": [
+        { "type": "add-status", "target": "owner", "statusDefinitionId": "platinum-vision-advantage" }
+      ]
+    },
+    {
+      "id": "clear-hit-advantage",
+      "trigger": "after-hand-changed",
+      "notify": false,
+      "conditions": [
+        { "type": "actor-is", "actor": "rival" },
+        { "type": "round-hit-count", "target": "rival", "operator": "gt", "value": 0 },
+        { "type": "status-present", "target": "owner", "statusDefinitionId": "platinum-vision-advantage" }
+      ],
+      "effects": [
+        {
+          "type": "remove-status",
+          "target": "owner",
+          "statusDefinitionId": "platinum-vision-advantage",
+          "amount": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "platinum-vision-advantage" }
+        }
+      ],
+      "limit": { "perRound": 1 }
+    },
+    {
+      "id": "apply-comparison-advantage",
+      "trigger": "before-round-resolution",
+      "conditions": [
+        { "type": "round-reason-is", "value": "comparison" },
+        { "type": "status-present", "target": "owner", "statusDefinitionId": "platinum-vision-advantage" }
+      ],
+      "effects": [
+        {
+          "type": "add-to-pending-comparison-score",
+          "target": "owner",
+          "amount": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "platinum-vision-advantage" }
+        }
+      ]
+    }
+  ],
+  "tags": ["blackjack", "hand-value", "ai-skill"]
+}

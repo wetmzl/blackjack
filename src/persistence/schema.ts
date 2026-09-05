@@ -37,7 +37,8 @@ const RoundOutcomeSchema = z.object({
   winner: z.enum(["player", "opponent"]).nullable(),
   reason: z.enum(["blackjack", "bust", "comparison", "push"]),
   penaltyTarget: z.enum(["player", "opponent"]).nullable(),
-  bulletsAdded: z.number().int().min(0)
+  bulletsAdded: z.number().int().min(0),
+  comparisonScores: z.object({ player: z.number().finite(), opponent: z.number().finite() }).strict().optional()
 }).strict();
 const RoundSchema = z.object({
   index: z.number().int().min(0),

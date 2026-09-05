@@ -32,8 +32,10 @@ export type NumberValue =
   | { readonly type: "parameter"; readonly key: string }
   | { readonly type: "gun-bullets"; readonly target: ActorSelector }
   | { readonly type: "hand-total"; readonly target: ActorSelector }
+  | { readonly type: "round-final-score"; readonly target: ActorSelector }
   | { readonly type: "hand-card-count"; readonly target: ActorSelector }
   | { readonly type: "round-hit-count"; readonly target: ActorSelector }
+  | { readonly type: "status-stacks"; readonly target: ActorSelector; readonly statusDefinitionId: string }
   | { readonly type: "add" | "subtract" | "multiply"; readonly left: ScalarValue; readonly right: ScalarValue };
 export type ActorSelector = "owner" | "rival" | "event-actor" | "penalty-target";
 export type CardSelector = "last-card" | "first-private-card";
@@ -41,10 +43,12 @@ export type CardSelector = "last-card" | "first-private-card";
 export type AbilityInfoActor = "owner" | "rival";
 export type AbilityInfoScalar = number | { readonly type: "constant"; readonly value: number }
   | { readonly type: "gun-bullets" | "hand-total" | "hand-card-count" | "round-hit-count"; readonly target: AbilityInfoActor }
+  | { readonly type: "status-stacks"; readonly target: AbilityInfoActor; readonly statusDefinitionId: string }
   | { readonly type: "add" | "subtract" | "multiply" | "min" | "max"; readonly left: AbilityInfoScalar; readonly right: AbilityInfoScalar };
 export type AbilityInfoValue =
   | { readonly type: "number"; readonly value: AbilityInfoScalar }
-  | { readonly type: "card" | "suit"; readonly target: AbilityInfoActor; readonly card: CardSelector };
+  | { readonly type: "card" | "suit"; readonly target: AbilityInfoActor; readonly card: CardSelector }
+  | { readonly type: "card" | "suit"; readonly source: "status-card"; readonly statusDefinitionId: string };
 export type CardSource = "remaining-draw-pile";
 export type RandomPick = "uniform-ability-rng";
 export type CardCandidate =
@@ -66,6 +70,8 @@ export type Condition =
   | { readonly type: "draw-pile-card-exists" }
   | { readonly type: "hand-last-card-splittable"; readonly target: ActorSelector }
   | { readonly type: "hand-is-twenty-one"; readonly target: ActorSelector }
+  | { readonly type: "pending-bust-would-bust"; readonly target: ActorSelector }
+  | { readonly type: "status-card-rank-is"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly rank: Rank }
   | { readonly type: "gun-bullets"; readonly target: ActorSelector; readonly operator: Compare; readonly value: ScalarValue }
   | { readonly type: "gun-is-full"; readonly target: ActorSelector; readonly expected: boolean }
   | { readonly type: "round-reason-is"; readonly value: "blackjack" | "bust" | "comparison" | "push" }
@@ -83,13 +89,17 @@ export type Effect =
   | { readonly type: "reveal-hand-card-suit"; readonly target: ActorSelector; readonly card: "first-private-card"; readonly viewer: ActorSelector }
   | { readonly type: "split-last-card-into-derived"; readonly target: ActorSelector }
   | { readonly type: "add-status"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly parameters?: Readonly<Record<string, string | number | boolean>> }
+  | { readonly type: "set-status-stacks"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly amount: ScalarValue }
   | { readonly type: "remove-status"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly amount?: ScalarValue }
   | { readonly type: "replace-pending-draw"; readonly target: ActorSelector; readonly policy: DrawReplacementPolicy }
+  | { readonly type: "remember-last-card"; readonly target: ActorSelector; readonly cardTarget: ActorSelector; readonly statusDefinitionId: string }
+  | { readonly type: "replace-bust-hand-card-with-memory-card"; readonly target: ActorSelector; readonly statusDefinitionId: string }
   | { readonly type: "add-derived-card-for-exact-total"; readonly target: ActorSelector; readonly total: ScalarValue }
   | { readonly type: "add-to-pending-bust-limit"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "add-to-pending-trigger-misfire-chance"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "add-to-pending-load"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "multiply-pending-load"; readonly target: ActorSelector; readonly factor: ScalarValue }
+  | { readonly type: "add-to-pending-comparison-score"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "cancel-pending-trigger"; readonly target: ActorSelector };
 
 export interface AbilityParameterSpec { readonly type: "number" | "boolean" | "enum"; readonly minimum?: number; readonly maximum?: number; readonly values?: readonly string[]; readonly default?: number | boolean | string; }
@@ -98,7 +108,7 @@ export interface AbilitySource { readonly kind: AbilitySourceKind; readonly defi
 export interface SkillCardInstance extends AbilitySource { readonly kind: "player-skill"; }
 export interface AbilityInstance extends AbilitySource { readonly createdAtSequence: number; readonly parameters: Readonly<Record<string, string | number | boolean>>; readonly ttl?: AbilityInstanceTtl; }
 export interface RuleLimit { readonly perEvent?: number; readonly perTurn?: number; readonly perRound?: number; readonly perMatch?: number; }
-export interface AbilityRule { readonly id: string; readonly trigger: AbilityBroadcastTrigger; readonly priority?: number; readonly conditions?: readonly Condition[]; readonly effects: readonly Effect[]; readonly limit?: RuleLimit; }
+export interface AbilityRule { readonly id: string; readonly trigger: AbilityBroadcastTrigger; readonly priority?: number; readonly notify?: boolean; readonly triggerNotice?: string; readonly conditions?: readonly Condition[]; readonly effects: readonly Effect[]; readonly limit?: RuleLimit; }
 export type AbilityActivation =
   | { readonly type: "action"; readonly windows: readonly ActionWindow[]; readonly consume: "card" | "none"; readonly availability?: readonly Condition[] }
   | { readonly type: "automatic" } | { readonly type: "passive" };
@@ -138,12 +148,13 @@ export interface AbilityRuntimeState { readonly instances: readonly AbilityInsta
 
 export interface PendingDraw { readonly id: string; readonly actor: AbilityActor; readonly card?: Card; readonly replacement?: Card; readonly cancelled?: boolean; }
 export interface PendingLoad { readonly id: string; readonly actor: AbilityActor; readonly amount: number; readonly reason: "blackjack" | "bust" | "comparison" | "push"; }
-export interface PendingBustCheck { readonly id: string; readonly actor: AbilityActor; readonly limit: number; }
+export interface PendingBustCheck { readonly id: string; readonly actor: AbilityActor; readonly limit: number; readonly standAfterReplacement?: boolean; }
 export interface PendingTrigger { readonly id: string; readonly actor: AbilityActor; readonly misfireChance?: number; readonly cancelled?: boolean; readonly cancelSourceInstanceId?: string; }
-export interface AbilityEventContext { readonly trigger: AbilityTrigger | "after-ability-played"; readonly sourceEventId: string; readonly eventActor?: AbilityActor; readonly playedAbilityKind?: AbilitySourceKind; readonly roundHitCounts?: Readonly<Record<AbilityActor, number>>; readonly roundOutcome?: { readonly reason: "blackjack" | "bust" | "comparison" | "push"; readonly penaltyTarget: AbilityActor | null }; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; }
+export interface PendingComparison { readonly id: string; readonly scores: Readonly<Record<AbilityActor, number>>; }
+export interface AbilityEventContext { readonly trigger: AbilityTrigger | "after-ability-played"; readonly sourceEventId: string; readonly eventActor?: AbilityActor; readonly playedAbilityKind?: AbilitySourceKind; readonly roundHitCounts?: Readonly<Record<AbilityActor, number>>; readonly roundOutcome?: { readonly reason: "blackjack" | "bust" | "comparison" | "push"; readonly penaltyTarget: AbilityActor | null; readonly comparisonScores?: Readonly<Record<AbilityActor, number>> }; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; }
 
 export interface AbilityWorld { readonly hands: Readonly<Record<AbilityActor, Hand>>; readonly guns: Readonly<Record<AbilityActor, GunState>>; readonly shoe: ShoeState; readonly cards: readonly SkillCardInstance[]; readonly statuses: readonly AbilityStatus[]; readonly advice?: "hit" | "stand" | null; }
-export interface AbilityEffectResult { readonly world: AbilityWorld; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly runtime: AbilityRuntimeState; readonly events: readonly AbilityDomainEvent[]; }
+export interface AbilityEffectResult { readonly world: AbilityWorld; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly runtime: AbilityRuntimeState; readonly events: readonly AbilityDomainEvent[]; }
 export type AbilityDomainEvent =
   | { readonly type: "ABILITY_PLAYED"; readonly instanceId: string; readonly definitionId: string; readonly owner: AbilityActor }
   | { readonly type: "ABILITY_TRIGGERED"; readonly instanceId: string; readonly definitionId: string; readonly ruleId: string; readonly owner: AbilityActor }

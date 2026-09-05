@@ -15,11 +15,13 @@ const wCharacterData = JSON.parse(readFileSync(new URL("../../src/content/charac
   aiSkills: AbilityBinding[];
 };
 const ireneCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/irene.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
+const lapplandCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/lappland-the-decadenza.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
+const hoOlheyakCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/ho-olheyak.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
 const wDialogue = wCharacterData.dialogue;
 
 function findTurnsMatch(prefix: string) {
   for (let index = 0; index < 10_000; index += 1) {
-    const match = createMatch(`${prefix}-${index}`);
+    const match = gameReducer(createMatch(`${prefix}-${index}`), { type: "SKIP_SKILL_OFFER" });
     if (match.round.phase === "turns" && match.round.currentActor === "opponent") return match;
   }
   throw new Error("No deterministic turns fixture found");
@@ -27,7 +29,7 @@ function findTurnsMatch(prefix: string) {
 
 function findPlayerBlackjackMatch() {
   for (let index = 0; index < 10_000; index += 1) {
-    const match = createMatch(`e2e-player-blackjack-${index}`);
+    const match = gameReducer(createMatch(`e2e-player-blackjack-${index}`), { type: "SKIP_SKILL_OFFER" });
     if (match.round.outcome?.reason === "blackjack" && match.round.outcome.winner === "player") return match;
   }
   throw new Error("No deterministic player Blackjack fixture found");
@@ -55,6 +57,58 @@ function ireneInfoBarMatch(): MatchState {
     };
   }
   throw new Error("No deterministic Irene information-bar fixture found");
+}
+
+function lapplandInfoBarMatch(): MatchState {
+  for (let index = 0; index < 10_000; index += 1) {
+    const dealt = gameReducer(createMatch(`e2e-lappland-info-${index}`, { opponentId: "lappland-the-decadenza", opponentAiSkills: lapplandCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    if (dealt.round.phase !== "turns") continue;
+    const source = dealt.abilities.instances.find((instance) => instance.definitionId === "carnival-index");
+    if (!source) continue;
+    const sequence = dealt.abilities.sequence + 1;
+    return {
+      ...dealt,
+      abilities: {
+        ...dealt.abilities,
+        statuses: [...dealt.abilities.statuses, {
+          statusDefinitionId: "carnival-index-value",
+          owner: "opponent",
+          sourceInstanceId: source.instanceId,
+          stacks: 19,
+          duration: "match",
+          parameters: {},
+          createdAtSequence: sequence
+        }],
+        sequence
+      }
+    };
+  }
+  throw new Error("No deterministic Lappland information-bar fixture found");
+}
+
+function hoOlheyakInfoBarMatch(suit: "hearts" | "spades" = "hearts"): MatchState {
+  for (let index = 0; index < 10_000; index += 1) {
+    const dealt = gameReducer(createMatch(`e2e-ho-olheyak-info-${index}`, { opponentId: "ho-olheyak", opponentAiSkills: hoOlheyakCharacterData.aiSkills }), { type: "SKIP_SKILL_OFFER" });
+    if (dealt.round.phase !== "turns") continue;
+    const source = dealt.abilities.instances.find((instance) => instance.definitionId === "ho-olheyak-inheritance-terminal");
+    if (!source) continue;
+    return {
+      ...dealt,
+      abilities: {
+        ...dealt.abilities,
+        statuses: [...dealt.abilities.statuses, {
+          statusDefinitionId: "ho-olheyak-memory-card",
+          owner: "opponent",
+          sourceInstanceId: source.instanceId,
+          stacks: 1,
+          duration: "match",
+          parameters: { rank: "4", suit, origin: "shoe" },
+          createdAtSequence: dealt.abilities.sequence
+        }]
+      }
+    };
+  }
+  throw new Error("No deterministic Ho-olheyak information-bar fixture found");
 }
 
 function playerWinSummary(opponentId = "w"): MatchState {
@@ -96,7 +150,7 @@ function victoryRecord(id: string, opponentId: string, timestamp: string): Match
 
 function opponentPenaltyReveal(): MatchState {
   const match = findTurnsMatch("audio-confirm");
-  const outcome = { winner: "player" as const, reason: "comparison" as const, penaltyTarget: "opponent" as const, bulletsAdded: 1, playerSkillReward: 1 };
+  const outcome = { winner: "player" as const, reason: "comparison" as const, penaltyTarget: "opponent" as const, bulletsAdded: 1 };
   return {
     ...match,
     roulette: { ...match.roulette, opponent: { capacity: 6, bullets: 6 } },
@@ -110,15 +164,35 @@ async function enterCharacterSelection(page: Page): Promise<void> {
   await expect(page.locator("main.lobby-character-shell")).toBeVisible();
 }
 
+async function ensureGuestCandidate(page: Page, id: string): Promise<void> {
+  const invite = page.locator(`[data-invite-character='${id}']`);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await invite.count()) return;
+    const refresh = page.locator("[data-refresh-guests]");
+    if (!(await refresh.isVisible())) break;
+    await refresh.click();
+  }
+  throw new Error(`Guest ${id} did not appear after refreshing the candidate list`);
+}
+
 async function inviteCharacter(page: Page, id: string): Promise<void> {
+  await ensureGuestCandidate(page, id);
   await page.locator(`[data-invite-character='${id}']`).click();
   await expect(page.locator("#profile")).toBeVisible();
+}
+
+async function resolveOpeningSkillOffer(page: Page): Promise<void> {
+  const skip = page.locator("button[data-action*='SKIP_SKILL_OFFER']");
+  await expect(skip).toBeVisible({ timeout: 8_000 });
+  await skip.click();
+  await expect(skip).toHaveCount(0);
 }
 
 async function startCharacter(page: Page, id: string): Promise<void> {
   await inviteCharacter(page, id);
   await page.locator("[data-profile-start]").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await resolveOpeningSkillOffer(page);
 }
 
 async function openLobbySettings(page: Page): Promise<void> {
@@ -211,7 +285,8 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   await expect(page.locator(".guest-section:not(.defeated-section) .character-card")).toHaveCount(3);
   await expect(page.locator(".defeated-section .character-card")).toHaveCount(0);
   await expect(page.locator("[data-character-id='w'], [data-character-id='nian']")).toHaveCount(0);
-  await expect(page.locator("[data-character-id='texas'], [data-character-id='irene'], [data-character-id='plume']")).toHaveCount(3);
+  const initialCandidateIds = await page.locator(".guest-section:not(.defeated-section) .character-card").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId ?? ""));
+  expect(initialCandidateIds.every((id) => ["texas", "irene", "plume", "platinum", "lappland-the-decadenza"].includes(id))).toBe(true);
   await inviteCharacter(page, "texas");
   const profile = page.locator("#profile");
   await expect(profile).toContainText("德克萨斯");
@@ -252,8 +327,8 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   expect(Object.values(profileFonts).every((font) => !/(songti|stsong|simsun|noto serif)/i.test(font))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
-  await expect(page.locator("#presentation")).toContainText("策展人发动了技能「早有准备」");
-  await expect(page.locator("#skill-gain-announcement")).toContainText("获得技能牌：", { timeout: 5_000 });
+  await expect(page.locator(".skill-offer-modal")).toContainText("可选 2 张");
+  await resolveOpeningSkillOffer(page);
   await expect(page.locator(".player-zone .card")).toHaveCount(2);
   await expect(page.locator(".table-shell .gun-row")).toHaveCount(0);
   await expect(page.locator(".table-shell .felt-divider")).toHaveCount(0);
@@ -299,8 +374,16 @@ test("W 的技能信息栏显示动态领先数并可打开说明", async ({ pag
   await installRuntimeSave(page, wInfoBarMatch());
 
   const infoBar = page.locator(".ai-info-bar");
+  const bustLimit = page.locator(".bust-limit-indicator");
   await expect(infoBar).toContainText("W领先优势");
   await expect(infoBar.locator(".ai-info-number")).toHaveText("1");
+  await expect(bustLimit).toHaveAccessibleName("当前爆牌上限：22");
+  await expect(bustLimit).toContainText("爆牌上限22");
+  const bustBox = await bustLimit.boundingBox();
+  const noticeBox = await page.locator(".round-notice").boundingBox();
+  expect(bustBox).not.toBeNull();
+  expect(noticeBox).not.toBeNull();
+  expect(bustBox!.x + bustBox!.width).toBeLessThanOrEqual(noticeBox!.x);
   const lastGunRow = page.locator(".gun-status-row").last();
   const gunBox = await lastGunRow.boundingBox();
   const infoBox = await infoBar.boundingBox();
@@ -330,11 +413,55 @@ test("艾丽妮的信息栏显示本轮实际哑火概率", async ({ page }) => 
   await expect(infoBar.locator(".ai-info-number")).toHaveText("66%");
   await infoBar.getByRole("button", { name: "查看本轮哑火概率说明" }).click();
   const dialog = page.locator("#ai-info-dialog");
-  await expect(dialog).toContainText("策展人本轮每次 Hit 增加33%");
+  await expect(dialog).toContainText("策展人本轮每次 Hit 会增加手枪33%的哑火概率");
   await expect(dialog.locator(".ai-info-number")).toHaveText("66%");
 });
 
-test("新对局逐张展示早有准备带来的两张技能牌", async ({ page }) => {
+test("拉普兰德的信息栏显示当前狂欢指标并说明两项机制", async ({ page }) => {
+  await page.goto("/");
+  await installRuntimeSave(page, lapplandInfoBarMatch());
+
+  const infoBar = page.locator(".ai-info-bar");
+  await expect(page.locator(".character-strip .eyebrow")).toContainText("拉普兰德 // S级");
+  await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /lappland-the-decadenza-(?:relaxed|conflicted|mocking)\.png/);
+  await expect(infoBar).toContainText("狂欢指标");
+  await expect(infoBar.locator(".ai-info-number")).toHaveText("19");
+  await infoBar.getByRole("button", { name: "查看狂欢指标说明" }).click();
+  const dialog = page.locator("#ai-info-dialog");
+  await expect(dialog).toContainText("策展人达到指标会获得1点优势");
+  await expect(dialog).toContainText("拉普兰德达到指标后，双方爆牌上限提高2点");
+  await expect(dialog.locator(".ai-info-number")).toHaveText("19");
+});
+
+test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌", async ({ page }) => {
+  await page.goto("/");
+  await installRuntimeSave(page, hoOlheyakInfoBarMatch());
+
+  const infoBar = page.locator(".ai-info-bar");
+  await expect(infoBar).toContainText("记忆牌");
+  const rememberedCard = infoBar.locator(".ai-info-card");
+  await expect(rememberedCard.locator("em")).toHaveText("♥");
+  await expect(rememberedCard.locator("b")).toHaveText("4");
+  expect(await rememberedCard.locator(":scope > *").evaluateAll((nodes) => nodes.map((node) => node.tagName))).toEqual(["EM", "B"]);
+  const appearance = await rememberedCard.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const suit = getComputedStyle(element.querySelector("em")!);
+    const box = element.getBoundingClientRect();
+    return { opacity: style.opacity, color: style.color, suitSize: Number.parseFloat(suit.fontSize), width: box.width, height: box.height };
+  });
+  expect(appearance.opacity).toBe("1");
+  expect(appearance.color).toBe("rgb(201, 47, 78)");
+  expect(appearance.suitSize).toBeGreaterThanOrEqual(14);
+  expect(appearance.width).toBeGreaterThanOrEqual(43);
+  expect(appearance.height).toBeGreaterThanOrEqual(24);
+
+  await installRuntimeSave(page, hoOlheyakInfoBarMatch("spades"));
+  const blackCard = page.locator(".ai-info-bar .ai-info-card.black");
+  await expect(blackCard.locator("em")).toHaveText("♠");
+  await expect(blackCard).toHaveCSS("color", "rgb(21, 26, 30)");
+});
+
+test("新对局中早有准备将首次技能选择提升为三选二", async ({ page }) => {
   await page.addInitScript(() => {
     const target = window as typeof window & { __skillGainEntries: Array<{ text: string; at: number }> };
     target.__skillGainEntries = [];
@@ -348,12 +475,19 @@ test("新对局逐张展示早有准备带来的两张技能牌", async ({ page 
   });
   await page.goto("/?debug=1");
   await enterCharacterSelection(page);
-  await startCharacter(page, "texas");
-  const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: string[]; equippedSkillIds: string[] }; history: Array<{ type: string; actor?: string }> } };
-  const playerBlackjack = initialMatchDebug.relevantMatchState.history.some((event) => event.type === "BLACKJACK" && event.actor === "player");
-  const expectedInitialGains = 2 + (playerBlackjack ? 2 : 0);
-  expect(initialMatchDebug.relevantMatchState.skills.cards).toHaveLength(expectedInitialGains);
-  expect(initialMatchDebug.relevantMatchState.skills.equippedSkillIds).toContain("early-preparation");
+  await inviteCharacter(page, "texas");
+  await page.locator("[data-profile-start]").click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  const offer = page.locator(".skill-offer-modal");
+  await expect(offer.locator("[data-offer-candidate]")).toHaveCount(3);
+  await expect(offer).toContainText("可选 2 张");
+  await offer.locator("[data-offer-candidate]").nth(0).click();
+  await offer.locator("[data-offer-candidate]").nth(1).click();
+  await offer.locator("button[data-action*='CONFIRM_SKILL_OFFER']").click();
+  const initialMatchDebug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: string[] }; talentIds: string[] } };
+  const expectedInitialGains = 2;
+  expect(initialMatchDebug.relevantMatchState.playerSkills.cards).toHaveLength(expectedInitialGains);
+  expect(initialMatchDebug.relevantMatchState.talentIds).toContain("early-preparation");
   await expect.poll(() => page.evaluate(() => (window as typeof window & { __skillGainEntries: unknown[] }).__skillGainEntries.length), { timeout: 5_000 }).toBe(expectedInitialGains);
   const entries = await page.evaluate(() => (window as typeof window & { __skillGainEntries: Array<{ text: string; at: number }> }).__skillGainEntries);
   expect(entries.every((entry) => entry.text.startsWith("获得技能牌："))).toBe(true);
@@ -375,6 +509,8 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/platinum\.json|\/assets\/platinum-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/lappland-the-decadenza\.json|\/assets\/lappland-the-decadenza-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /texas-(conflicted|mocking|threatened|unconscious|defeated-summary)/.test(path))).toBe(false);
   await startCharacter(page, "texas");
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/texas\.json|\/assets\/texas-[^/]+\.js)(?:\?|$)/.test(path))).toBe(true);
@@ -382,6 +518,7 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:platinum|lappland-the-decadenza)\.json|\/assets\/(?:platinum|lappland-the-decadenza)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
 
   await page.locator("button[data-action*='ESCAPE_MATCH']").click();
   await expect(page.getByRole("heading", { name: "已离席" })).toBeVisible();
@@ -395,7 +532,7 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   });
   await startCharacter(page, "irene");
   expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(true);
-  expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|nian|plume)\.json|\/assets\/(?:w|texas|nian|plume)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|nian|plume|platinum|lappland-the-decadenza)\.json|\/assets\/(?:w|texas|nian|plume|platinum|lappland-the-decadenza)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
 });
 
 test("击败 A 级角色会显示 S 级解锁，刷新候场时确保换人", async ({ page }, testInfo) => {
@@ -429,7 +566,9 @@ test("击败 A 级角色会显示 S 级解锁，刷新候场时确保换人", as
   await page.getByRole("button", { name: "刷新候场宾客" }).click();
   const after = (await candidates.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId ?? ""))).sort();
   expect(after).not.toEqual(before);
-  expect(new Set([...before, ...after])).toEqual(new Set(["w", "irene", "nian", "plume"]));
+  const availableAfterTexas = new Set(["w", "irene", "nian", "plume", "platinum", "lappland-the-decadenza"]);
+  expect([...before, ...after].every((id) => availableAfterTexas.has(id))).toBe(true);
+  expect(new Set([...before, ...after]).size).toBeGreaterThanOrEqual(4);
   await page.setViewportSize({ width: 320, height: 720 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   await page.screenshot({ path: testInfo.outputPath("guest-selection-unlocked-320.png"), fullPage: true });
@@ -453,7 +592,8 @@ test("已击败宾客按首次胜利时间去重排列且可以再次邀请", as
   await enterCharacterSelection(page);
 
   const candidateIds = await page.locator(".guest-section:not(.defeated-section) .character-card").evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId));
-  expect(new Set(candidateIds)).toEqual(new Set(["w", "nian", "plume"]));
+  expect(candidateIds).toHaveLength(3);
+  expect(candidateIds.every((id) => id !== undefined && ["w", "nian", "plume", "platinum", "lappland-the-decadenza"].includes(id))).toBe(true);
   const defeatedCards = page.locator(".defeated-section .character-card");
   await expect(defeatedCards).toHaveCount(2);
   expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual(["texas", "irene"]);
@@ -489,6 +629,7 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
   await expect(profile.locator("#profile-content")).toHaveText(/\S+/);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await resolveOpeningSkillOffer(page);
   await expect(page.locator(".character-strip .eyebrow")).toContainText("年 // S级");
   await expect(page.locator("img.character-portrait")).toHaveAttribute("src", /nian-(?:relaxed|conflicted|mocking)\.png/);
 });
@@ -496,11 +637,15 @@ test("年作为第四角色显示解离式档案并按需载入", async ({ page 
 test("正式角色档案显示各自已启用技能", async ({ page }) => {
   await page.goto("/");
   await enterCharacterSelection(page);
-  for (const [id, names] of [["texas", ["细雨无声"]], ["irene", ["剑与手炮"]]] as const) {
+  for (const [id, names] of [
+    ["texas", ["细雨无声"]],
+    ["irene", ["剑与手炮"]],
+    ["lappland-the-decadenza", ["狂欢指标", "狂欢升温"]]
+  ] as const) {
     await inviteCharacter(page, id);
     const profile = page.locator("#profile");
-    await expect(profile.locator(".profile-ability")).toHaveCount(1);
-    await expect(profile.locator(".profile-ability summary")).toContainText(names[0]);
+    await expect(profile.locator(".profile-ability")).toHaveCount(names.length);
+    await expect(profile.locator(".profile-ability summary strong")).toHaveText([...names]);
     await profile.locator("[data-close]").click();
   }
 });
@@ -510,6 +655,7 @@ test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ pa
   page.on("request", (request) => requestedPaths.push(decodeURIComponent(new URL(request.url()).pathname)));
   await page.goto("/");
   await enterCharacterSelection(page);
+  await ensureGuestCandidate(page, "plume");
   const card = page.locator("[data-character-id='plume']");
   const previewFrame = card.locator(".portrait");
   const preview = previewFrame.locator("img.scaled-character-art");
@@ -531,6 +677,7 @@ test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ pa
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)$/.test(path))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await resolveOpeningSkillOffer(page);
   await expect(page.locator(".character-strip .eyebrow")).toContainText("翎羽 // B级");
   await expect(page.locator("#dialogue-text")).toHaveAttribute("data-typing", "false", { timeout: 5_000 });
   await expect(page.locator("#dialogue-text")).not.toContainText("台词占位");
@@ -620,10 +767,10 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 5");
   await returnToLobbyMenu(page);
-  await page.getByRole("button", { name: "技能管理" }).click();
+  await page.getByRole("button", { name: "技能与天赋" }).click();
   const skills = page.locator("#skills");
   await expect(skills.locator(".loadout-skill")).toHaveCount(8);
-  await expect(skills.getByRole("checkbox", { name: "装备早有准备" })).toBeVisible();
+  await expect(skills.locator(".loadout-skill.talent")).toContainText("早有准备");
   await expect(skills).not.toContainText("罗德岛万人迷");
   await expect(skills.locator(".profile-ability[open]")).toHaveCount(0);
   await skills.locator(".profile-ability").first().locator("summary").click();
@@ -634,9 +781,9 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await page.setViewportSize({ width: 320, height: 720 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(skills.locator("input[data-equip-skill]:checked")).toHaveCount(4);
-  await expect(skills.locator("input[data-equip-skill='night-queen']")).toBeDisabled();
+  await expect(skills.locator("input[data-equip-skill]")).toHaveCount(0);
   const lockedNightQueen = skills.locator(".loadout-skill").filter({ hasText: "暗夜女王" });
+  await expect(lockedNightQueen).toHaveClass(/locked/);
   await lockedNightQueen.locator(".profile-ability summary").click();
   await expect(lockedNightQueen.locator(".profile-ability p")).toBeVisible();
   await skills.locator("[data-close]").click();
@@ -729,7 +876,7 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await installRuntimeSave(page, activeMatch);
   await expect(page.getByRole("heading", { name: "策展人胜利" })).toBeVisible();
   await expect(page.locator(".summary-character")).toHaveAttribute("src", /w-defeated-summary-chair\.png/);
-  await expect(page.locator(".unlock-panel")).toContainText("暗夜女王");
+  await expect(page.locator(".unlock-panel:not(.character-unlock-panel)")).toContainText("暗夜女王");
   await expect(page.locator(".presentation")).toHaveCount(0);
   const summaryButtons = page.locator(".summary-actions button");
   await expect(summaryButtons).toHaveCount(2);
@@ -749,8 +896,10 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await page.locator("[data-trophy-back]").click();
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   expect(nativeDialogs).toBe(0);
-  await page.getByRole("button", { name: "技能管理" }).click();
-  await expect(page.locator("#skills input[data-equip-skill='night-queen']")).toBeEnabled();
+  await page.getByRole("button", { name: "技能与天赋" }).click();
+  const nightQueen = page.locator("#skills .loadout-skill").filter({ hasText: "暗夜女王" });
+  await expect(nightQueen).not.toHaveClass(/locked/);
+  await expect(nightQueen).toContainText("已解锁，可在牌局中掉落");
 });
 
 test("玩家落败结算可回溯并与同一名与会者重开", async ({ page }) => {
@@ -786,14 +935,14 @@ test("玩家落败结算可回溯并与同一名与会者重开", async ({ page 
 test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡面仍可使用", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const source = findTurnsMatch("compact-skills");
-  const oldCardIds = new Set(source.skills.cards.map((card) => card.instanceId));
+  const oldCardIds = new Set(source.playerSkills.cards.map((card) => card.instanceId));
   const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-hunter-instinct" };
   const hunterSequence = source.abilities.sequence + 1;
   imported.settings.reducedMotion = true;
   const activeMatch: MatchState = {
     ...source,
     round: { ...source.round, currentActor: "player" },
-    skills: { ...source.skills, cards: [hunterCard] },
+    playerSkills: { ...source.playerSkills, unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "hunter-instinct"])], cards: [hunterCard] },
     abilities: {
       ...source.abilities,
       instances: [...source.abilities.instances.filter((instance) => !oldCardIds.has(instance.instanceId)), { ...hunterCard, createdAtSequence: hunterSequence, parameters: {} }],
@@ -807,17 +956,15 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await page.addStyleTag({ content: ".dev-hud { display: none !important; }" });
   await expect(page.locator("main.table-shell")).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
-  await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(4);
-  const debugBefore = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
+  await expect(page.locator(".skill-sidebar .skill-tile")).toHaveCount(1);
+  const debugBefore = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
   const playerCardElement = await page.locator(".player-zone .card").first().elementHandle();
   expect(playerCardElement).not.toBeNull();
   const drawerToggle = page.locator(".skill-drawer-toggle");
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "false");
   await expect(drawerToggle.locator(".skill-drawer-arrow")).toHaveText("<");
-  await expect(drawerToggle.locator(".skill-drawer-badge")).toHaveText(String(debugBefore.relevantMatchState.skills.cards.length + 1));
+  await expect(drawerToggle.locator(".skill-drawer-badge")).toHaveText(String(debugBefore.relevantMatchState.playerSkills.cards.length));
   await expect(page.locator(".skill-drawer-content")).not.toBeVisible();
-  await expect(page.locator(".skill-card[data-action*='switcheroo'] small")).toHaveText("×0");
-  await expect(page.locator(".skill-card[data-action*='switcheroo']")).toBeDisabled();
   const layoutBefore = await page.locator(".player-layout").boundingBox();
   const dockBefore = await page.locator(".action-dock").boundingBox();
   const playerMainBefore = await page.locator(".player-main").boundingBox();
@@ -900,7 +1047,7 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   expect(openSidebar!.y + openSidebar!.height).toBeLessThanOrEqual(openDock!.y);
   const activeSkill = page.locator(".skill-sidebar button.skill-card[data-action*='hunter-instinct']");
   const activeCardsBefore = await activeSkill.allTextContents();
-  expect(activeCardsBefore).toEqual(["猎手直觉×1"]);
+  expect(activeCardsBefore).toEqual(["猎手直觉主动"]);
   await expect(page.locator(".player-zone .card").first()).toHaveCSS("width", "46px");
   await expect(activeSkill).toHaveCSS("width", "46px");
   await expect(page.locator(".player-zone .card").first()).toHaveCSS("height", "66px");
@@ -920,8 +1067,8 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(page.locator("#skill-info-dialog #skill-info-lore")).toBeVisible();
   await expect(page.locator("#skill-info-dialog")).toContainText("数学最优 Hit / Stand");
   expect(await activeSkill.allTextContents()).toEqual(activeCardsBefore);
-  const debugAfter = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { skills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
-  expect(debugAfter.relevantMatchState.skills.cards).toEqual(debugBefore.relevantMatchState.skills.cards);
+  const debugAfter = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
+  expect(debugAfter.relevantMatchState.playerSkills.cards).toEqual(debugBefore.relevantMatchState.playerSkills.cards);
   await page.locator("[data-skill-close]").click();
   await expect(page.locator("#skill-info-dialog")).not.toBeVisible();
   await drawerToggle.click();
@@ -970,8 +1117,8 @@ test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => 
   const activeMatch: MatchState = {
     ...source, player, opponent,
     round: { ...source.round, phase: "turns", currentActor: "player", player, opponent },
-    skills: { ...source.skills, equippedSkillIds: ["scent-of-a-woman"], cards: [scentCard] },
-    abilities: { ...source.abilities, instances: [...source.abilities.instances.filter((instance) => instance.kind === "character-mechanic"), { ...scentCard, createdAtSequence: sequence, parameters: {} }], sequence }
+    playerSkills: { ...source.playerSkills, unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "scent-of-a-woman"])], cards: [scentCard] },
+    abilities: { ...source.abilities, instances: [...source.abilities.instances.filter((instance) => instance.kind !== "player-skill"), { ...scentCard, createdAtSequence: sequence, parameters: {} }], sequence }
   };
   await page.goto("/?debug=1");
   await openLobbySettings(page);
@@ -989,17 +1136,21 @@ test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => 
   await page.getByRole("button", { name: /Stand 停牌/ }).click();
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
   await page.getByRole("button", { name: "确认结果" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "skill-offer");
+  await resolveOpeningSkillOffer(page);
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "turns");
   await expect(page.locator(".opponent-zone .card-back").first()).not.toHaveClass(/revealed-suit/);
 });
 
 test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给出短暂警告", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
-  const base = createMatch("e2e-silent-drizzle", {
+  const base = gameReducer(createMatch("e2e-silent-drizzle", {
     opponentId: "texas",
-    equippedSkillIds: ["hunter-instinct"],
-    opponentMechanics: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
-  });
+    unlockedPlayerSkillIds: ["hunter-instinct"],
+    opponentAiSkills: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
+  }), { type: "SKIP_SKILL_OFFER" });
+  const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-silent-drizzle-hunter" };
+  const sequence = base.abilities.sequence + 1;
   const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
   const opponent = { ...base.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
   imported.settings.reducedMotion = true;
@@ -1009,6 +1160,8 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
     opponent,
     shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 },
     round: { ...base.round, phase: "turns", currentActor: "opponent", player, opponent, outcome: null },
+    playerSkills: { ...base.playerSkills, cards: [hunterCard] },
+    abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...hunterCard, createdAtSequence: sequence, parameters: {} }], sequence },
     aiProfile: { P: -100, A: 0, B: 0, C: 0 },
     lastAiDecision: null
   };
@@ -1185,21 +1338,24 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-texas", timestamp: "2026-08-28T20:10:00.000Z", opponentId: "texas", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
     { id: "gallery-irene", timestamp: "2026-08-29T20:10:00.000Z", opponentId: "irene", winner: "player", escaped: false, finalRoulette: { player: { bullets: 4, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 2 }, blackjacks: { player: 0, opponent: 1 } },
     { id: "gallery-nian", timestamp: "2026-08-30T20:10:00.000Z", opponentId: "nian", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
-    { id: "gallery-plume", timestamp: "2026-08-31T20:10:00.000Z", opponentId: "plume", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 0 }, blackjacks: { player: 1, opponent: 0 } }
+    { id: "gallery-plume", timestamp: "2026-08-31T20:10:00.000Z", opponentId: "plume", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 0 }, blackjacks: { player: 1, opponent: 0 } },
+    { id: "gallery-lappland", timestamp: "2026-09-01T20:10:00.000Z", opponentId: "lappland-the-decadenza", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
   ];
   imported.defeats = [
     { opponentId: "w", timestamp: "2026-08-27T20:10:00.000Z" },
     { opponentId: "texas", timestamp: "2026-08-28T20:10:00.000Z" },
     { opponentId: "irene", timestamp: "2026-08-29T20:10:00.000Z" },
     { opponentId: "nian", timestamp: "2026-08-30T20:10:00.000Z" },
-    { opponentId: "plume", timestamp: "2026-08-31T20:10:00.000Z" }
+    { opponentId: "plume", timestamp: "2026-08-31T20:10:00.000Z" },
+    { opponentId: "lappland-the-decadenza", timestamp: "2026-09-01T20:10:00.000Z" }
   ];
   const cases = [
     { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
     { id: "gallery-texas", slug: "texas", name: "德克萨斯", tier: "A", closeupCount: 3, closeupId: "boots-removed", closeupName: "卸下的短靴", closeupAsset: "texas-trophy-detail-boots-removed.png" },
     { id: "gallery-irene", slug: "irene", name: "艾丽妮", tier: "A", closeupCount: 4, closeupId: "hand", closeupName: "松开的手", closeupAsset: "irene-trophy-detail-hand.png" },
     { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 4, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
-    { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" }
+    { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" },
+    { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet-white-socks", closeupName: "卸下长靴", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-white-socks.png" }
   ] as const;
 
   await page.goto("/");
@@ -1308,7 +1464,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   });
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
-  const activeMatch = createMatch("e2e-full-match");
+  const activeMatch = gameReducer(createMatch("e2e-full-match"), { type: "SKIP_SKILL_OFFER" });
   await page.goto("/");
   await openLobbySettings(page);
   await page.locator("#save-file").setInputFiles({ name: "active-match.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
@@ -1320,7 +1476,12 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
   let sawTriggerResult = false;
   for (let step = 0; step < 260 && !(await page.locator("main.summary-shell").count()); step += 1) {
     const phase = await page.locator("main.table-shell").getAttribute("data-phase").catch(() => null);
-    if (phase === "round-reveal") {
+    if (phase === "skill-offer") {
+      const skip = page.locator("button[data-action*='SKIP_SKILL_OFFER']:not([disabled])");
+      if (await skip.count()) await skip.click();
+      else await page.waitForTimeout(80);
+    }
+    else if (phase === "round-reveal") {
       sawReveal = true;
       await expect(page.locator(".round-notice")).toBeVisible();
       await expect(page.locator(".round-notice")).toContainText(/本轮|平局|获胜|爆牌|黑杰克/);

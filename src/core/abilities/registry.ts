@@ -16,14 +16,22 @@ import wNightQueen from "../../content/abilities/ai-skills/w-night-queen.json" w
 import aiSwordAndHandcannon from "../../content/abilities/ai-skills/ai-sword-and-handcannon.json" with { type: "json" };
 import aiForgeHeraldsTheYear from "../../content/abilities/ai-skills/ai-forge-heralds-the-year.json" with { type: "json" };
 import copperSeal from "../../content/abilities/ai-skills/copper-seal.json" with { type: "json" };
+import platinumVision from "../../content/abilities/ai-skills/platinum-vision.json" with { type: "json" };
+import carnivalIndex from "../../content/abilities/ai-skills/carnival-index.json" with { type: "json" };
+import carnivalHeatsUp from "../../content/abilities/ai-skills/carnival-heats-up.json" with { type: "json" };
+import hoOlheyakInheritanceTerminal from "../../content/abilities/ai-skills/ho-olheyak-inheritance-terminal.json" with { type: "json" };
+import hoOlheyakOnceHadWings from "../../content/abilities/ai-skills/ho-olheyak-once-had-wings.json" with { type: "json" };
 import earlyPreparation from "../../content/abilities/talents/early-preparation.json" with { type: "json" };
 import rhodesHeartthrobStatus from "../../content/abilities/statuses/rhodes-heartthrob-armed.json" with { type: "json" };
 import silentDrizzleStatus from "../../content/abilities/statuses/silent-drizzle-silenced.json" with { type: "json" };
 import copperSealStatus from "../../content/abilities/statuses/copper-seal-sealed.json" with { type: "json" };
+import platinumVisionAdvantageStatus from "../../content/abilities/statuses/platinum-vision-advantage.json" with { type: "json" };
+import carnivalIndexValueStatus from "../../content/abilities/statuses/carnival-index-value.json" with { type: "json" };
+import hoOlheyakMemoryCardStatus from "../../content/abilities/statuses/ho-olheyak-memory-card.json" with { type: "json" };
 import { AbilityDefinitionSchema, StatusDefinitionSchema, validateBinding } from "./schema";
 import type { AbilityBinding, AbilityDefinition, AbilityInstance, AbilitySourceKind, AiSkillAbilityDefinition, PlayerSkillAbilityDefinition, StatusDefinition, TalentAbilityDefinition } from "./types";
 
-export const ABILITY_CATALOG_VERSION = "abilities-v8" as const;
+export const ABILITY_CATALOG_VERSION = "abilities-v12" as const;
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
@@ -32,9 +40,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const definitions = [hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, playerSwordAndHandcannon, playerForgeHeraldsTheYear, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle, bombManiac, wNightQueen, aiSwordAndHandcannon, aiForgeHeraldsTheYear, copperSeal, earlyPreparation]
+const definitions = [hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, playerSwordAndHandcannon, playerForgeHeraldsTheYear, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle, bombManiac, wNightQueen, aiSwordAndHandcannon, aiForgeHeraldsTheYear, copperSeal, platinumVision, carnivalIndex, carnivalHeatsUp, hoOlheyakInheritanceTerminal, hoOlheyakOnceHadWings, earlyPreparation]
   .map((value) => deepFreeze(AbilityDefinitionSchema.parse(value) as AbilityDefinition));
-const statuses = [rhodesHeartthrobStatus, silentDrizzleStatus, copperSealStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
+const statuses = [rhodesHeartthrobStatus, silentDrizzleStatus, copperSealStatus, platinumVisionAdvantageStatus, carnivalIndexValueStatus, hoOlheyakMemoryCardStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
 if (new Set(definitions.map((definition) => definition.id)).size !== definitions.length) throw new Error("Duplicate ability definition id across Player Skill, AI Skill, and Talent catalogs");
 if (new Set(statuses.map((status) => status.id)).size !== statuses.length) throw new Error("Duplicate status definition id");
 export const ABILITY_DEFINITIONS: readonly AbilityDefinition[] = Object.freeze(definitions);
@@ -56,7 +64,7 @@ function validateRuleReferences(definition: AbilityDefinition | StatusDefinition
       const record = value as Record<string, unknown>;
       if (record.type === "parameter" && typeof record.key === "string" && !(definition as AbilityDefinition).parameters?.[record.key]) throw new Error(`Unknown parameter ${record.key} in ${definition.id}.${rule.id}`);
       if (record.type === "owner-has-card" && typeof record.abilityId === "string" && !abilityIds.has(record.abilityId)) throw new Error(`Unknown ability ${record.abilityId} in ${definition.id}.${rule.id}`);
-      if ((record.type === "add-status" || record.type === "remove-status" || record.type === "status-present") && typeof record.statusDefinitionId === "string" && !statusIds.has(record.statusDefinitionId)) throw new Error(`Unknown status ${record.statusDefinitionId} in ${definition.id}.${rule.id}`);
+      if ((record.type === "add-status" || record.type === "set-status-stacks" || record.type === "remove-status" || record.type === "status-present" || record.type === "status-stacks") && typeof record.statusDefinitionId === "string" && !statusIds.has(record.statusDefinitionId)) throw new Error(`Unknown status ${record.statusDefinitionId} in ${definition.id}.${rule.id}`);
       for (const [key, child] of Object.entries(record)) visit(child, `${path}.${key}`);
     };
     visit(rule, rule.id);
@@ -67,7 +75,7 @@ function validateRuleReferences(definition: AbilityDefinition | StatusDefinition
       const record = value as Record<string, unknown>;
       if (record.type === "parameter" && typeof record.key === "string" && !definition.parameters?.[record.key]) throw new Error(`Unknown parameter ${record.key} in ${definition.id}.activation`);
       if (record.type === "owner-has-card" && typeof record.abilityId === "string" && !abilityIds.has(record.abilityId)) throw new Error(`Unknown ability ${record.abilityId} in ${definition.id}.activation`);
-      if (record.type === "status-present" && typeof record.statusDefinitionId === "string" && !statusIds.has(record.statusDefinitionId)) throw new Error(`Unknown status ${record.statusDefinitionId} in ${definition.id}.activation`);
+      if ((record.type === "status-present" || record.type === "status-stacks") && typeof record.statusDefinitionId === "string" && !statusIds.has(record.statusDefinitionId)) throw new Error(`Unknown status ${record.statusDefinitionId} in ${definition.id}.activation`);
       for (const child of Object.values(record)) visitActivation(child);
     };
     visitActivation(definition.activation);

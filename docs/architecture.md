@@ -93,7 +93,9 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 显式 Stand 会广播 `after-stand`。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
 
-表现层以 `ABILITY_TRIGGERED` 为唯一的技能发动事实，统一在牌桌中央组合显示发动者、技能名和定义中的 `triggerNotice`（缺省时使用 `description`）。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
+表现层以 `ABILITY_TRIGGERED` 为唯一的技能发动事实，统一在牌桌中央组合显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。仅用于内部状态清理的规则可声明 `notify: false`，仍保留领域事件但不占用中央通知栏。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
+
+普通点数比较先按双方各自生效中的爆牌上限，计算手牌可取的不爆牌最大总点数，再让能力通过 pending comparison 叠加点数修正；修正值不参与爆牌判定。即使基础点数相同，也必须先完成该能力窗口才能判定平局。最终比较分写入 `RoundOutcome.comparisonScores`，结算文案和牌桌点数均读取该值；`on-round-end` 规则也可通过通用 `round-final-score` 标量读取这个最终显示值，并用 `set-status-stacks` 将它保存为下一轮的公开阈值。
 
 角色 JSON 可选的单个 `infoBar` 是 AI Skill 的持续信息投影，不进入 `MatchState` 或存档。它通过 `sourceAbilityId` 绑定角色已启用的 AI Skill；实例 TTL 归零后投影失效。`core/abilities/info-bar.ts` 使用与能力解释器相同的 hand/gun adapter，并接收核心层从当前轮历史计算的 Hit 计数，把声明式数值表达式、概率、花色或牌解析为当前显示值；UI 只负责格式化和打开角色数据中的说明弹窗。未声明时不渲染空信息栏，核心逻辑与表现层都不得按角色 ID 特判。
 

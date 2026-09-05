@@ -6,17 +6,22 @@ import texasData from "./data/texas.json";
 import ireneData from "./data/irene.json";
 import nianData from "./data/nian.json";
 import plumeData from "./data/plume.json";
+import platinumData from "./data/platinum.json";
+import lapplandData from "./data/lappland-the-decadenza.json";
 import { CharacterCatalogSchema, CharacterDataSchema, DIALOGUE_EVENT_CODES } from "./schema";
 import { getAbilityDefinition } from "../../core/abilities/registry";
 
 describe("data-driven character registry", () => {
-  it("registers W, Texas, Irene, Nian, and Plume", () => {
-    expect(CHARACTER_CATALOG.map((character) => character.id)).toEqual(["w", "texas", "irene", "nian", "plume"]);
+  it("registers every attendee in the lightweight catalog", () => {
+    expect(CHARACTER_CATALOG.map((character) => character.id)).toEqual(["w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak"]);
     expect(new Set(CHARACTER_CATALOG.map((character) => character.id)).size).toBe(CHARACTER_CATALOG.length);
     expect(CHARACTER_METADATA_BY_ID.texas).toBe(CHARACTER_CATALOG[1]);
     expect(CHARACTER_METADATA_BY_ID.irene).toBe(CHARACTER_CATALOG[2]);
     expect(CHARACTER_METADATA_BY_ID.nian).toBe(CHARACTER_CATALOG[3]);
     expect(CHARACTER_METADATA_BY_ID.plume).toBe(CHARACTER_CATALOG[4]);
+    expect(CHARACTER_METADATA_BY_ID.platinum).toBe(CHARACTER_CATALOG[5]);
+    expect(CHARACTER_METADATA_BY_ID["lappland-the-decadenza"]).toBe(CHARACTER_CATALOG[6]);
+    expect(CHARACTER_METADATA_BY_ID["ho-olheyak"]).toBe(CHARACTER_CATALOG[7]);
     expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("texas");
     expect(getCharacterTags(CHARACTER_METADATA_BY_ID.w)).toEqual(expect.arrayContaining(["tier:s", "explosive", "chaotic"]));
     expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.tags)).toBe(true);
@@ -44,21 +49,30 @@ describe("data-driven character registry", () => {
       "/assets/characters/texas-relaxed.png",
       "/assets/characters/irene-relaxed.png",
       "/assets/characters/nian-relaxed.png",
-      "/assets/characters/plume-relaxed.png"
+      "/assets/characters/plume-relaxed.png",
+      "/assets/characters/platinum-relaxed.png",
+      "/assets/characters/lappland-the-decadenza-relaxed.png"
+      ,"/assets/characters/ho-olheyak-relaxed.png"
     ]);
     expect(CHARACTER_CATALOG.map((character) => character.trophyImage)).toEqual([
       "/assets/characters/w-trophy-defeated.png",
       "/assets/characters/texas-trophy-defeated.png",
       "/assets/characters/irene-trophy-defeated.png",
       "/assets/characters/nian-trophy-defeated.png",
-      "/assets/characters/plume-trophy-defeated.png"
+      "/assets/characters/plume-trophy-defeated.png",
+      "/assets/characters/platinum-trophy-defeated.png",
+      "/assets/characters/lappland-the-decadenza-trophy-defeated.png"
+      ,"/assets/characters/ho-olheyak-trophy-defeated.png"
     ]);
     expect(CHARACTER_CATALOG.map((character) => character.portraitScales)).toEqual([
       { selection: 1, table: 1 },
       { selection: 1, table: 1 },
       { selection: 1, table: 1 },
       { selection: 1, table: 1 },
-      { selection: 1.3, table: 1.3 }
+      { selection: 1.3, table: 1.3 },
+      { selection: 1, table: 1 },
+      { selection: 1, table: 1 },
+      { selection: 1, table: 1 }
     ]);
   });
 
@@ -72,17 +86,25 @@ describe("data-driven character registry", () => {
     expect(loadCharacter("nian")).toBe(nianPromise);
     const plumePromise = loadCharacter("plume");
     expect(loadCharacter("plume")).toBe(plumePromise);
-    const [w, texas, irene, nian, plume] = await Promise.all([wPromise, loadCharacter("texas"), irenePromise, nianPromise, plumePromise]);
+    const platinumPromise = loadCharacter("platinum");
+    expect(loadCharacter("platinum")).toBe(platinumPromise);
+    const lapplandPromise = loadCharacter("lappland-the-decadenza");
+    expect(loadCharacter("lappland-the-decadenza")).toBe(lapplandPromise);
+    const [w, texas, irene, nian, plume, platinum, lappland] = await Promise.all([wPromise, loadCharacter("texas"), irenePromise, nianPromise, plumePromise, platinumPromise, lapplandPromise]);
     expect(w.id).toBe("w");
     expect(texas.id).toBe("texas");
     expect(irene.id).toBe("irene");
     expect(nian.id).toBe("nian");
     expect(plume.id).toBe("plume");
+    expect(platinum.id).toBe("platinum");
+    expect(lappland.id).toBe("lappland-the-decadenza");
     expect(w.revolverPlacement).toEqual({ top: 152, left: 90, mobileTop: 116, mobileLeft: 88 });
     expect(texas.revolverPlacement).toEqual({ top: 142, left: 128, mobileTop: 109, mobileLeft: 110 });
     expect(irene.revolverPlacement).toEqual({ top: 98, left: 120, mobileTop: 109, mobileLeft: 110 });
     expect(nian.revolverPlacement).toEqual({ top: 134, left: 110, mobileTop: 102, mobileLeft: 104 });
     expect(plume.revolverPlacement).toEqual({ top: 152, left: 118, mobileTop: 116, mobileLeft: 116 });
+    expect(platinum.revolverPlacement).toEqual({ top: 140, left: 124, mobileTop: 110, mobileLeft: 112 });
+    expect(lappland.revolverPlacement).toEqual({ top: 140, left: 124, mobileTop: 110, mobileLeft: 112 });
     expect(w.assets.staffRevolver).toBe("/assets/characters/staff-revolver-7mm.png");
     expect(texas.assets.staffRevolver).toBe("/assets/characters/staff-revolver-7mm.png");
     expect(irene.assets).toEqual({
@@ -111,6 +133,24 @@ describe("data-driven character registry", () => {
       staffRevolver: "/assets/characters/staff-revolver-7mm.png",
       unconscious: "/assets/characters/plume-unconscious-reclined.png",
       defeatedSummary: "/assets/characters/plume-defeated-summary-chair.png"
+    });
+    expect(platinum.assets).toEqual({
+      relaxed: "/assets/characters/platinum-relaxed.png",
+      conflicted: "/assets/characters/platinum-conflicted.png",
+      mocking: "/assets/characters/platinum-mocking.png",
+      threatened: "/assets/characters/platinum-threatened.png",
+      staffRevolver: "/assets/characters/staff-revolver-7mm.png",
+      unconscious: "/assets/characters/platinum-unconscious-reclined.png",
+      defeatedSummary: "/assets/characters/platinum-defeated-summary-chair.png"
+    });
+    expect(lappland.assets).toEqual({
+      relaxed: "/assets/characters/lappland-the-decadenza-relaxed.png",
+      conflicted: "/assets/characters/lappland-the-decadenza-conflicted.png",
+      mocking: "/assets/characters/lappland-the-decadenza-mocking.png",
+      threatened: "/assets/characters/lappland-the-decadenza-threatened.png",
+      staffRevolver: "/assets/characters/staff-revolver-7mm.png",
+      unconscious: "/assets/characters/lappland-the-decadenza-unconscious-reclined.png",
+      defeatedSummary: "/assets/characters/lappland-the-decadenza-defeated-summary-chair.png"
     });
     expect(w.trophyGallery).toEqual({
       headshot: "/assets/characters/w-trophy-gallery-headshot.png",
@@ -186,18 +226,42 @@ describe("data-driven character registry", () => {
         expect.objectContaining({ id: "boots", name: "平置短靴", x: 50, y: 88, image: "/assets/characters/plume-trophy-detail-boots.png" })
       ]
     });
+    expect(platinum.trophyGallery).toEqual(expect.objectContaining({
+      headshot: "/assets/characters/platinum-trophy-gallery-headshot.png",
+      fullBody: "/assets/characters/platinum-trophy-gallery-full-subject.png"
+    }));
+    expect(lappland.trophyGallery).toEqual({
+      headshot: "/assets/characters/lappland-the-decadenza-trophy-gallery-headshot.png",
+      fullBody: "/assets/characters/lappland-the-decadenza-trophy-gallery-full-subject.png",
+      poses: [
+        { id: "left", name: "左侧", image: "/assets/characters/lappland-the-decadenza-trophy-gallery-left-subject.png" },
+        { id: "prone", name: "俯卧", image: "/assets/characters/lappland-the-decadenza-trophy-gallery-prone-subject.png" },
+        { id: "right", name: "右侧", image: "/assets/characters/lappland-the-decadenza-trophy-gallery-right-subject.png" }
+      ],
+      closeups: [
+        expect.objectContaining({ id: "face-inspected", name: "落幕后的神情", x: 50, y: 15, image: "/assets/characters/lappland-the-decadenza-trophy-detail-face-inspected.png" }),
+        expect.objectContaining({ id: "chest-tie", name: "礼服领结", x: 51, y: 29, image: "/assets/characters/lappland-the-decadenza-trophy-detail-chest-tie.png" }),
+        expect.objectContaining({ id: "skirt-thigh", name: "裙摆与腿环", x: 50, y: 51, image: "/assets/characters/lappland-the-decadenza-trophy-detail-skirt-thigh.png" }),
+        expect.objectContaining({ id: "feet-white-socks", name: "卸下长靴", x: 50, y: 88, image: "/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png" })
+      ]
+    });
     expect("trophyDefeated" in w.assets).toBe(false);
     expect("trophyDefeated" in texas.assets).toBe(false);
     expect("trophyDefeated" in irene.assets).toBe(false);
     expect("trophyDefeated" in nian.assets).toBe(false);
     expect("trophyDefeated" in plume.assets).toBe(false);
+    expect("trophyDefeated" in platinum.assets).toBe(false);
+    expect("trophyDefeated" in lappland.assets).toBe(false);
     expect("portraitScale" in w).toBe(false);
     expect("portraitScale" in texas).toBe(false);
     expect("portraitScale" in irene).toBe(false);
     expect("portraitScale" in nian).toBe(false);
     expect("portraitScale" in plume).toBe(false);
+    expect("portraitScale" in platinum).toBe(false);
+    expect("portraitScale" in lappland).toBe(false);
     expect([w, texas, irene, nian, plume].every((character) => !("tablePortraitScale" in character))).toBe(true);
-    expect([w, texas, irene, nian, plume].map((character) => character.portraitScales.table)).toEqual([1, 1, 1, 1, 1.3]);
+    expect([w, texas, irene, nian, plume, platinum, lappland].every((character) => !("tablePortraitScale" in character))).toBe(true);
+    expect([w, texas, irene, nian, plume, platinum, lappland].map((character) => character.portraitScales.table)).toEqual([1, 1, 1, 1, 1.3, 1, 1]);
     expect(w.profile.description.length).toBeGreaterThan(0);
     expect(w.matchSummary.playerVictory.length).toBeGreaterThan(0);
     expect(w.matchSummary.playerDefeat.length).toBeGreaterThan(0);
@@ -215,10 +279,21 @@ describe("data-driven character registry", () => {
     expect(plume.matchSummary.playerVictory.length).toBeGreaterThan(0);
     expect(plume.matchSummary.playerDefeat.length).toBeGreaterThan(0);
     expect(plume.matchSummary.escaped.length).toBeGreaterThan(0);
+    expect(platinum.profile.description.length).toBeGreaterThan(0);
+    expect(platinum.matchSummary.playerVictory.length).toBeGreaterThan(0);
+    expect(platinum.matchSummary.playerDefeat.length).toBeGreaterThan(0);
+    expect(platinum.matchSummary.escaped.length).toBeGreaterThan(0);
+    expect(lappland.profile.description.length).toBeGreaterThan(0);
+    expect(lappland.matchSummary.playerVictory.length).toBeGreaterThan(0);
+    expect(lappland.matchSummary.playerDefeat.length).toBeGreaterThan(0);
+    expect(lappland.matchSummary.escaped.length).toBeGreaterThan(0);
     expect([w.ai, texas.ai, irene.ai, nian.ai, plume.ai].every((ai) => Number.isFinite(ai.P) && Number.isFinite(ai.A) && Number.isFinite(ai.B) && Number.isFinite(ai.C))).toBe(true);
+    expect([w.ai, texas.ai, irene.ai, nian.ai, plume.ai, platinum.ai, lappland.ai].every((ai) => Number.isFinite(ai.P) && Number.isFinite(ai.A) && Number.isFinite(ai.B) && Number.isFinite(ai.C))).toBe(true);
     expect(plume.ai).toEqual({ P: 0, A: 1, B: 1, C: 1 });
     expect(getCharacterMetadata("plume")?.tier).toBe("B");
     expect(getCharacterMetadata("w")?.tier).toBe("S");
+    expect(getCharacterMetadata("lappland-the-decadenza")?.tier).toBe("S");
+    expect(getCharacterMetadata("lappland-the-decadenza")?.unlock).toBeUndefined();
     expect(w.aiSkills).toEqual([
       { definitionId: "bomb-maniac", enabled: true, parameters: {} },
       { definitionId: "w-night-queen", enabled: true, parameters: {} }
@@ -230,10 +305,15 @@ describe("data-driven character registry", () => {
     ]);
     expect(texas.aiSkills).toEqual([{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]);
     expect(plume.aiSkills).toEqual([]);
-    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...nian.aiSkills, ...plume.aiSkills]
+    expect(platinum.aiSkills).toEqual([{ definitionId: "platinum-vision", enabled: true, parameters: {} }]);
+    expect(lappland.aiSkills).toEqual([
+      { definitionId: "carnival-index", enabled: true, parameters: {} },
+      { definitionId: "carnival-heats-up", enabled: true, parameters: {} }
+    ]);
+    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...nian.aiSkills, ...plume.aiSkills, ...platinum.aiSkills, ...lappland.aiSkills]
       .filter((binding) => binding.enabled)
       .map((binding) => getAbilityDefinition(binding.definitionId));
-    expect(formalMechanics).toHaveLength(6);
+    expect(formalMechanics).toHaveLength(9);
     expect(formalMechanics.every((ability) => Boolean(ability?.profileLore?.trim()))).toBe(true);
     expect("MATCH_WIN" in w.dialogue).toBe(false);
     expect("MATCH_LOSS" in w.dialogue).toBe(false);
@@ -246,6 +326,9 @@ describe("data-driven character registry", () => {
     expect(Object.keys(irene.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.keys(nian.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.keys(plume.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
+    expect(Object.keys(platinum.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
+    expect(Object.keys(lappland.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
+    expect(Object.values(lappland.dialogue).every((pool) => pool.length > 0)).toBe(true);
     expect(Object.values(irene.dialogue).every((pool) => pool.length > 0)).toBe(true);
     expect(Object.values(plume.dialogue).every((pool) => pool.length > 0 && pool.every((line) => !line.includes("台词占位")))).toBe(true);
     expect(w.id).toBe(getCharacterMetadata(w.id)?.id);
@@ -253,10 +336,14 @@ describe("data-driven character registry", () => {
     expect(irene.id).toBe(getCharacterMetadata(irene.id)?.id);
     expect(nian.id).toBe(getCharacterMetadata(nian.id)?.id);
     expect(plume.id).toBe(getCharacterMetadata(plume.id)?.id);
+    expect(platinum.id).toBe(getCharacterMetadata(platinum.id)?.id);
+    expect(lappland.id).toBe(getCharacterMetadata(lappland.id)?.id);
     expect(await loadCharacter("w")).toBe(w);
     expect(await loadCharacter("irene")).toBe(irene);
     expect(await loadCharacter("nian")).toBe(nian);
     expect(await loadCharacter("plume")).toBe(plume);
+    expect(await loadCharacter("platinum")).toBe(platinum);
+    expect(await loadCharacter("lappland-the-decadenza")).toBe(lappland);
   });
 
   it("keeps the annotated JSON Schema synchronized with every required dialogue pool", () => {
@@ -276,6 +363,8 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse(ireneData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(nianData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(plumeData).success).toBe(true);
+    expect(CharacterDataSchema.safeParse(platinumData).success).toBe(true);
+    expect(CharacterDataSchema.safeParse(lapplandData).success).toBe(true);
   });
 
   it("requires finite P/A/B/C AI threshold parameters", () => {
@@ -323,7 +412,7 @@ describe("data-driven character registry", () => {
       { id: "prone", name: "俯卧", image: "/assets/characters/w-trophy-gallery-prone-subject.png" },
       { id: "right", name: "右侧", image: "/assets/characters/w-trophy-gallery-right-subject.png" }
     ]);
-    expect([wData, texasData, ireneData, nianData, plumeData].every((data) => data.trophyGallery.poses.length === 3)).toBe(true);
+    expect([wData, texasData, ireneData, nianData, plumeData, platinumData, lapplandData].every((data) => data.trophyGallery.poses.length === 3)).toBe(true);
     expect(CharacterDataSchema.safeParse(wData).success).toBe(true);
     expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [...gallery.poses, gallery.poses[0]] } }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [{ ...gallery.poses[0], unknown: true }] } }).success).toBe(false);

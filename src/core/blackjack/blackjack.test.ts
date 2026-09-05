@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cardValue, createCard, createDerivedCard, createStandardDeck, isDerivedCard, isPhysicalCard } from "./card";
-import { createHand, handValue, isBlackjack, isBust, isTwentyOne } from "./hand";
+import { createHand, handValue, handValueAtLimit, isBlackjack, isBust, isTwentyOne } from "./hand";
 import { createShoe, dealInitialHands, drawCard, shuffle, shoeRemaining } from "./shoe";
 import { getRoundStarter } from "./round";
 import { createRng, deriveRng, SeededRng } from "../rng/seeded";
@@ -20,6 +20,12 @@ describe("blackjack hand rules", () => {
       createCard("hearts", "K"),
       createCard("clubs", "9")
     ))).toBe(20);
+  });
+
+  it("scores aces against the active bust limit before comparison modifiers", () => {
+    const cards = h(createCard("spades", "A"), createCard("hearts", "A"), createCard("clubs", "10"));
+    expect(handValue(cards)).toBe(12);
+    expect(handValueAtLimit(cards, 22)).toBe(22);
   });
 
   it("distinguishes a two-card blackjack from a later 21", () => {

@@ -5,6 +5,9 @@ import type { AbilityInfoValue } from "./types";
 import { CharacterDataSchema } from "../../content/characters/schema";
 import wData from "../../content/characters/data/w.json";
 import ireneData from "../../content/characters/data/irene.json";
+import platinumData from "../../content/characters/data/platinum.json";
+import lapplandData from "../../content/characters/data/lappland-the-decadenza.json";
+import hoOlheyakData from "../../content/characters/data/ho-olheyak.json";
 
 const world: AbilityWorld = {
   hands: {
@@ -33,6 +36,30 @@ describe("character information bar", () => {
     expect(resolveAbilityInfoValue(value, world, "opponent", { roundHitCounts: { player: 2, opponent: 0 }, sourceActive: true })).toBeCloseTo(0.66);
     expect(resolveAbilityInfoValue(value, world, "opponent", { roundHitCounts: { player: 4, opponent: 0 }, sourceActive: true })).toBe(1);
     expect(resolveAbilityInfoValue(value, world, "opponent", { roundHitCounts: { player: 2, opponent: 0 }, sourceActive: false })).toBe(0);
+  });
+
+  it("projects match-scoped status stacks for Platinum's advantage bar", () => {
+    const value = platinumData.infoBar!.value as AbilityInfoValue;
+    const withAdvantage = { ...world, statuses: [{ statusDefinitionId: "platinum-vision-advantage", owner: "opponent" as const, sourceInstanceId: "platinum", stacks: 3, duration: "match" as const, parameters: {}, createdAtSequence: 1 }] };
+    expect(resolveAbilityInfoValue(value, withAdvantage, "opponent", { sourceActive: true })).toBe(3);
+    expect(resolveAbilityInfoValue(value, world, "opponent", { sourceActive: true })).toBe(0);
+  });
+
+  it("projects Lappland's current carnival index and defaults it to zero", () => {
+    const value = lapplandData.infoBar!.value as AbilityInfoValue;
+    const withIndex = { ...world, statuses: [{ statusDefinitionId: "carnival-index-value", owner: "opponent" as const, sourceInstanceId: "lappland", stacks: 19, duration: "match" as const, parameters: {}, createdAtSequence: 1 }] };
+    expect(resolveAbilityInfoValue(value, withIndex, "opponent", { sourceActive: true })).toBe(19);
+    expect(resolveAbilityInfoValue(value, world, "opponent", { sourceActive: true })).toBe(0);
+  });
+
+  it("projects Ho-olheyak's remembered full card from match status", () => {
+    const value = hoOlheyakData.infoBar!.value as AbilityInfoValue;
+    const remembered = {
+      ...world,
+      statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent" as const, sourceInstanceId: "ho-olheyak", stacks: 1, duration: "match" as const, parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: 1 }]
+    };
+    expect(resolveAbilityInfoValue(value, remembered, "opponent", { sourceActive: true })).toEqual({ rank: "4", suit: "hearts", origin: "derived" });
+    expect(resolveAbilityInfoValue(value, world, "opponent", { sourceActive: true })).toBeNull();
   });
 
   it("requires a stable actor and an enabled AI Skill source", () => {

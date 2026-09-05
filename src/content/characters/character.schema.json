@@ -58,7 +58,8 @@
         "value": {
           "oneOf": [
             { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "number" }, "value": { "$ref": "#/$defs/infoBarScalar" } } },
-            { "type": "object", "additionalProperties": false, "required": ["type", "target", "card"], "properties": { "type": { "enum": ["card", "suit"] }, "target": { "$ref": "#/$defs/infoBarActor" }, "card": { "enum": ["last-card", "first-private-card"] } } }
+            { "type": "object", "additionalProperties": false, "required": ["type", "target", "card"], "properties": { "type": { "enum": ["card", "suit"] }, "target": { "$ref": "#/$defs/infoBarActor" }, "card": { "enum": ["last-card", "first-private-card"] } } },
+            { "type": "object", "additionalProperties": false, "required": ["type", "source", "statusDefinitionId"], "properties": { "type": { "enum": ["card", "suit"] }, "source": { "const": "status-card" }, "statusDefinitionId": { "type": "string", "minLength": 1 } } }
           ]
         }
       },
@@ -187,6 +188,7 @@
         { "type": "number" },
         { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "constant" }, "value": { "type": "number" } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "target"], "properties": { "type": { "enum": ["gun-bullets", "hand-total", "hand-card-count", "round-hit-count"] }, "target": { "$ref": "#/$defs/infoBarActor" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "target", "statusDefinitionId"], "properties": { "type": { "const": "status-stacks" }, "target": { "$ref": "#/$defs/infoBarActor" }, "statusDefinitionId": { "type": "string", "minLength": 1 } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "left", "right"], "properties": { "type": { "enum": ["add", "subtract", "multiply", "min", "max"] }, "left": { "$ref": "#/$defs/infoBarScalar" }, "right": { "$ref": "#/$defs/infoBarScalar" } } }
       ]
     },

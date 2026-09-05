@@ -31,7 +31,9 @@ export function resolveScalar(value: ScalarValue, context: ConditionContext): nu
   if (!actor) return 0;
   if (numeric.type === "gun-bullets") return gunBullets(context.world.guns[actor]);
   if (numeric.type === "hand-total") return handTotal(context.world.hands[actor]);
+  if (numeric.type === "round-final-score") return context.event.roundOutcome?.comparisonScores?.[actor] ?? handTotal(context.world.hands[actor]);
   if (numeric.type === "hand-card-count") return handCardCount(context.world.hands[actor]);
+  if (numeric.type === "status-stacks") return context.world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === numeric.statusDefinitionId)?.stacks ?? 0;
   return context.event.roundHitCounts?.[actor] ?? 0;
 }
 
@@ -70,6 +72,17 @@ export function evaluateCondition(condition: Condition, context: ConditionContex
     case "draw-pile-card-exists": return context.world.shoe.cursor < context.world.shoe.cards.length;
     case "hand-last-card-splittable": { const hand = handFor(condition.target, context); return Boolean(hand && canSplitLastCard(hand)); }
     case "hand-is-twenty-one": { const hand = handFor(condition.target, context); return Boolean(hand && handTotal(hand) === 21); }
+    case "pending-bust-would-bust": {
+      const hand = handFor(condition.target, context);
+      const actor = resolveActor(condition.target, context);
+      const pending = context.event.pendingBust;
+      return Boolean(hand && actor && pending?.actor === actor && handTotal(hand) > pending.limit);
+    }
+    case "status-card-rank-is": {
+      const actor = resolveActor(condition.target, context);
+      const status = actor ? context.world.statuses.find((entry) => entry.owner === actor && entry.statusDefinitionId === condition.statusDefinitionId && entry.stacks > 0) : undefined;
+      return status?.parameters.rank === condition.rank;
+    }
     case "gun-bullets": { const actor = resolveActor(condition.target, context); return Boolean(actor && compare(gunBullets(context.world.guns[actor]), condition.operator, resolveScalar(condition.value, context))); }
     case "gun-is-full": { const actor = resolveActor(condition.target, context); return Boolean(actor && gunIsFull(context.world.guns[actor]) === condition.expected); }
     case "round-reason-is": return context.event.roundOutcome?.reason === condition.value;

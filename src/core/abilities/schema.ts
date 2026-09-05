@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AbilityBinding, AbilityDefinition, Condition, ScalarValue } from "./types";
 
 const actorSelector = z.enum(["owner", "rival", "event-actor", "penalty-target"]);
-const scalar: z.ZodType<ScalarValue> = z.lazy(() => z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.enum(["gun-bullets", "hand-total", "hand-card-count", "round-hit-count"]), target: actorSelector }).strict(), z.object({ type: z.enum(["add", "subtract", "multiply"]), left: scalar, right: scalar }).strict()])) as z.ZodType<ScalarValue>;
+const scalar: z.ZodType<ScalarValue> = z.lazy(() => z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.enum(["gun-bullets", "hand-total", "round-final-score", "hand-card-count", "round-hit-count"]), target: actorSelector }).strict(), z.object({ type: z.literal("status-stacks"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(), z.object({ type: z.enum(["add", "subtract", "multiply"]), left: scalar, right: scalar }).strict()])) as z.ZodType<ScalarValue>;
 const compare = z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]);
 const trigger = z.enum(["on-match-created", "on-ability-played", "after-ability-played", "before-card-draw", "after-card-draw", "after-hand-changed", "after-stand", "before-bust-check", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
 const candidate = z.union([
@@ -23,6 +23,8 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("hand-card-origin-is"), target: actorSelector, card: z.literal("last-card"), origin: z.enum(["shoe", "derived"]) }).strict(),
   z.object({ type: z.literal("card-candidate-exists"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate }).strict(),
   z.object({ type: z.literal("hand-is-twenty-one"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("pending-bust-would-bust"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("status-card-rank-is"), target: actorSelector, statusDefinitionId: z.string().min(1), rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]) }).strict(),
   z.object({ type: z.literal("gun-bullets"), target: actorSelector, operator: compare, value: scalar }).strict(),
   z.object({ type: z.literal("gun-is-full"), target: actorSelector, expected: z.boolean() }).strict(),
   z.object({ type: z.literal("round-reason-is"), value: z.enum(["blackjack", "bust", "comparison", "push"]) }).strict(),
@@ -40,17 +42,21 @@ const effect = z.union([
   z.object({ type: z.literal("reveal-hand-card-suit"), target: actorSelector, card: z.literal("first-private-card"), viewer: actorSelector }).strict(),
   z.object({ type: z.literal("split-last-card-into-derived"), target: actorSelector }).strict(),
   z.object({ type: z.literal("add-status"), target: actorSelector, statusDefinitionId: z.string().min(1), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).optional() }).strict(),
+  z.object({ type: z.literal("set-status-stacks"), target: actorSelector, statusDefinitionId: z.string().min(1), amount: scalar }).strict(),
   z.object({ type: z.literal("remove-status"), target: actorSelector, statusDefinitionId: z.string().min(1), amount: scalar.optional() }).strict(),
   z.object({ type: z.literal("replace-pending-draw"), target: actorSelector, policy: z.object({ type: z.literal("exact-resulting-total"), total: scalar, fallback: z.literal("create-derived-card") }).strict() }).strict(),
+  z.object({ type: z.literal("remember-last-card"), target: actorSelector, cardTarget: actorSelector, statusDefinitionId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("replace-bust-hand-card-with-memory-card"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("add-derived-card-for-exact-total"), target: actorSelector, total: scalar }).strict(),
   z.object({ type: z.literal("add-to-pending-bust-limit"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("add-to-pending-trigger-misfire-chance"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("add-to-pending-load"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("multiply-pending-load"), target: actorSelector, factor: scalar }).strict(),
+  z.object({ type: z.literal("add-to-pending-comparison-score"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("cancel-pending-trigger"), target: actorSelector }).strict()
 ]);
 const limit = z.object({ perEvent: z.number().int().positive().optional(), perTurn: z.number().int().positive().optional(), perRound: z.number().int().positive().optional(), perMatch: z.number().int().positive().optional() }).strict();
-export const AbilityRuleSchema = z.object({ id: z.string().min(1), trigger, priority: z.number().int().optional(), conditions: z.array(condition).optional(), effects: z.array(effect).min(1), limit: limit.optional() }).strict();
+export const AbilityRuleSchema = z.object({ id: z.string().min(1), trigger, priority: z.number().int().optional(), notify: z.boolean().optional(), triggerNotice: z.string().min(1).optional(), conditions: z.array(condition).optional(), effects: z.array(effect).min(1), limit: limit.optional() }).strict();
 const parameterSpec = z.union([
   z.object({ type: z.literal("number"), minimum: z.number().finite().optional(), maximum: z.number().finite().optional(), default: z.number().finite().optional() }).strict().superRefine((value, ctx) => { if (value.minimum !== undefined && value.maximum !== undefined && value.minimum > value.maximum) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "minimum cannot exceed maximum" }); if (value.default !== undefined && ((value.minimum !== undefined && value.default < value.minimum) || (value.maximum !== undefined && value.default > value.maximum))) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "default is outside parameter range" }); }),
   z.object({ type: z.literal("boolean"), default: z.boolean().optional() }).strict(),

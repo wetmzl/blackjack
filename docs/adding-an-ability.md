@@ -19,6 +19,16 @@ physical card can satisfy an exact resulting total. A derived card does not
 mutate the physical shoe or enter a discard pile; do not use this fallback as a
 general substitute for selecting real cards.
 
+For cross-round card memory, use a match-duration status whose parameters store
+the complete `rank`/`suit`/`origin` tuple. `remember-last-card` separates the
+status `target` from its `cardTarget`; `replace-bust-hand-card-with-memory-card`
+is evaluated during `before-bust-check` against the already modified pending
+bust limit, creates a derived replacement, and may request `standAfterReplacement`.
+The physical draw has already advanced the shoe cursor, so the replacement must
+not move a physical card back into the shoe. `status-card-rank-is` and the
+character info-bar `status-card` projection expose the saved card without
+coupling the engine to a character ID.
+
 `sourceKind` must be exactly `player-skill`, `ai-skill`, or `talent`. These are
 independent domains: definitions and IDs cannot be shared even when their
 names and effects are identical. They may reuse only the generic trigger,
@@ -51,7 +61,7 @@ operations to their adapters. Do not add a definition-ID or character-ID
 conditional to the engine or match reducer.
 
 `after-stand` is emitted only when an actor explicitly chooses Stand; reaching
-21 and being marked stood automatically does not emit it. A status with
+21 does not mark the actor stood and does not emit it. A status with
 `until-owner-action` remains through ability and event resolution, then expires
 after its target completes the next Hit or Stand; the round boundary is an
 upper bound so it cannot leak into a later deal. Cross-target statuses retain
@@ -61,12 +71,15 @@ Use the `active-skill-card` tag for player-skill definitions with action/card
 activation. Statuses may block that tag to suppress only actively played skill
 cards without suppressing passive player skills or card-free character actions.
 
-Every `ABILITY_TRIGGERED` event is presented in the table's central notice bar
-for both active and passive abilities. The UI combines the event owner, ability
-name, and `triggerNotice`; when `triggerNotice` is omitted it falls back to the
-definition `description`. Write `triggerNotice` as a concise player-facing
-effect sentence when the description also contains activation conditions or
-other context.
+Every player-facing `ABILITY_TRIGGERED` event is presented in the table's
+central notice bar for both active and passive abilities. The UI combines the
+event owner, ability name, and the matching rule's `triggerNotice`; when the
+rule omits it, the definition-level `triggerNotice` and then `description` are
+used as fallbacks. Write `triggerNotice` as a concise player-facing effect
+sentence when the description also contains activation conditions or other
+context. A bookkeeping-only rule may declare
+`"notify": false`; it still emits the domain event but does not occupy the
+central notice bar.
 
 Every new primitive should have a focused unit test for valid data, rejected
 extra fields, deterministic RNG, and atomic failure. Prefer owner/rival
@@ -118,9 +131,21 @@ saves, and replay all use the same immutable definitions.
 The generic event vocabulary also includes `before-bust-check` (with a pending
 bust limit), `before-trigger-pull` (with a pending misfire chance), and
 `after-ability-played` (a post-commit broadcast for observers). Scalar
-expressions can combine constants, hand totals, hand-card counts, current-round
-Hit counts, and add/subtract/multiply operations. `hand-rank-has-suit-partner`
+expressions can combine constants, hand totals, final displayed round scores,
+hand-card counts, current-round Hit counts, and add/subtract/multiply operations.
+`round-final-score` reads the score already stored for a completed point
+comparison and otherwise falls back to the same hand total shown by the table.
+`hand-rank-has-suit-partner`
 checks a specified standard rank against a different card sharing its suit.
 `add-derived-card-for-exact-total`
 always creates a deterministic ability-RNG-derived card without touching the
-physical shoe.
+physical shoe. Match-status stack counts are also available as scalar values,
+and `add-to-pending-comparison-score` can adjust an actor's score only while a
+normal point comparison is being resolved, including when both unmodified
+scores are equal. Each base score is the hand's highest total under that
+actor's active bust limit; modifiers are applied afterward and therefore do
+not cause a bust. The reducer derives the winner from the adjusted scores and
+stores those final scores in the round outcome for presentation.
+`set-status-stacks` replaces a match-status stack count with a nonnegative,
+integer scalar result (zero removes the status), allowing a data-driven
+mechanic to carry one public numeric threshold between rounds.

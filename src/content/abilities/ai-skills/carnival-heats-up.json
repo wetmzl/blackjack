@@ -1,0 +1,28 @@
+{
+  "id": "carnival-heats-up",
+  "name": "狂欢升温",
+  "description": "当拉普兰德当前牌面点数大于等于狂欢指标时，双方的公共爆牌上限提高2点。",
+  "triggerNotice": "拉普兰德达到狂欢指标，双方的爆牌上限提高2点。",
+  "profileLore": "只要她率先追上那道刻度，规则就会为整张牌桌再让出两步。风险没有消失，只是被推向了更高、更适合失控的位置。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "rule-control",
+  "activation": { "type": "automatic" },
+  "rules": [
+    {
+      "id": "raise-shared-bust-limit",
+      "trigger": "before-bust-check",
+      "conditions": [
+        {
+          "type": "hand-total",
+          "target": "owner",
+          "operator": "gte",
+          "value": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "carnival-index-value" }
+        }
+      ],
+      "effects": [
+        { "type": "add-to-pending-bust-limit", "target": "event-actor", "amount": 2 }
+      ]
+    }
+  ],
+  "tags": ["blackjack", "bust-limit", "shared-rule", "ai-skill"]
+}

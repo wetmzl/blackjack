@@ -243,11 +243,13 @@ h2 { font-size: 1.5rem; }
 .ai-info-suit { display: flex; align-items: center; gap: 3px; font-weight: 700; }
 .ai-info-suit > span { font-size: .92rem; line-height: 1; }
 .ai-info-suit small { color: var(--muted); font-size: .55rem; font-weight: 500; }
-.ai-info-suit.red, .ai-info-card.red { color: #ff8da4; }
-.ai-info-suit.black, .ai-info-card.black { color: #b7eaf3; }
-.ai-info-card { display: inline-flex; width: 22px; height: 27px; flex-direction: column; justify-content: space-between; border: 1px solid #d6c49a; border-radius: 4px; background: linear-gradient(145deg, #fffdf0, #e7dac0); padding: 2px 3px; box-shadow: 1px 2px 0 #07131b99; line-height: 1; }
-.ai-info-card b { font-size: .58rem; }
-.ai-info-card em { align-self: flex-end; font-size: .62rem; font-style: normal; }
+.ai-info-suit.red { color: #ff6685; }
+.ai-info-suit.black { color: #f1f1ea; }
+.ai-info-card { display: inline-flex; width: auto; min-width: 43px; height: 24px; align-items: center; justify-content: center; gap: 4px; border: 1px solid #c8b98f; border-radius: 5px; background: linear-gradient(145deg, #fffdf3, #e8dfcb); padding: 2px 6px; box-shadow: 1px 2px 0 #07131b99, inset 0 0 0 1px #ffffff80; font-weight: 800; line-height: 1; }
+.ai-info-card.red { color: #c92f4e; }
+.ai-info-card.black { color: #151a1e; }
+.ai-info-card b { font-size: .76rem; line-height: 1; }
+.ai-info-card em { align-self: auto; font-family: Georgia, "Times New Roman", serif; font-size: .92rem; font-style: normal; font-weight: 700; line-height: 1; }
 .ai-info-modal { text-align: left; }
 .ai-info-modal h2 { margin: 5px 0 12px; color: var(--amber); }
 .ai-info-modal > p:last-child { margin: 14px 0 2px; color: var(--ink); font-size: .86rem; line-height: 1.65; }
@@ -255,8 +257,9 @@ h2 { font-size: 1.5rem; }
 .ai-info-current > span { color: var(--muted); font-size: .72rem; }
 .ai-info-current output { display: grid; min-width: 42px; min-height: 34px; place-items: center; color: var(--amber); }
 .ai-info-current .ai-info-number { font-size: 1.3rem; }
-.ai-info-current .ai-info-card { width: 30px; height: 39px; padding: 4px; }
-.ai-info-current .ai-info-card b, .ai-info-current .ai-info-card em { font-size: .8rem; }
+.ai-info-current .ai-info-card { width: auto; min-width: 58px; height: 34px; gap: 6px; padding: 4px 9px; }
+.ai-info-current .ai-info-card b { font-size: .95rem; }
+.ai-info-current .ai-info-card em { font-size: 1.12rem; }
 .ai-info-current .ai-info-suit > span { font-size: 1.25rem; }
 .ai-info-current .ai-info-suit small { font-size: .7rem; }
 .opponent-zone { position: relative; z-index: 2; min-height: 260px; padding: 4px; flex: 0 0 auto; }
@@ -321,7 +324,11 @@ h2 { font-size: 1.5rem; }
 .loadout-skill small, .loadout-skill em { color: var(--muted); font-size: .65rem; font-style: normal; line-height: 1.35; }
 .danger-button { border: 1px solid #d86983; border-radius: 9px; background: #3b1d2a; color: #ffb2c1; padding: 10px; cursor: pointer; }
 .empty-skills { color: var(--muted); font-size: .7rem; }
-.round-notice { position: relative; z-index: 8; margin: 10px 7px 12px; border: 1px solid #a7835d99; border-radius: 10px; background: #132b31dd; color: var(--amber); padding: 8px 11px; }
+.table-notice-row { position: relative; z-index: 8; display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; margin: 10px 7px 12px; }
+.bust-limit-indicator { display: grid; min-width: 0; place-content: center; border: 1px solid #e4556f; border-radius: 10px; background: linear-gradient(145deg, #491a29e8, #29121be8); color: #ff9ab0; padding: 2px 6px; text-align: center; box-shadow: inset 0 0 15px #ff5b7820, 0 0 12px #e4556f14; }
+.bust-limit-indicator span { font-size: .75rem; line-height: 1; white-space: nowrap; }
+.bust-limit-indicator strong { font-size: .875rem; line-height: 1; }
+.round-notice { position: relative; z-index: 8; min-width: 0; border: 1px solid #a7835d99; border-radius: 10px; background: #132b31dd; color: var(--amber); padding: 8px 11px; }
 .controls { display: flex; gap: 8px; }
 .player-main .hand-row { margin-top: auto; }
 .action-dock { width: calc(100% + 4px); flex: 0 0 auto; margin-top: 8px; }

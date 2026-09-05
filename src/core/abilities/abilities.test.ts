@@ -48,9 +48,9 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers three disjoint ability domains as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(19);
+    expect(ABILITY_DEFINITIONS).toHaveLength(24);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(8);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(10);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(15);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind !== "talent").every((definition) => definition.rules.length > 0)).toBe(true);
@@ -80,6 +80,19 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "talent", ttl: { type: "rounds", amount: 1 } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "none" }, ttl: { type: "triggers", amount: 1 } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "after-stand" }] }).success).toBe(true);
+    const statusVariableRule = {
+      ...base,
+      rules: [{
+        ...base.rules[0],
+        trigger: "on-round-end",
+        triggerNotice: "更新公开变量。",
+        effects: [{ type: "set-status-stacks", target: "owner", statusDefinitionId: "copper-seal-sealed", amount: { type: "round-final-score", target: "rival" } }]
+      }]
+    };
+    expect(AbilityDefinitionSchema.safeParse(statusVariableRule).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...statusVariableRule, rules: [{ ...statusVariableRule.rules[0], triggerNotice: "" }] }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...statusVariableRule, rules: [{ ...statusVariableRule.rules[0], effects: [{ ...statusVariableRule.rules[0].effects[0], extra: true }] }] }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...statusVariableRule, rules: [{ ...statusVariableRule.rules[0], effects: [{ type: "set-status-stacks", target: "owner", statusDefinitionId: "copper-seal-sealed" }] }] }).success).toBe(false);
     expect(StatusDefinitionSchema.safeParse({ id: "next-action", rules: [], defaultDuration: "until-owner-action", blocksAbilityTags: ["active-skill-card"] }).success).toBe(true);
   });
 
@@ -92,6 +105,7 @@ describe("ability schemas and immutable registry", () => {
     });
     expect(() => createAbilityRegistry([definition("reference-parameter", { type: "draw-skill-cards", target: "owner", amount: { type: "parameter", key: "missing" } })])).toThrow(/Unknown parameter/);
     expect(() => createAbilityRegistry([definition("reference-status", { type: "add-status", target: "owner", statusDefinitionId: "missing-status" })])).toThrow(/Unknown status/);
+    expect(() => createAbilityRegistry([definition("reference-set-status", { type: "set-status-stacks", target: "owner", statusDefinitionId: "missing-status", amount: 1 })])).toThrow(/Unknown status/);
     expect(() => createAbilityRegistry([definition("reference-ability", { type: "draw-skill-cards", target: "owner", amount: 1 }, [{ type: "owner-has-card", abilityId: "missing-ability" }])])).toThrow(/Unknown ability/);
   });
 

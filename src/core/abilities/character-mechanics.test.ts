@@ -71,7 +71,113 @@ describe("new character mechanics", () => {
     const pending = { id: "trigger", actor: "opponent" as const };
     const result = resolve("ai-sword-and-handcannon", "opponent", { trigger: "before-trigger-pull", sourceEventId: "trigger", eventActor: "opponent", roundHitCounts: { player: 2, opponent: 0 }, roundOutcome: { reason: "comparison", penaltyTarget: "opponent" } }, { pendingTrigger: pending });
     expect(result.pendingTrigger?.misfireChance).toBeCloseTo(0.66);
-    expect(result.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 2 });
+    expect(result.runtime.instances[0]?.ttl).toEqual({ type: "triggers", remaining: 29 });
+  });
+
+  it("accumulates Platinum's stand advantage, clears it after a player Hit, and applies it only to comparison", () => {
+    const source = instance("platinum-vision");
+    const initialRuntime = { ...createAbilityRuntime(createRng("platinum-vision").snapshot()), instances: [source] };
+    const stood = resolveAbilityEvent({
+      world: world(),
+      runtime: initialRuntime,
+      event: { trigger: "after-stand", sourceEventId: "platinum-stand-1", eventActor: "player", roundHitCounts: { player: 0, opponent: 0 } }
+    });
+    expect(stood.world.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "platinum-vision-advantage", owner: "opponent", stacks: 1, duration: "match" }));
+
+    const stoodTwice = resolveAbilityEvent({
+      world: stood.world,
+      runtime: stood.runtime,
+      event: { trigger: "after-stand", sourceEventId: "platinum-stand-2", eventActor: "player", roundHitCounts: { player: 0, opponent: 0 } }
+    });
+    expect(stoodTwice.world.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "platinum-vision-advantage", stacks: 2 }));
+
+    const cleared = resolveAbilityEvent({
+      world: stoodTwice.world,
+      runtime: stoodTwice.runtime,
+      event: { trigger: "after-hand-changed", sourceEventId: "platinum-hit", eventActor: "player", roundHitCounts: { player: 1, opponent: 0 } }
+    });
+    expect(cleared.world.statuses.some((status) => status.statusDefinitionId === "platinum-vision-advantage")).toBe(false);
+
+    const comparison = resolveAbilityEvent({
+      world: stoodTwice.world,
+      runtime: stoodTwice.runtime,
+      event: { trigger: "before-round-resolution", sourceEventId: "platinum-comparison", roundOutcome: { reason: "comparison", penaltyTarget: "player" } },
+      pendingComparison: { id: "platinum-comparison", scores: { player: 20, opponent: 20 } }
+    });
+    expect(comparison.pendingComparison?.scores).toEqual({ player: 20, opponent: 22 });
+    expect(comparison.triggered).toContain("platinum-vision-opponent:apply-comparison-advantage");
+  });
+
+  it("uses the previous final display as Lappland's carnival index and applies the matching score bonus", () => {
+    const index = instance("carnival-index");
+    const runtime = { ...createAbilityRuntime(createRng("carnival-index").snapshot()), instances: [index], sequence: 1 };
+
+    const opening = resolveAbilityEvent({
+      world: world(hand(createCard("spades", "10"), createCard("clubs", "2")), hand(createCard("hearts", "10"), createCard("diamonds", "9"))),
+      runtime,
+      event: { trigger: "before-round-resolution", sourceEventId: "carnival-opening", roundOutcome: { reason: "comparison", penaltyTarget: "player" } },
+      pendingComparison: { id: "carnival-opening", scores: { player: 12, opponent: 19 } }
+    });
+    expect(opening.pendingComparison?.scores).toEqual({ player: 13, opponent: 19 });
+    expect(opening.triggered).toContain("carnival-index-opponent:reward-rival-reaching-index");
+
+    const threshold = { statusDefinitionId: "carnival-index-value", owner: "opponent" as const, sourceInstanceId: index.instanceId, stacks: 18, duration: "match" as const, parameters: {}, createdAtSequence: 2 };
+    const indexedWorld = { ...world(hand(createCard("spades", "10"), createCard("clubs", "7")), hand(createCard("hearts", "10"), createCard("diamonds", "8"))), statuses: [threshold] };
+    const missed = resolveAbilityEvent({
+      world: indexedWorld,
+      runtime: { ...runtime, statuses: [threshold], sequence: 2 },
+      event: { trigger: "before-round-resolution", sourceEventId: "carnival-missed", roundOutcome: { reason: "comparison", penaltyTarget: "player" } },
+      pendingComparison: { id: "carnival-missed", scores: { player: 17, opponent: 18 } }
+    });
+    expect(missed.pendingComparison?.scores).toEqual({ player: 17, opponent: 20 });
+    expect(missed.triggered).toContain("carnival-index-opponent:reward-owner-missed-index");
+
+    const reachedWorld = { ...indexedWorld, hands: { ...indexedWorld.hands, player: hand(createCard("spades", "10"), createCard("clubs", "8")) } };
+    const reached = resolveAbilityEvent({
+      world: reachedWorld,
+      runtime: { ...runtime, statuses: [threshold], sequence: 2 },
+      event: { trigger: "before-round-resolution", sourceEventId: "carnival-reached", roundOutcome: { reason: "comparison", penaltyTarget: "opponent" } },
+      pendingComparison: { id: "carnival-reached", scores: { player: 18, opponent: 17 } }
+    });
+    expect(reached.pendingComparison?.scores).toEqual({ player: 19, opponent: 17 });
+
+    const replaced = resolveAbilityEvent({
+      world: reached.world,
+      runtime: reached.runtime,
+      event: { trigger: "on-round-end", sourceEventId: "carnival-round-end", roundOutcome: { reason: "comparison", penaltyTarget: "opponent", comparisonScores: { player: 19, opponent: 17 } } }
+    });
+    expect(replaced.world.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "carnival-index-value", owner: "opponent", stacks: 19 }));
+    expect(replaced.events).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "replace-index-at-round-end" }));
+  });
+
+  it("falls back to the visible hand total for non-comparison carnival updates", () => {
+    const index = instance("carnival-index");
+    const runtime = { ...createAbilityRuntime(createRng("carnival-bust").snapshot()), instances: [index], sequence: 1 };
+    const bustedWorld = world(hand(createCard("spades", "K"), createCard("clubs", "Q"), createCard("diamonds", "2")));
+    const updated = resolveAbilityEvent({
+      world: bustedWorld,
+      runtime,
+      event: { trigger: "on-round-end", sourceEventId: "carnival-bust-end", roundOutcome: { reason: "bust", penaltyTarget: "player" } }
+    });
+    expect(updated.world.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "carnival-index-value", stacks: 22 }));
+  });
+
+  it("raises either actor's bust limit only while Lappland reaches the carnival index", () => {
+    const index = instance("carnival-index");
+    const heat = instance("carnival-heats-up");
+    const threshold = { statusDefinitionId: "carnival-index-value", owner: "opponent" as const, sourceInstanceId: index.instanceId, stacks: 18, duration: "match" as const, parameters: {}, createdAtSequence: 3 };
+    const runtime = { ...createAbilityRuntime(createRng("carnival-heat").snapshot()), instances: [index, heat], statuses: [threshold], sequence: 3 };
+    const reached = { ...world(undefined, hand(createCard("hearts", "10"), createCard("diamonds", "8"))), statuses: [threshold] };
+    for (const actor of ["player", "opponent"] as const) {
+      const result = resolveAbilityEvent({ world: reached, runtime, event: { trigger: "before-bust-check", sourceEventId: `carnival-bust-${actor}`, eventActor: actor }, pendingBust: { id: `carnival-bust-${actor}`, actor, limit: 21 } });
+      expect(result.pendingBust?.limit).toBe(23);
+      expect(result.triggered).toContain("carnival-heats-up-opponent:raise-shared-bust-limit");
+    }
+
+    const below = { ...reached, hands: { ...reached.hands, opponent: hand(createCard("hearts", "10"), createCard("diamonds", "7")) } };
+    const unchanged = resolveAbilityEvent({ world: below, runtime, event: { trigger: "before-bust-check", sourceEventId: "carnival-below", eventActor: "player" }, pendingBust: { id: "carnival-below", actor: "player", limit: 21 } });
+    expect(unchanged.pendingBust?.limit).toBe(21);
+    expect(unchanged.triggered).not.toContain("carnival-heats-up-opponent:raise-shared-bust-limit");
   });
 
   it("runs the separate Player Skill counterparts without sharing AI definitions", () => {

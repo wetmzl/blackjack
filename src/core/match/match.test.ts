@@ -8,9 +8,10 @@ import { calculateAiThreshold, decideAiAction, sampleAiNoise } from "../ai/polic
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
-import { createMatch as createOfferedMatch, gameReducer, getLegalActions, normalizeAbilityHands, resolveRound, type CreateMatchOptions } from "./reducer";
+import { createMatch as createOfferedMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, resolveRound, type CreateMatchOptions } from "./reducer";
 import { canPlayAbility, playAbility } from "../abilities/engine";
 import { fixedCardValue } from "../abilities/card-zone-adapter";
+import { abilityTriggerNotice } from "../../presentation/ability-notices";
 import type { MatchState, ParticipantState, RoundState } from "./types";
 
 const W_DIALOGUE = wData.dialogue;
@@ -50,6 +51,115 @@ function findSeed(predicate: (state: MatchState) => boolean): string {
 }
 
 describe("createMatch and legal actions", () => {
+  it("Ho-olheyak replaces a busting Hit with the remembered curator card and then Stands", () => {
+    const base = createMatch("ho-olheyak-inheritance", {
+      opponentId: "ho-olheyak",
+      opponentAiSkills: [
+        { definitionId: "ho-olheyak-inheritance-terminal", enabled: true, parameters: {} },
+        { definitionId: "ho-olheyak-once-had-wings", enabled: true, parameters: {} }
+      ]
+    });
+    const instance = base.abilities.instances.find((candidate) => candidate.definitionId === "ho-olheyak-inheritance-terminal")!;
+    const prepared = withHands(base, [card("10"), card("6")], [card("10"), card("6")], "opponent");
+    const state: MatchState = {
+      ...prepared,
+      shoe: { cards: [card("7", "clubs"), card("2", "diamonds")], cursor: 0, shuffleIndex: 1 },
+      abilities: {
+        ...prepared.abilities,
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+      }
+    };
+    const next = gameReducer(state, { type: "AI_HIT" });
+    expect(next.opponent.hand.cards.at(-1)).toEqual({ rank: "4", suit: "hearts", origin: "derived" });
+    expect(handValue(next.opponent.hand)).toBe(20);
+    expect(next.opponent.stood).toBe(true);
+    expect(next.shoe.cursor).toBe(1);
+    expect(next.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "ho-olheyak-inheritance-terminal", ruleId: "replace-busting-draw" }));
+  });
+
+  it("Ho-olheyak does not load a face-card memory on a losing round", () => {
+    const base = createMatch("ho-olheyak-wings", {
+      opponentId: "ho-olheyak",
+      opponentAiSkills: [{ definitionId: "ho-olheyak-once-had-wings", enabled: true, parameters: {} }]
+    });
+    const instance = base.abilities.instances.find((candidate) => candidate.definitionId === "ho-olheyak-once-had-wings")!;
+    const state: MatchState = {
+      ...withHands(base, [card("10"), card("8")], [card("10"), card("8")]),
+      roulette: { player: createGun(), opponent: createGun() },
+      abilities: {
+        ...base.abilities,
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "K", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+      }
+    };
+    const next = resolveRound(state, { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1 });
+    expect(next.roulette.opponent.bullets).toBe(0);
+    expect(next.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "ho-olheyak-once-had-wings", ruleId: "skip-face-card-load" }));
+  });
+
+  it("Ho-olheyak checks the final bust limit after other bust-limit skills", () => {
+    const base = createMatch("ho-olheyak-dynamic-limit", {
+      opponentId: "ho-olheyak",
+      opponentAiSkills: [
+        { definitionId: "bomb-maniac", enabled: true, parameters: {} },
+        { definitionId: "ho-olheyak-inheritance-terminal", enabled: true, parameters: {} }
+      ]
+    });
+    const instance = base.abilities.instances.find((candidate) => candidate.definitionId === "ho-olheyak-inheritance-terminal")!;
+    const prepared = withHands(base, [card("2"), card("3")], [card("10"), card("7")], "opponent");
+    const state: MatchState = {
+      ...prepared,
+      shoe: { cards: [card("5", "clubs")], cursor: 0, shuffleIndex: 1 },
+      abilities: {
+        ...prepared.abilities,
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+      }
+    };
+    const next = gameReducer(state, { type: "AI_HIT" });
+    expect(handValue(next.opponent.hand)).toBe(22);
+    expect(next.opponent.bustLimit).toBe(22);
+    expect(next.opponent.busted).toBe(false);
+    expect(next.history).not.toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "ho-olheyak-inheritance-terminal", ruleId: "replace-busting-draw" }));
+  });
+
+  it("Ho-olheyak remembers the curator's final initial card when a no-Hit round ends", () => {
+    const base = createMatch("ho-olheyak-memory-round", {
+      opponentId: "ho-olheyak",
+      opponentAiSkills: [{ definitionId: "ho-olheyak-inheritance-terminal", enabled: true, parameters: {} }]
+    });
+    expect(base.abilities.statuses).toEqual([]);
+    let currentRoundStart = -1;
+    base.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") currentRoundStart = index; });
+    expect(base.history.slice(currentRoundStart).some((event) => event.type === "PLAYER_HIT")).toBe(false);
+    const ended = withHands(base, [card("4", "hearts"), card("Q", "diamonds")], [card("10"), card("8")]);
+    const round: RoundState = { ...ended.round, phase: "round-reveal", outcome: { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 } };
+    const next = gameReducer({ ...ended, round }, { type: "ACK_ROUND_RESULT" });
+    const memory = next.abilities.statuses.find((status) => status.statusDefinitionId === "ho-olheyak-memory-card");
+    expect(memory).toMatchObject({ owner: "opponent", parameters: { rank: "Q", suit: "diamonds", origin: "shoe" } });
+    expect(abilityTriggerNotice(next.history, "霍尔海雅")).toBeNull();
+  });
+
+  it("Ho-olheyak still busts when the remembered replacement exceeds the final limit", () => {
+    const base = createMatch("ho-olheyak-bust-after-replacement", {
+      opponentId: "ho-olheyak",
+      opponentAiSkills: [{ definitionId: "ho-olheyak-inheritance-terminal", enabled: true, parameters: {} }]
+    });
+    const instance = base.abilities.instances.find((candidate) => candidate.definitionId === "ho-olheyak-inheritance-terminal")!;
+    const prepared = withHands(base, [card("10"), card("6")], [card("10"), card("8")], "opponent");
+    const state: MatchState = {
+      ...prepared,
+      shoe: { cards: [card("7", "clubs")], cursor: 0, shuffleIndex: 1 },
+      abilities: {
+        ...prepared.abilities,
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+      }
+    };
+    const next = gameReducer(state, { type: "AI_HIT" });
+    expect(next.opponent.hand.cards.at(-1)).toEqual({ rank: "4", suit: "hearts", origin: "derived" });
+    expect(next.opponent.busted).toBe(true);
+    expect(next.round.outcome?.reason).toBe("bust");
+    expect(next.shoe.cursor).toBe(1);
+  });
+
   it("deals only after the opening offer is resolved and starts with the opponent", () => {
     const state = createMatch(findSeed((candidate) => candidate.round.phase === "turns"));
     expect(state.round.phase).toBe("turns");
@@ -80,16 +190,19 @@ describe("createMatch and legal actions", () => {
     expect(state.playerSkills.cards).toHaveLength(0);
   });
 
-  it("automatically stands on 21 and prevents another player hit", () => {
+  it("keeps Hit and Stand available after the player reaches 21", () => {
     const base = createMatch("auto-21");
-    const state: MatchState = { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]), shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 } };
+    const prepared = withHands(base, [card("10"), card("9")], [card("10"), card("7")]);
+    const opponent = { ...prepared.opponent, stood: true };
+    const state: MatchState = { ...prepared, opponent, round: { ...prepared.round, opponent }, shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 } };
     const next = gameReducer(state, { type: "PLAYER_HIT" });
-    expect(next.player.stood).toBe(true);
-    expect(next.round.currentActor).toBe("opponent");
-    expect(getLegalActions(next)).not.toContainEqual({ type: "PLAYER_HIT" });
+    expect(handValue(next.player.hand)).toBe(21);
+    expect(next.player.stood).toBe(false);
+    expect(next.round.currentActor).toBe("player");
+    expect(getLegalActions(next)).toEqual(expect.arrayContaining([{ type: "PLAYER_HIT" }, { type: "PLAYER_STAND" }]));
   });
 
-  it("W Night Queen adds a derived card after a Q finds a same-suit partner and stands on 21", () => {
+  it("W Night Queen adds a derived card to reach 21 without forcing Stand", () => {
     const base = createMatch("night-queen-integration", { opponentAiSkills: [{ definitionId: "w-night-queen", enabled: true, parameters: {} }] });
     const state: MatchState = {
       ...withHands(base, [card("10"), card("6")], [card("Q", "hearts"), card("3", "hearts")], "opponent"),
@@ -99,24 +212,24 @@ describe("createMatch and legal actions", () => {
     expect(next.opponent.hand.cards).toHaveLength(4);
     expect(next.opponent.hand.cards.at(-1)?.origin).toBe("derived");
     expect(handValue(next.opponent.hand)).toBe(21);
-    expect(next.opponent.stood).toBe(true);
+    expect(next.opponent.stood).toBe(false);
     expect(next.shoe.cursor).toBe(1);
     expect(next.shoe.cards).toEqual(state.shoe.cards);
     expect(next.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "w-night-queen", ruleId: "complete-to-twenty-one" }));
   });
 
-  it("runs Night Queen after the initial deal and hands off a stood starter", () => {
+  it("runs Night Queen after the initial deal without ending the starter's turn", () => {
     let found: MatchState | undefined;
     for (let index = 0; index < 10_000 && !found; index += 1) {
       const candidate = createMatch(`night-queen-initial-${index}`, { opponentAiSkills: [{ definitionId: "w-night-queen", enabled: true, parameters: {} }] });
       if (candidate.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen") && candidate.opponent.hand.cards.at(-1)?.origin === "derived" && candidate.round.phase === "turns") found = candidate;
     }
     expect(found).toBeDefined();
-    expect(found!.opponent.stood).toBe(true);
+    expect(found!.opponent.stood).toBe(false);
     expect(found!.opponent.hand.cards.at(-1)?.origin).toBe("derived");
     expect(found!.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen")).toHaveLength(1);
     expect(found!.history.some((event) => event.type === "BLACKJACK")).toBe(false);
-    expect(found!.round.currentActor).toBe("player");
+    expect(found!.round.currentActor).toBe("opponent");
   });
 
   it("broadcasts Night Queen after a later round's initial deal", () => {
@@ -130,8 +243,8 @@ describe("createMatch and legal actions", () => {
     }
     expect(nextRound).toBeDefined();
     expect(nextRound!.round.index).toBeGreaterThan(0);
-    expect(nextRound!.opponent.stood).toBe(true);
-    expect(nextRound!.round.currentActor).toBe("player");
+    expect(nextRound!.opponent.stood).toBe(false);
+    expect(nextRound!.round.currentActor).toBe("opponent");
   });
 
   it("keeps a Q plus same-suit A initial hand as natural Blackjack", () => {
@@ -158,6 +271,67 @@ describe("createMatch and legal actions", () => {
     expect(next.round.currentActor).toBeNull();
     const started = gameReducer(next, { type: "SKIP_SKILL_OFFER" });
     expect(started.round.currentActor).toBe("opponent");
+  });
+
+  it("applies Platinum's accumulated stand advantage when equal base totals enter comparison", () => {
+    const configured = createMatch("platinum-comparison", {
+      opponentAiSkills: [{ definitionId: "platinum-vision", enabled: true, parameters: {} }]
+    });
+    const source = configured.abilities.instances.find((entry) => entry.definitionId === "platinum-vision")!;
+    const accumulated = {
+      ...configured,
+      abilities: {
+        ...configured.abilities,
+        statuses: [{ statusDefinitionId: "platinum-vision-advantage", owner: "opponent" as const, sourceInstanceId: source.instanceId, stacks: 1, duration: "match" as const, parameters: {}, createdAtSequence: source.createdAtSequence }]
+      }
+    };
+    const ready = withHands(accumulated, [card("10"), card("7")], [card("10"), card("7")]);
+    const playerStood = gameReducer(ready, { type: "PLAYER_STAND" });
+    expect(playerStood.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "platinum-vision-advantage", owner: "opponent", stacks: 2 }));
+    const reveal = gameReducer(playerStood, { type: "AI_STAND" });
+    expect(reveal.round.outcome).toEqual(expect.objectContaining({ winner: "opponent", reason: "comparison", penaltyTarget: "player" }));
+    expect(reveal.round.outcome?.comparisonScores).toEqual({ player: 17, opponent: 19 });
+    expect(reveal.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "platinum-vision", ruleId: "apply-comparison-advantage" }));
+  });
+
+  it("carries Lappland's adjusted player score into the next round's carnival index", () => {
+    const configured = createMatch("lappland-carnival-index", {
+      opponentId: "lappland-the-decadenza",
+      opponentAiSkills: [
+        { definitionId: "carnival-index", enabled: true, parameters: {} },
+        { definitionId: "carnival-heats-up", enabled: true, parameters: {} }
+      ]
+    });
+    const source = configured.abilities.instances.find((entry) => entry.definitionId === "carnival-index")!;
+    const threshold = { statusDefinitionId: "carnival-index-value", owner: "opponent" as const, sourceInstanceId: source.instanceId, stacks: 18, duration: "match" as const, parameters: {}, createdAtSequence: source.createdAtSequence };
+    const indexed = { ...configured, abilities: { ...configured.abilities, statuses: [threshold] } };
+    const ready = withHands(indexed, [card("10"), card("8")], [card("10"), card("9")]);
+    const playerStood = gameReducer(ready, { type: "PLAYER_STAND" });
+    const reveal = gameReducer(playerStood, { type: "AI_STAND" });
+    expect(reveal.round.outcome).toMatchObject({ winner: null, reason: "push", penaltyTarget: null });
+    expect(reveal.round.outcome?.comparisonScores).toEqual({ player: 19, opponent: 19 });
+    expect(reveal.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "carnival-index", ruleId: "reward-rival-reaching-index" }));
+
+    const nextRound = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    expect(nextRound.round.phase).toBe("skill-offer");
+    expect(nextRound.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "carnival-index-value", stacks: 19 }));
+  });
+
+  it("applies Lappland's shared +2 bust limit on the real hand-normalization path", () => {
+    const configured = createMatch("lappland-carnival-heat", {
+      opponentId: "lappland-the-decadenza",
+      opponentAiSkills: [
+        { definitionId: "carnival-index", enabled: true, parameters: {} },
+        { definitionId: "carnival-heats-up", enabled: true, parameters: {} }
+      ]
+    });
+    const source = configured.abilities.instances.find((entry) => entry.definitionId === "carnival-index")!;
+    const threshold = { statusDefinitionId: "carnival-index-value", owner: "opponent" as const, sourceInstanceId: source.instanceId, stacks: 18, duration: "match" as const, parameters: {}, createdAtSequence: source.createdAtSequence };
+    const indexed = { ...configured, abilities: { ...configured.abilities, statuses: [threshold] } };
+    const checked = normalizeAbilityHands(withHands(indexed, [card("K"), card("Q"), card("2")], [card("10"), card("8")], "player"));
+    expect(checked.player.busted).toBe(false);
+    expect(checked.player.bustLimit).toBe(23);
+    expect(checked.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "carnival-heats-up", ruleId: "raise-shared-bust-limit" }));
   });
 });
 
@@ -188,6 +362,15 @@ describe("round resolution and roulette", () => {
     expect(afterPlayerHit.opponent.busted).toBe(true);
   });
 
+  it("previews the active shared bust limit without mutating match history", () => {
+    const base = createMatch("bomb-preview", { opponentAiSkills: [{ definitionId: "bomb-maniac", enabled: true, parameters: {} }] });
+    const state = withHands(base, [card("10"), card("2")], [card("5"), card("4"), card("3"), card("2")], "player");
+    const historyLength = state.history.length;
+    expect(getActiveBustLimit(state, "player")).toBe(23);
+    expect(getActiveBustLimit(state, "opponent")).toBe(23);
+    expect(state.history).toHaveLength(historyLength);
+  });
+
   it("uses the same Bomb Maniac definition to protect W and the rival", () => {
     const base = createMatch("bomb-both-actors", { opponentAiSkills: [{ definitionId: "bomb-maniac", enabled: true, parameters: {} }] });
     const state = normalizeAbilityHands(withHands(base,
@@ -209,16 +392,19 @@ describe("round resolution and roulette", () => {
     expect(resolved.round.outcome?.reason).toBe("comparison");
   });
 
-  it("keeps ordinary 21 auto-Stand unchanged when Bomb Maniac is configured", () => {
-    const base = createMatch("bomb-coexists-with-21", { opponentAiSkills: [{ definitionId: "bomb-maniac", enabled: true, parameters: {} }] });
+  it("lets a high-threshold AI Hit above 21 when its raised bust limit permits it", () => {
+    const base = createMatch("bomb-ai-over-21", {
+      opponentAiSkills: [{ definitionId: "bomb-maniac", enabled: true, parameters: {} }],
+      aiProfile: { P: 10, A: 0, B: 0, C: 0 }
+    });
     const state: MatchState = {
-      ...withHands(base, [card("10"), card("9")], [card("10"), card("6")], "player"),
+      ...withHands(base, [card("10"), card("2")], [card("5"), card("5"), card("5"), card("6")], "opponent"),
       shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 }
     };
-    const next = gameReducer(state, { type: "PLAYER_HIT" });
-    expect(next.player.stood).toBe(true);
-    expect(next.player.busted).toBe(false);
-    expect(next.history).not.toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "bomb-maniac" }));
+    const next = gameReducer(state, { type: "AI_TURN" });
+    expect(next.lastAiDecision?.action).toBe("hit");
+    expect(handValue(next.opponent.hand)).toBe(23);
+    expect(next.opponent).toMatchObject({ stood: false, busted: false, bustLimit: 24 });
   });
 
   it("normalizes an ability-created bust through the same bust and round-resolution path", () => {
@@ -526,7 +712,9 @@ describe("skills", () => {
     expect(next.player.hand.cards.at(-1)?.origin).toBe("derived");
     expect(next.shoe.cursor).toBe(0);
     expect(next.history).not.toContainEqual(expect.objectContaining({ type: "PLAYER_HIT" }));
-    expect(next.history).toContainEqual(expect.objectContaining({ type: "PLAYER_STOOD" }));
+    expect(next.history).not.toContainEqual(expect.objectContaining({ type: "PLAYER_STOOD" }));
+    expect(next.player.stood).toBe(false);
+    expect(getLegalActions(next)).toContainEqual({ type: "PLAYER_HIT" });
   });
 
   it("dissipates derived cards when they leave a hand or the round ends", () => {
@@ -572,13 +760,17 @@ describe("skills", () => {
     expect(armed.playerSkills.cards).toContainEqual(second);
   });
 
-  it("Switcheroo resolves immediately when the opponent already stood", () => {
+  it("Switcheroo reaching 21 waits for an explicit Stand when the opponent already stood", () => {
     const base = createMatch("switcheroo-stood");
     const state = { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]), playerSkills: { ...base.playerSkills, cards: [skillCard("switcheroo")] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skillCard("switcheroo"), createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 }, opponent: { ...base.opponent, stood: true }, round: { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]).round, currentActor: "player" as const, opponent: { ...base.opponent, hand: createHand([card("10"), card("7")]), stood: true, busted: false } }, shoe: { cards: [card("A", "clubs")], cursor: 0, shuffleIndex: 1 } };
     const next = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-switcheroo" });
-    expect(next.round.phase).toBe("round-reveal");
-    expect(next.round.outcome?.winner).toBe("player");
+    expect(next.round.phase).toBe("turns");
+    expect(next.round.currentActor).toBe("player");
+    expect(next.player.stood).toBe(false);
     expect(next.history.some((event) => event.type === "PLAYER_HIT")).toBe(false);
+    const reveal = gameReducer(next, { type: "PLAYER_STAND" });
+    expect(reveal.round.phase).toBe("round-reveal");
+    expect(reveal.round.outcome?.winner).toBe("player");
   });
 
   it("Rhodes Heartthrob avoids a non-full player trigger after loading", () => {

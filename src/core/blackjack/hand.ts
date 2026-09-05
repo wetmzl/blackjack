@@ -10,19 +10,24 @@ export function addCard(hand: Hand, card: Card): Hand {
   return { cards: [...hand.cards, card] };
 }
 
-/** Returns the highest legal total, treating aces as 1 when 11 would bust. */
-export function handValue(hand: Hand): number {
+/** Returns the highest total legal under the supplied bust limit. */
+export function handValueAtLimit(hand: Hand, bustLimit: number): number {
   let total = 0;
   let aces = 0;
   for (const card of hand.cards) {
     total += cardValue(card.rank);
     if (card.rank === "A") aces += 1;
   }
-  while (total > 21 && aces > 0) {
+  while (total > bustLimit && aces > 0) {
     total -= 10;
     aces -= 1;
   }
   return total;
+}
+
+/** Returns the highest legal total under the standard Blackjack limit. */
+export function handValue(hand: Hand): number {
+  return handValueAtLimit(hand, 21);
 }
 
 export function isBlackjack(hand: Hand): boolean {

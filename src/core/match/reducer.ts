@@ -1,4 +1,4 @@
-import { addCard, createHand, handValue, isBlackjack, isBust, isTwentyOne } from "../blackjack/hand";
+import { addCard, createHand, handValue, handValueAtLimit, isBlackjack, isBust } from "../blackjack/hand";
 import { dealInitialHands, drawCard, reshuffleIfLow, createShoe } from "../blackjack/shoe";
 import type { Card } from "../blackjack/types";
 import { deriveRng, SeededRng } from "../rng/seeded";
@@ -12,7 +12,7 @@ import { getRoundStarter } from "../blackjack/round";
 import { advanceRoundAbilityTtls, createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances, isAbilityInstanceExpired } from "../abilities/runtime";
 import { getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
-import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance, SkillOfferReason } from "../abilities/types";
+import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance, SkillOfferReason } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
 import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
@@ -95,7 +95,7 @@ export function getRoundHitCounts(state: MatchState): Readonly<Record<Actor, num
 function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourceEventId: string): MatchState {
   return actors.reduce((next, actor) => {
     const before = abilityWorld(next);
-    const resolved = runAbilityEvent(next, { trigger: "after-hand-changed", sourceEventId: `${sourceEventId}:${actor}`, eventActor: actor }, {}).state;
+    const resolved = runAbilityEvent(next, { trigger: "after-hand-changed", sourceEventId: `${sourceEventId}:${actor}`, eventActor: actor, roundHitCounts: getRoundHitCounts(next) }, {}).state;
     return invalidateBustLimits(resolved, changedHandActors(before, abilityWorld(resolved)));
   }, state);
 }
@@ -123,9 +123,9 @@ function abilityServices(state: MatchState) {
     publishAdvice: (owner: Actor) => owner === "player" ? decideOptimalAction(buildObservation(state, "player")) : "stand" as const
   };
 }
-function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly failed: boolean } {
+function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly failed: boolean } {
   try {
-    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, directInstanceId, ...abilityServices(state) });
+    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, directInstanceId, ...abilityServices(state) });
     let next = commitAbilityWorld(state, result.world);
     const cards = result.world.cards.filter((card) => !state.playerSkills.cards.some((old) => old.instanceId === card.instanceId));
     const firstSequence = Math.max(state.abilities.sequence, result.runtime.sequence);
@@ -133,7 +133,7 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
     next = { ...next, abilities: { ...next.abilities, ...result.runtime, instances: [...result.runtime.instances, ...instances], sequence: Math.max(result.runtime.sequence, firstSequence + instances.length) } };
     next = { ...next, abilities: clearEventCounters(next.abilities, event.sourceEventId) };
     next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.playerSkills.cards) };
-    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, failed: false };
+    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, pendingComparison: result.pendingComparison, failed: false };
   } catch (error) {
     // A failed ability event is atomic. The caller may continue with the
     // unmodified pending event so the base game action remains safe.
@@ -142,22 +142,51 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
   }
 }
 
-function resolveComparison(state: MatchState): MatchState { const p = handValue(state.player.hand); const o = handValue(state.opponent.hand); const winner: Actor | null = p === o ? null : p > o ? "player" : "opponent"; return resolveRound(state, { winner, reason: winner === null ? "push" : "comparison", penaltyTarget: winner === null ? null : winner === "player" ? "opponent" : "player", bulletsAdded: winner === null ? 0 : 1 }); }
+function resolveComparison(state: MatchState): MatchState {
+  const comparison: PendingComparison = {
+    id: `comparison:${state.roundIndex}:${state.history.length}`,
+    scores: {
+      player: handValueAtLimit(state.player.hand, state.player.bustLimit ?? 21),
+      opponent: handValueAtLimit(state.opponent.hand, state.opponent.bustLimit ?? 21)
+    }
+  };
+  return resolveRound(state, comparisonOutcome(comparison.scores), comparison);
+}
 
-export function resolveRound(state: MatchState, outcome: RoundOutcome): MatchState {
-  let next = runAbilityEvent(state, { trigger: "before-round-resolution", sourceEventId: `round-resolution:${state.roundIndex}:${state.history.length}`, eventActor: outcome.winner ?? undefined, roundOutcome: outcome }, {}).state;
-  if (!outcome.penaltyTarget) {
-    next = append(withRound(next, { ...next.round, phase: "round-reveal", currentActor: null, outcome }), { type: "ROUND_RESOLVED", outcome });
+function comparisonOutcome(scores: Readonly<Record<Actor, number>>): RoundOutcome {
+  const winner: Actor | null = scores.player === scores.opponent ? null : scores.player > scores.opponent ? "player" : "opponent";
+  return { winner, reason: winner === null ? "push" : "comparison", penaltyTarget: winner === null ? null : winner === "player" ? "opponent" : "player", bulletsAdded: winner === null ? 0 : 1, comparisonScores: scores };
+}
+
+export function resolveRound(state: MatchState, outcome: RoundOutcome, pointComparison?: PendingComparison): MatchState {
+  const comparison = pointComparison ?? (outcome.reason === "comparison"
+    ? { id: `comparison:${state.roundIndex}:${state.history.length}`, scores: { player: handValueAtLimit(state.player.hand, state.player.bustLimit ?? 21), opponent: handValueAtLimit(state.opponent.hand, state.opponent.bustLimit ?? 21) } }
+    : undefined);
+  // Entering point comparison is distinct from its provisional result: equal
+  // base totals are still modifiable before they become a final push.
+  const abilityOutcome = pointComparison
+    ? { reason: "comparison" as const, penaltyTarget: outcome.penaltyTarget }
+    : outcome;
+  const prepared = runAbilityEvent(state, { trigger: "before-round-resolution", sourceEventId: `round-resolution:${state.roundIndex}:${state.history.length}`, eventActor: outcome.winner ?? undefined, roundOutcome: abilityOutcome }, { comparison });
+  const comparisonChanged = Boolean(prepared.pendingComparison && comparison && (prepared.pendingComparison.scores.player !== comparison.scores.player || prepared.pendingComparison.scores.opponent !== comparison.scores.opponent));
+  const shouldResolveComparisonScores = Boolean(pointComparison || comparisonChanged);
+  const resolvedOutcome = shouldResolveComparisonScores
+    ? comparisonOutcome((prepared.pendingComparison ?? comparison)!.scores)
+    : undefined;
+  const finalOutcome = resolvedOutcome ?? outcome;
+  let next = prepared.state;
+  if (!finalOutcome.penaltyTarget) {
+    next = append(withRound(next, { ...next.round, phase: "round-reveal", currentActor: null, outcome: finalOutcome }), { type: "ROUND_RESOLVED", outcome: finalOutcome });
     return next;
   }
-  const pendingLoad: PendingLoad = { id: `load:${state.roundIndex}:${state.history.length}`, actor: outcome.penaltyTarget, amount: outcome.bulletsAdded, reason: outcome.reason };
-  const loaded = runAbilityEvent(next, { trigger: "before-bullet-load", sourceEventId: pendingLoad.id, eventActor: outcome.penaltyTarget, roundOutcome: outcome }, { load: pendingLoad });
+  const pendingLoad: PendingLoad = { id: `load:${state.roundIndex}:${state.history.length}`, actor: finalOutcome.penaltyTarget, amount: finalOutcome.bulletsAdded, reason: finalOutcome.reason };
+  const loaded = runAbilityEvent(next, { trigger: "before-bullet-load", sourceEventId: pendingLoad.id, eventActor: finalOutcome.penaltyTarget, roundOutcome: finalOutcome }, { load: pendingLoad });
   const finalPending = loaded.pendingLoad ?? pendingLoad;
   const gun = addBullets(loaded.state.roulette[finalPending.actor], finalPending.amount);
   next = commitAbilityWorld(loaded.state, { ...abilityWorld(loaded.state), guns: { ...loaded.state.roulette, [finalPending.actor]: gun } });
-  next = append(next, { type: "ROUND_RESOLVED", outcome: { ...outcome, bulletsAdded: finalPending.amount } }, { type: "BULLET_ADDED", actor: finalPending.actor, amount: finalPending.amount });
-  const afterLoad = runAbilityEvent(next, { trigger: "after-bullet-load", sourceEventId: `after:${finalPending.id}`, eventActor: finalPending.actor, roundOutcome: outcome }, {}).state;
-  return withRound(afterLoad, { ...afterLoad.round, phase: "round-reveal", currentActor: null, outcome: { ...outcome, bulletsAdded: finalPending.amount } });
+  next = append(next, { type: "ROUND_RESOLVED", outcome: { ...finalOutcome, bulletsAdded: finalPending.amount } }, { type: "BULLET_ADDED", actor: finalPending.actor, amount: finalPending.amount });
+  const afterLoad = runAbilityEvent(next, { trigger: "after-bullet-load", sourceEventId: `after:${finalPending.id}`, eventActor: finalPending.actor, roundOutcome: finalOutcome }, {}).state;
+  return withRound(afterLoad, { ...afterLoad.round, phase: "round-reveal", currentActor: null, outcome: { ...finalOutcome, bulletsAdded: finalPending.amount } });
 }
 
 function resolveBust(state: MatchState, actor: Actor): MatchState { const winner: Actor = actor === "player" ? "opponent" : "player"; return resolveRound(state, { winner, reason: "bust", penaltyTarget: actor, bulletsAdded: 1 }); }
@@ -187,7 +216,7 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
 
 function standFor(state: MatchState, actor: Actor): MatchState {
   let next = append(withRound({ ...state, playerSkills: actor === "player" ? playerSkillState(state, { advice: null }) : state.playerSkills }, { ...state.round, [actor]: { ...state[actor], stood: true } } as RoundState), { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
-  next = runAbilityEvent(next, { trigger: "after-stand", sourceEventId: `stand:${state.roundIndex}:${state.history.length}`, eventActor: actor }, {}).state;
+  next = runAbilityEvent(next, { trigger: "after-stand", sourceEventId: `stand:${state.roundIndex}:${state.history.length}`, eventActor: actor, roundHitCounts: getRoundHitCounts(next) }, {}).state;
   next = expireOwnerActionLifecycle(next, actor);
   const other = actor === "player" ? "opponent" : "player";
   return next[other].stood ? resolveComparison(next) : setPhase(next, "turns", other);
@@ -267,14 +296,10 @@ function resolveInitialBlackjack(state: MatchState): MatchState {
     return resolveRound(next, { winner, reason: "blackjack", penaltyTarget: winner === "player" ? "opponent" : "player", bulletsAdded: 2 });
   }
   // Initial ability-created 21s are not natural Blackjack. Enter the normal
-  // turn pipeline so the shared normalization marks them stood and hands the
-  // turn to the other actor when the starter was already stood.
+  // turn pipeline; normalization still resolves ability-created busts, but an
+  // exact 21 remains playable until its owner explicitly chooses Stand.
   next = setPhase(next, "turns", state.round.starter);
-  next = normalizeAbilityHands(next);
-  if (next.round.phase !== "turns") return next;
-  return next[next.round.starter].stood
-    ? setPhase(next, "turns", next.round.starter === "player" ? "opponent" : "player")
-    : next;
+  return normalizeAbilityHands(next);
 }
 
 function triggerFor(state: MatchState, actor: Actor): MatchState {
@@ -306,7 +331,9 @@ export function normalizeAbilityHands(state: MatchState): MatchState {
         next = checked.state;
         const limit = checked.pendingBust?.limit ?? 21;
         if (handValue(next[actor].hand) <= limit && !next[actor].busted) {
-          next = withRound(next, { ...next.round, [actor]: { ...next[actor], bustLimit: limit } } as RoundState);
+          const stood = Boolean(checked.pendingBust?.standAfterReplacement);
+          next = withRound(next, { ...next.round, [actor]: { ...next[actor], bustLimit: limit, ...(stood ? { stood: true } : {}) } } as RoundState);
+          if (stood) next = append(next, { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
           continue;
         }
         next = withRound(next, { ...next.round, [actor]: { ...next[actor], bustLimit: limit } } as RoundState);
@@ -317,15 +344,25 @@ export function normalizeAbilityHands(state: MatchState): MatchState {
         next = withRound(next, { ...next.round, [actor]: { ...next[actor], busted: true, stood: true } } as RoundState);
         next = append(next, { type: "BUST", actor });
       }
-    } else if (!next[actor].stood && isTwentyOne(next[actor].hand)) {
-      next = withRound(next, { ...next.round, [actor]: { ...next[actor], stood: true } } as RoundState);
-      next = append(next, { type: actor === "player" ? "PLAYER_STOOD" : "OPPONENT_STOOD" });
     }
   }
   if (busts.length > 1) return resolveRound(next, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 });
   if (busts.length === 1) return resolveBust(next, busts[0]!);
   if (next.player.stood && next.opponent.stood) return resolveComparison(next);
   return next;
+}
+
+/** Resolves the limit that would apply to an actor's next bust check without
+ * committing ability events, counters, TTL or RNG changes to match state. */
+export function getActiveBustLimit(state: MatchState, actor: Actor): number {
+  const pendingBust: PendingBustCheck = { id: `bust-preview:${state.roundIndex}:${actor}`, actor, limit: 21 };
+  const preview = runAbilityEvent(state, {
+    trigger: "before-bust-check",
+    sourceEventId: pendingBust.id,
+    eventActor: actor,
+    roundHitCounts: getRoundHitCounts(state)
+  }, { bust: pendingBust });
+  return preview.pendingBust?.limit ?? 21;
 }
 
 function play(state: MatchState, instanceId: string): MatchState {

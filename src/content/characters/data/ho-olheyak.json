@@ -1,0 +1,72 @@
+{
+  "$schema": "../character.schema.json",
+  "assets": {
+    "relaxed": "/assets/characters/ho-olheyak-relaxed.png",
+    "conflicted": "/assets/characters/ho-olheyak-conflicted.png",
+    "mocking": "/assets/characters/ho-olheyak-mocking.png",
+    "threatened": "/assets/characters/ho-olheyak-threatened.png",
+    "staffRevolver": "/assets/characters/staff-revolver-7mm.png",
+    "unconscious": "/assets/characters/ho-olheyak-unconscious-reclined.png",
+    "defeatedSummary": "/assets/characters/ho-olheyak-defeated-summary-chair.png"
+  },
+  "profile": {
+    "description": "来自哥伦比亚的历史与文献学者，曾在漫长岁月里追索失落的血脉与旧日的天空。她接受策展人的邀请，换上为她准备的礼服，想在这场黑杰克轮盘赌里验证：被遗忘的传承是否仍能替人挡下一次注定的终局。"
+  },
+  "matchSummary": {
+    "playerVictory": "最后一声枪响后，霍尔海雅倚在椅背上，眼中的风暴终于归于寂静。她没能从牌堆里找回那双旧日的羽翼，却把最后的记忆留在了你的收藏中。",
+    "playerDefeat": "霍尔海雅将牌面整齐收拢，像是替某段传承合上书页：‘不错的牌局。现在，策展人，请把你的愿望交给我。’",
+    "escaped": "策展人离席时，霍尔海雅没有挽留，只抬眼看向空出的座位：‘连记忆都不肯留下吗？那么下一次，你还会记得自己来过。’"
+  },
+  "infoBar": {
+    "sourceAbilityId": "ho-olheyak-inheritance-terminal",
+    "label": "记忆牌",
+    "description": "显示霍尔海雅记住的策展人上一轮最后获得的一张牌；首轮尚未形成记忆时暂无。",
+    "value": { "type": "card", "source": "status-card", "statusDefinitionId": "ho-olheyak-memory-card" }
+  },
+  "trophyGallery": {
+    "headshot": "/assets/characters/ho-olheyak-trophy-gallery-headshot.png",
+    "fullBody": "/assets/characters/ho-olheyak-trophy-gallery-full-subject.png",
+    "poses": [
+      { "id": "left", "name": "左侧", "image": "/assets/characters/ho-olheyak-trophy-gallery-left-subject.png" },
+      { "id": "prone", "name": "俯卧", "image": "/assets/characters/ho-olheyak-trophy-gallery-prone-subject.png" },
+      { "id": "right", "name": "右侧", "image": "/assets/characters/ho-olheyak-trophy-gallery-right-subject.png" }
+    ],
+    "closeups": [
+      { "id": "face", "name": "沉静的面容", "x": 50, "y": 16, "image": "/assets/characters/ho-olheyak-trophy-detail-face.png", "description": "曾经望向天空的双眼安静地合上，角与耳的轮廓仍保留着她独有的翼族气质。" },
+      { "id": "chest-costume", "name": "礼服胸饰", "x": 50, "y": 31, "image": "/assets/characters/ho-olheyak-trophy-detail-chest-costume.png", "description": "礼服的胸前结构与金属饰件在陈列灯下清晰可见，记录下她为这场赌局换上的新装。" },
+      { "id": "upper-hem", "name": "裙摆纹样", "x": 50, "y": 55, "image": "/assets/characters/ho-olheyak-trophy-detail-upper-hem.png", "description": "深色裙摆与细密纹样收住了身体线条，像一页尚未读完的旧档案。" },
+      { "id": "shoes", "name": "鞋履", "x": 50, "y": 88, "image": "/assets/characters/ho-olheyak-trophy-detail-shoes.png", "description": "鞋履与陈列舱软垫保持整齐的收纳姿态，补全了这套礼服的足部记录。" }
+    ]
+  },
+  "revolverPlacement": { "top": 140, "left": 124, "mobileTop": 110, "mobileLeft": 112 },
+  "ai": { "P": 0, "A": 1, "B": 1, "C": 1 },
+  "aiSkills": [
+    { "definitionId": "ho-olheyak-inheritance-terminal", "enabled": true, "parameters": {} },
+    { "definitionId": "ho-olheyak-once-had-wings", "enabled": true, "parameters": {} }
+  ],
+  "dialogue": {
+    "MATCH_START": ["邀请函写着黑杰克与左轮，却没有写失去翅膀的人能否重新飞翔。很好，我接受。", "策展人，你想从我这里取走什么？若答案藏在牌堆里，我会亲自把它翻出来。"],
+    "PLAYER_HIT": ["还要一张？记住，命运最擅长把贪心伪装成求知。", "继续吧。每一次 Hit，都是你亲手把旧日推向终焉。"],
+    "PLAYER_STAND": ["停牌了吗？至少你知道什么时候让记忆停在最合适的一页。", "Stand。很好，剩下的答案交给我。"],
+    "OPPONENT_FIRST_HIT": ["发牌。我要看看这副牌是否还记得我。"],
+    "OPPONENT_FIRST_STAND": ["这一页先合上。你来决定下一页写什么。"],
+    "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": ["你已经停下，那我替我们继续追问。再来一张。"],
+    "PLAYER_BLACKJACK": ["漂亮的起手。看来今天先被命运记住的人是你。"],
+    "OPPONENT_BLACKJACK": ["二十一。传承有时不需要长篇解释，一张牌就够了。"],
+    "PLAYER_BUST": ["爆牌。求知若没有边界，最后留下的只会是空白。"],
+    "OPPONENT_BUST": ["爆牌了吗？也许这就是旧日给我的回答。"],
+    "PLAYER_SURVIVED_TRIGGER": ["空膛。命运暂时还不肯替我们落笔。"],
+    "OPPONENT_SURVIVED_TRIGGER": ["没响。看来这段传承还没有走到终点。"],
+    "PLAYER_TRIGGER_MISFIRED": ["哑火也是一种答案，只是它通常来得太迟。"],
+    "OPPONENT_TRIGGER_MISFIRED": ["枪没有响。记忆替我保留了这一页。"],
+    "PLAYER_WIN_ROUND": ["这一轮你赢了。请把子弹装好，别让仪式失去秩序。"],
+    "OPPONENT_WIN_ROUND": ["我赢了。失败的人总该为下一页付出一点代价。"],
+    "PUSH_ROUND": ["平局。两段记忆重叠时，命运也只能暂时沉默。"],
+    "PLAYER_TRIGGER_READY": ["扣下扳机吧。你比谁都清楚，等待不会改变答案。"],
+    "OPPONENT_TRIGGER_READY": ["轮到我了吗？很好，让我们看看枪膛还记不记得我。"],
+    "PLAYER_TRIGGER_HIT": ["枪响了。你的愿望，我会替你保管。"],
+    "OPPONENT_TRIGGER_HIT": ["……原来终焉是这样的声音。"],
+    "SPECIAL_TWENTY_ONE_PUSH": ["同为二十一。完美的平衡，也是最短暂的和平。"],
+    "SPECIAL_LOW_PUSH": ["如此低的平局。至少这一次，我们都还记得收手。"]
+  }
+}

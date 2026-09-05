@@ -1,9 +1,11 @@
 import type { SeededRng } from "../rng/seeded";
 import { addToPendingLoad, multiplyPendingLoad } from "./roulette-adapter";
 import { createDerivedCardForExactTotal, drawExactResultingTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
+import { createDerivedCard } from "../blackjack/card";
+import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
 import { getStatusDefinition, type AbilityRegistry } from "./registry";
 import { resolveActor, resolveScalar, type ConditionContext } from "./conditions";
-import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, Effect, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "./types";
+import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, Effect, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "./types";
 
 export interface EffectContext extends ConditionContext {
   readonly ruleId?: string;
@@ -17,12 +19,13 @@ export interface EffectContext extends ConditionContext {
 function withHands(world: AbilityWorld, actor: "player" | "opponent", hand: AbilityWorld["hands"]["player"]): AbilityWorld { return { ...world, hands: { ...world.hands, [actor]: hand } }; }
 function statusFor(world: AbilityWorld, actor: "player" | "opponent", id: string) { return world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === id); }
 
-export function applyEffect(effect: Effect, context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger } = {}): AbilityEffectResult {
+export function applyEffect(effect: Effect, context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
   let world = context.world;
   let draw = pending.draw;
   let load = pending.load;
   let bust = pending.bust;
   let trigger = pending.trigger;
+  let comparison = pending.comparison;
   let runtime = context.runtime;
   const events: AbilityDomainEvent[] = [];
   const actor = resolveActor(effect.target, context);
@@ -79,6 +82,33 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       events.push({ type: "STATUS_ADDED", statusDefinitionId: effect.statusDefinitionId, owner: actor, sourceInstanceId: context.ability.instanceId });
       break;
     }
+    case "set-status-stacks": {
+      const definition = context.registry?.statusesById[effect.statusDefinitionId] ?? getStatusDefinition(effect.statusDefinitionId);
+      if (!definition) throw new Error(`Unknown status definition: ${effect.statusDefinitionId}`);
+      const existing = statusFor(world, actor, effect.statusDefinitionId);
+      const stacks = Math.max(0, Math.floor(resolveScalar(effect.amount, context)));
+      if (stacks === 0) {
+        if (existing) {
+          world = { ...world, statuses: world.statuses.filter((entry) => entry !== existing) };
+          runtime = { ...runtime, statuses: world.statuses };
+          events.push({ type: "STATUS_REMOVED", statusDefinitionId: effect.statusDefinitionId, owner: actor, reason: "consumed" });
+        }
+        break;
+      }
+      const status = {
+        statusDefinitionId: effect.statusDefinitionId,
+        owner: actor,
+        sourceInstanceId: context.ability.instanceId,
+        stacks,
+        duration: definition.defaultDuration,
+        parameters: existing?.parameters ?? {},
+        createdAtSequence: existing?.createdAtSequence ?? runtime.sequence + 1
+      };
+      world = { ...world, statuses: [...world.statuses.filter((entry) => entry !== existing), status] };
+      runtime = { ...runtime, statuses: world.statuses, sequence: existing ? runtime.sequence : runtime.sequence + 1 };
+      events.push({ type: "STATUS_ADDED", statusDefinitionId: effect.statusDefinitionId, owner: actor, sourceInstanceId: context.ability.instanceId });
+      break;
+    }
     case "remove-status": {
       const existing = statusFor(world, actor, effect.statusDefinitionId);
       if (!existing) break;
@@ -100,6 +130,41 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       }
       draw = { ...draw, replacement: result.card };
       world = { ...world, shoe: result.shoe };
+      changed(effect.type);
+      break;
+    }
+    case "remember-last-card": {
+      const cardActor = resolveActor(effect.cardTarget, context);
+      const card = cardActor ? world.hands[cardActor].cards.at(-1) : undefined;
+      if (!card) throw new Error("Cannot remember a card from an empty hand");
+      const definition = context.registry?.statusesById[effect.statusDefinitionId] ?? getStatusDefinition(effect.statusDefinitionId);
+      if (!definition) throw new Error(`Unknown status definition: ${effect.statusDefinitionId}`);
+      const existing = statusFor(world, actor, effect.statusDefinitionId);
+      const status = {
+        statusDefinitionId: effect.statusDefinitionId,
+        owner: actor,
+        sourceInstanceId: existing?.sourceInstanceId ?? context.ability.instanceId,
+        stacks: 1,
+        duration: definition.defaultDuration,
+        parameters: { rank: card.rank, suit: card.suit, origin: card.origin },
+        createdAtSequence: existing?.createdAtSequence ?? runtime.sequence + 1
+      } as const;
+      world = { ...world, statuses: [...world.statuses.filter((entry) => entry !== existing), status] };
+      runtime = { ...runtime, statuses: world.statuses, sequence: existing ? runtime.sequence : runtime.sequence + 1 };
+      events.push({ type: "STATUS_ADDED", statusDefinitionId: effect.statusDefinitionId, owner: actor, sourceInstanceId: status.sourceInstanceId });
+      break;
+    }
+    case "replace-bust-hand-card-with-memory-card": {
+      if (!bust) throw new Error("replace-bust-hand-card-with-memory-card outside bust check event");
+      if (bust.actor !== actor) throw new Error("Pending bust actor does not match effect target");
+      const memory = world.statuses.find((entry) => entry.owner === actor && entry.statusDefinitionId === effect.statusDefinitionId && entry.stacks > 0);
+      const rank = memory?.parameters.rank;
+      const suit = memory?.parameters.suit;
+      const hand = world.hands[actor];
+      if (!memory || typeof rank !== "string" || typeof suit !== "string" || !RANKS.includes(rank as Rank) || !SUITS.includes(suit as Suit) || hand.cards.length === 0) throw new Error("Memory card is unavailable");
+      const replacement = createDerivedCard(suit as Suit, rank as Rank);
+      world = withHands(world, actor, { cards: [...hand.cards.slice(0, -1), replacement] });
+      bust = { ...bust, standAfterReplacement: true };
       changed(effect.type);
       break;
     }
@@ -138,6 +203,13 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       changed(effect.type);
       break;
     }
+    case "add-to-pending-comparison-score": {
+      if (!comparison) throw new Error("add-to-pending-comparison-score outside comparison resolution");
+      const score = resolveScalar(effect.amount, context);
+      comparison = { ...comparison, scores: { ...comparison.scores, [actor]: comparison.scores[actor] + score } };
+      changed(effect.type);
+      break;
+    }
     case "cancel-pending-trigger": {
       if (!trigger) throw new Error("cancel-pending-trigger outside trigger event");
       if (trigger.actor !== actor) throw new Error("Pending trigger actor does not match effect target");
@@ -148,14 +220,14 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       break;
     }
   }
-  return { world, pendingDraw: draw, pendingLoad: load, pendingBust: bust, pendingTrigger: trigger, runtime, events };
+  return { world, pendingDraw: draw, pendingLoad: load, pendingBust: bust, pendingTrigger: trigger, pendingComparison: comparison, runtime, events };
 }
 
-export function applyEffects(effects: readonly Effect[], context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger } = {}): AbilityEffectResult {
-  let result: AbilityEffectResult = { world: context.world, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, runtime: context.runtime, events: [] };
+export function applyEffects(effects: readonly Effect[], context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
+  let result: AbilityEffectResult = { world: context.world, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, runtime: context.runtime, events: [] };
   for (const effect of effects) {
-    const next = applyEffect(effect, { ...context, world: result.world, runtime: result.runtime }, { draw: result.pendingDraw, load: result.pendingLoad, bust: result.pendingBust, trigger: result.pendingTrigger });
-    result = { world: next.world, pendingDraw: next.pendingDraw, pendingLoad: next.pendingLoad, pendingBust: next.pendingBust, pendingTrigger: next.pendingTrigger, runtime: next.runtime, events: [...result.events, ...next.events] };
+    const next = applyEffect(effect, { ...context, world: result.world, runtime: result.runtime }, { draw: result.pendingDraw, load: result.pendingLoad, bust: result.pendingBust, trigger: result.pendingTrigger, comparison: result.pendingComparison });
+    result = { world: next.world, pendingDraw: next.pendingDraw, pendingLoad: next.pendingLoad, pendingBust: next.pendingBust, pendingTrigger: next.pendingTrigger, pendingComparison: next.pendingComparison, runtime: next.runtime, events: [...result.events, ...next.events] };
   }
   return result;
 }

@@ -1,0 +1,31 @@
+{
+  "id": "ho-olheyak-inheritance-terminal",
+  "name": "传承终焉",
+  "description": "记住策展人上一轮最后获得的牌。当霍尔海雅 Hit 后本应爆牌时，用记忆牌替换本次抽牌；若替换后不爆牌，立即 Stand。",
+  "triggerNotice": "以记忆牌替换本次抽牌；若未爆牌，立即 Stand。",
+  "profileLore": "她把上一轮的最后一张牌收进羽翼的阴影，等到命运再次把她推向死线时，才让那段已经结束的结果重新落回桌面。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "blackjack",
+  "activation": { "type": "automatic" },
+  "rules": [
+    {
+      "id": "remember-curator-last-card",
+      "trigger": "on-round-end",
+      "notify": false,
+      "conditions": [{ "type": "hand-card-count", "target": "rival", "operator": "gt", "value": 0 }],
+      "effects": [{ "type": "remember-last-card", "target": "owner", "cardTarget": "rival", "statusDefinitionId": "ho-olheyak-memory-card" }]
+    },
+    {
+      "id": "replace-busting-draw",
+      "trigger": "before-bust-check",
+      "priority": 100,
+      "conditions": [
+        { "type": "actor-is", "actor": "owner" },
+        { "type": "pending-bust-would-bust", "target": "owner" },
+        { "type": "status-present", "target": "owner", "statusDefinitionId": "ho-olheyak-memory-card" }
+      ],
+      "effects": [{ "type": "replace-bust-hand-card-with-memory-card", "target": "owner", "statusDefinitionId": "ho-olheyak-memory-card" }]
+    }
+  ],
+  "tags": ["blackjack", "draw-replacement", "memory-card", "ai-skill"]
+}
