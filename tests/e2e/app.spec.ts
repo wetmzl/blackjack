@@ -1494,7 +1494,7 @@ test("战利品陈列室只显示首次击败藏品，并可进入和清理独�
   await expect(gallery).toBeVisible();
   await expect(gallery.locator(".trophy-gallery-background")).toHaveAttribute("src", /trophy-gallery-coffin\.png/);
   await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", /nian-trophy-gallery-full-subject\.png/);
-  await expect(gallery.locator(".trophy-hotspot")).toHaveCount(4);
+  await expect(gallery.locator(".trophy-hotspot")).toHaveCount(5);
   await expect(gallery.locator(".trophy-gallery-stage figcaption")).toHaveText("正面 · 左右滑动或点按箭头翻转 · 点按圆环查看特写");
   const dossier = gallery.locator("#trophy-dossier-panel");
   const dossierToggle = gallery.locator("[data-dossier-toggle]");
@@ -1672,7 +1672,7 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
     { id: "gallery-texas", slug: "texas", name: "德克萨斯", tier: "A", closeupCount: 2, closeupId: "boots", closeupName: "制服短靴", closeupAsset: "texas-trophy-detail-boots.png" },
     { id: "gallery-irene", slug: "irene", name: "艾丽妮", tier: "A", closeupCount: 4, closeupId: "hand", closeupName: "松开的手", closeupAsset: "irene-trophy-detail-hand.png" },
-    { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 4, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
+    { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 5, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
     { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" },
     { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet", closeupName: "长靴与短袜", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png" }
   ] as const;

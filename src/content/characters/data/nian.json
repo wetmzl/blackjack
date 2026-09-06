@@ -54,6 +54,14 @@
     ],
     "closeups": [
       {
+        "id": "face",
+        "name": "半睁的脸",
+        "x": 50,
+        "y": 17,
+        "image": "/assets/characters/nian-trophy-detail-face.png",
+        "description": "一只眼睛仍半睁着，银白头发、赤色龙角与尖耳在软垫灯光下清晰可辨；遗体没有再回应你的观察。"
+      },
+      {
         "id": "hand",
         "name": "松开的手",
         "x": 31,

@@ -212,6 +212,7 @@ describe("data-driven character registry", () => {
         { id: "right", name: "右侧", image: "/assets/characters/nian-trophy-gallery-right-subject.png" }
       ],
       closeups: [
+        expect.objectContaining({ id: "face", name: "半睁的脸", x: 50, y: 17, image: "/assets/characters/nian-trophy-detail-face.png" }),
         expect.objectContaining({ id: "hand", name: "松开的手", x: 31, y: 44, image: "/assets/characters/nian-trophy-detail-hand.png" }),
         expect.objectContaining({ id: "tail-root", name: "龙尾根部", x: 65, y: 47, image: "/assets/characters/nian-trophy-detail-tail-root.png" }),
         expect.objectContaining({ id: "feet-overhead", name: "足部·俯视", x: 43, y: 86, image: "/assets/characters/nian-trophy-detail-feet-overhead.png" }),
@@ -414,7 +415,7 @@ describe("data-driven character registry", () => {
   it("supports any number of bounded, uniquely identified trophy closeups and per-point variants", () => {
     const gallery = nianData.trophyGallery;
     const overhead = gallery.closeups.find((point) => point.id === "feet-overhead");
-    expect(gallery.closeups).toHaveLength(4);
+    expect(gallery.closeups).toHaveLength(5);
     expect(overhead?.variants).toEqual([{
       image: "/assets/characters/nian-trophy-detail-feet-overhead-p1.png",
       description: expect.stringContaining("白色高跟鞋已被移开")
