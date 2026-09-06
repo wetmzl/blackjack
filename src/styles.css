@@ -389,6 +389,7 @@ h2 { font-size: 1.5rem; }
 .ability-notice { flex: 0 0 auto; border: 1px solid; border-radius: 12px; background: #0d1724ed; padding: 10px 13px; text-align: center; font-size: .78rem; line-height: 1.4; box-shadow: 0 12px 35px #02060dcc; animation: ability-notice-enter .2s ease both; }
 .ability-notice-player { border-color: #c69d62; background: #30291deb; color: #f2c46b; }
 .ability-notice-ai { border-color: #65d6e3aa; background: #112b39eb; color: #a6edf0; }
+.ability-notice-notification { border-color: #dc6f6fcc; background: #381b21f2; color: #ffc0bd; }
 .ability-notice.leaving { animation: ability-notice-leave .28s ease forwards; }
 .skill-draw-backdrop { position: fixed; z-index: 180; inset: 0; display: grid; place-items: center; background: #0000003d; padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
 .skill-draw-backdrop.is-entering { animation: skill-draw-backdrop-in .24s ease-out both; }

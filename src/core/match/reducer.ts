@@ -95,13 +95,14 @@ export function getRoundHitCounts(state: MatchState): Readonly<Record<Actor, num
 export interface PendingTriggerPreview {
   readonly actor: Actor;
   readonly misfireChance: number;
+  readonly cancelled: boolean;
   readonly events: readonly GameEvent[];
 }
 
 /** Resolves the pending trigger against a discarded copy so the waiting UI can
  * present deterministic modifiers without consuming TTL, counters or RNG. */
 export function previewPendingTrigger(state: MatchState): PendingTriggerPreview | null {
-  if (state.round.phase !== "roulette-reaction" && state.round.phase !== "roulette-trigger") return null;
+  if (state.round.phase !== "round-reveal" && state.round.phase !== "roulette-reaction" && state.round.phase !== "roulette-trigger") return null;
   const actor = state.round.outcome?.penaltyTarget;
   if (!actor) return null;
   const pending: PendingTrigger = { id: `trigger-preview:${state.roundIndex}:${state.history.length}`, actor };
@@ -116,6 +117,7 @@ export function previewPendingTrigger(state: MatchState): PendingTriggerPreview 
   return {
     actor,
     misfireChance: prepared.pendingTrigger?.misfireChance ?? 0,
+    cancelled: prepared.pendingTrigger?.cancelled ?? false,
     events: prepared.state.history.slice(historyLength)
   };
 }

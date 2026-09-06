@@ -1,14 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TABLE_BGM_URL } from "../resources/cache-policy";
+import { LOBBY_BGM_URL, TABLE_BGM_URL } from "../resources/cache-policy";
 import { GameAudio, SOUND_SOURCES } from "./game-audio";
 
 class RecordingAudioElement {
   static readonly instances: RecordingAudioElement[] = [];
   readonly load = vi.fn();
+  readonly play = vi.fn(async () => { this.paused = false; });
+  readonly pause = vi.fn(() => { this.paused = true; });
   readonly src: string;
   loop = false;
   preload = "";
   volume = 1;
+  paused = true;
+  currentTime = 0;
 
   constructor(src: string) {
     this.src = src;
@@ -18,11 +22,13 @@ class RecordingAudioElement {
 
 afterEach(() => {
   RecordingAudioElement.instances.length = 0;
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 describe("staged game audio loading", () => {
-  it("loads only BGM metadata in the lobby without fetching table cues", () => {
+  it("loads lobby music first, then preloads table music in the initial stage", () => {
+    vi.useFakeTimers();
     const requestFetch = vi.fn();
     vi.stubGlobal("fetch", requestFetch);
     vi.stubGlobal("Audio", RecordingAudioElement);
@@ -32,16 +38,27 @@ describe("staged game audio loading", () => {
     expect(requestFetch).not.toHaveBeenCalled();
     expect(RecordingAudioElement.instances).toHaveLength(1);
     expect(RecordingAudioElement.instances[0]).toMatchObject({
-      src: TABLE_BGM_URL,
-      preload: "metadata",
+      src: LOBBY_BGM_URL,
+      preload: "auto",
       loop: true
     });
     expect(RecordingAudioElement.instances[0]?.load).toHaveBeenCalledOnce();
+
+    vi.runOnlyPendingTimers();
+
+    expect(RecordingAudioElement.instances).toHaveLength(2);
+    expect(RecordingAudioElement.instances[1]).toMatchObject({
+      src: TABLE_BGM_URL,
+      preload: "auto",
+      loop: true
+    });
+    expect(RecordingAudioElement.instances[1]?.load).toHaveBeenCalledOnce();
   });
 
   it("defers short sound fetches until the match stage", async () => {
     const requestFetch = vi.fn(async (_input: RequestInfo | URL) => new Response("sound", { status: 200 }));
     vi.stubGlobal("fetch", requestFetch);
+    vi.stubGlobal("Audio", RecordingAudioElement);
 
     new GameAudio().preloadMatch();
 
@@ -49,6 +66,8 @@ describe("staged game audio loading", () => {
     const soundUrls = new Set<string>(Object.values(SOUND_SOURCES));
     expect(requestFetch.mock.calls.every(([url]) => soundUrls.has(String(url)))).toBe(true);
     expect(requestFetch.mock.calls.some(([url]) => String(url) === TABLE_BGM_URL)).toBe(false);
+    expect(RecordingAudioElement.instances).toHaveLength(1);
+    expect(RecordingAudioElement.instances[0]).toMatchObject({ src: TABLE_BGM_URL, preload: "auto" });
   });
 
   it("does not preload audio while sound is disabled", () => {
@@ -63,5 +82,42 @@ describe("staged game audio loading", () => {
 
     expect(RecordingAudioElement.instances).toHaveLength(0);
     expect(requestFetch).not.toHaveBeenCalled();
+  });
+
+  it("crossfades between lobby and match music", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("Audio", RecordingAudioElement);
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("document", { hidden: false });
+    const audio = new GameAudio();
+
+    audio.unlock();
+    await vi.runAllTimersAsync();
+    const lobby = RecordingAudioElement.instances.find((candidate) => candidate.src === LOBBY_BGM_URL)!;
+    expect(lobby.paused).toBe(false);
+    expect(lobby.volume).toBeCloseTo(0.18);
+
+    audio.setBgmScene("match");
+    await vi.advanceTimersByTimeAsync(400);
+    const match = RecordingAudioElement.instances.find((candidate) => candidate.src === TABLE_BGM_URL)!;
+    expect(lobby.paused).toBe(false);
+    expect(lobby.volume).toBeGreaterThan(0);
+    expect(lobby.volume).toBeLessThan(0.18);
+    expect(match.paused).toBe(false);
+    expect(match.volume).toBeGreaterThan(0);
+    expect(match.volume).toBeLessThan(0.18);
+
+    await vi.runAllTimersAsync();
+    expect(lobby.paused).toBe(true);
+    expect(lobby.volume).toBe(0);
+    expect(match.paused).toBe(false);
+    expect(match.volume).toBeCloseTo(0.18);
+
+    audio.setBgmScene("lobby");
+    await vi.runAllTimersAsync();
+    expect(match.paused).toBe(true);
+    expect(match.volume).toBe(0);
+    expect(lobby.paused).toBe(false);
+    expect(lobby.volume).toBeCloseTo(0.18);
   });
 });

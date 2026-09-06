@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { abilityTriggerNotice, pendingTriggerAbilityNotices } from "./ability-notices";
+import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices } from "./ability-notices";
 import type { GameEvent, MatchState } from "../core/match/types";
 import type { PendingTriggerPreview } from "../core/match/reducer";
 
@@ -34,7 +34,7 @@ describe("ability trigger notices", () => {
   it("announces the final misfire chance during the pending trigger window", () => {
     const ability: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "skill", definitionId: "sword-and-handcannon", ruleId: "misfire-after-rival-hits", owner: "player" };
     const trigger: GameEvent = { type: "TRIGGER_PULLED", actor: "player", probability: 0.2, baseProbability: 0.2, misfireChance: 0.99, result: "misfire", fired: false };
-    const preview: PendingTriggerPreview = { actor: "player", misfireChance: 0.99, events: [ability] };
+    const preview: PendingTriggerPreview = { actor: "player", misfireChance: 0.99, cancelled: false, events: [ability] };
     expect(pendingTriggerAbilityNotices(preview, "德克萨斯")[0]?.text).toBe("策展人发动「剑与手炮」：本轮哑火概率为99%");
     expect(abilityTriggerNotice([ability, trigger], "德克萨斯")).toEqual([]);
   });
@@ -70,5 +70,14 @@ describe("ability trigger notices", () => {
     expect(abilityTriggerNotice([reached], "拉普兰德")[0]?.text).toContain("策展人达到狂欢指标");
     expect(abilityTriggerNotice([missed], "拉普兰德")[0]?.text).toContain("策展人未达到狂欢指标");
     expect(abilityTriggerNotice([updated], "拉普兰德")[0]?.text).toContain("狂欢指标已替换");
+  });
+
+  it("routes depleted skills to the independent notice stack", () => {
+    const event: GameEvent = { type: "ABILITY_EXPIRED", instanceId: "sword", definitionId: "sword-and-handcannon", owner: "player", reason: "triggers" };
+    expect(abilityExpiredNotices([event])).toEqual([{
+      owner: "system",
+      tone: "notification",
+      text: "剑与手炮的效果已耗尽"
+    }]);
   });
 });

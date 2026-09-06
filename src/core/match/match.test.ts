@@ -780,6 +780,7 @@ describe("skills", () => {
     const state = { ...withHands(base, [card("10"), card("7")], [card("10"), card("8")]), playerSkills: { ...base.playerSkills, cards: [skillCard("rhodes-heartthrob")] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skillCard("rhodes-heartthrob"), createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 } };
     const armed = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-rhodes-heartthrob" });
     const reveal = gameReducer(gameReducer(armed, { type: "PLAYER_STAND" }), { type: "AI_STAND" });
+    expect(previewPendingTrigger(reveal)?.cancelled).toBe(true);
     const reaction = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
     const next = gameReducer(reaction, { type: "TRIGGER_ROULETTE" });
     expect(next.history.some((event) => event.type === "PENDING_EVENT_CANCELLED")).toBe(true);

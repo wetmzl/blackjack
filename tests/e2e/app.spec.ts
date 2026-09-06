@@ -1389,8 +1389,14 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
   await page.locator(".skill-drawer-toggle").click();
   const blockedSkill = page.locator(".skill-card[data-skill-id='hunter-instinct']");
   await expect(blockedSkill).toHaveAttribute("aria-disabled", "true");
+  const notifications = page.locator("#ability-notices .ability-notice-notification");
   await blockedSkill.click({ force: true });
-  await expect(page.locator("#presentation")).toContainText("技能被禁用");
+  await expect(notifications).toHaveCount(1);
+  expect(await notifications.first().evaluate((element) => getComputedStyle(element).color)).toBe("rgb(255, 192, 189)");
+  for (let index = 1; index < 7; index += 1) await blockedSkill.click({ force: true });
+  await expect(notifications).toHaveCount(5);
+  await expect(notifications).toHaveText(["技能被禁用", "技能被禁用", "技能被禁用", "技能被禁用", "技能被禁用"]);
+  await expect(page.locator("#presentation")).not.toContainText("技能被禁用");
 
   await page.getByRole("button", { name: "Hit 要牌" }).click();
   await expect(blockedSkill).not.toHaveAttribute("aria-disabled", "true");
@@ -1414,6 +1420,12 @@ test("牌桌全屏按钮安全切换并同步状态", async ({ page }) => {
   await expect(fullscreen).toHaveAttribute("aria-label", "退出全屏");
   await fullscreen.click();
   await expect(fullscreen).toHaveAttribute("aria-label", "进入全屏");
+  await page.evaluate(() => {
+    Object.defineProperty(Element.prototype, "requestFullscreen", { configurable: true, value: async () => { throw new Error("denied"); } });
+  });
+  await fullscreen.click();
+  await expect(page.locator("#ability-notices .ability-notice-notification")).toContainText("全屏请求未获允许。");
+  await expect(page.locator("#presentation")).not.toContainText("全屏请求未获允许。");
 });
 
 test("玩家 Blackjack 只使用 Blackjack 对话池", async ({ page }) => {
@@ -1787,7 +1799,7 @@ test("完整自动对局经过开牌与扣扳机结果停顿并回到大厅", as
     if (phase === "round-reveal") {
       sawReveal = true;
       await expect(page.locator(".round-notice")).toBeVisible();
-      await expect(page.locator(".round-notice")).toContainText(/本轮|平局|获胜|爆牌|黑杰克/);
+      await expect(page.locator(".round-notice")).toContainText(/本轮|平局|胜利|爆牌|黑杰克/);
       const isPush = (await page.locator(".round-notice").textContent())?.includes("平局") ?? false;
       const ack = page.locator("button[data-action*='ACK_ROUND_RESULT']:not([disabled])");
       if (await ack.count()) {

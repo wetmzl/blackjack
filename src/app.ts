@@ -22,8 +22,9 @@ import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
 import { SaveValidationError, type CharacterDefeatRecord, type LongTermSave } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
-import { abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
+import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
 import { presentMatchHaptics } from "./presentation/haptics";
+import { roundResultText, triggerResultText } from "./presentation/round-notice";
 import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
 import { downloadResourcePack, ResourcePackDownloadError, type ResourcePackProgress } from "./resources/resource-pack";
@@ -54,6 +55,7 @@ let skillDrawerOpen = false;
 const abilityNoticeTimers = new Map<HTMLElement, { readonly expire: number; readonly remove: number }>();
 const ABILITY_NOTICE_TTL_MS = 2500;
 const ABILITY_NOTICE_LEAVE_MS = 280;
+const MAX_ABILITY_NOTICES = 5;
 let fullscreenChangeAttached = false;
 let abilityNoticePositionAttached = false;
 type LobbyLayer = "menu" | "characters";
@@ -201,7 +203,15 @@ function enqueueAbilityNotices(notices: readonly AbilityNotice[]): void {
     container.prepend(node);
     const expire = window.setTimeout(() => expireAbilityNotice(node), ABILITY_NOTICE_TTL_MS);
     abilityNoticeTimers.set(node, { expire, remove: 0 });
+    while (container.childElementCount > MAX_ABILITY_NOTICES) {
+      const oldest = container.lastElementChild;
+      if (oldest instanceof HTMLElement) removeAbilityNotice(oldest);
+      else break;
+    }
   }
+}
+function enqueueNotification(text: string): void {
+  enqueueAbilityNotices([{ owner: "system", tone: "notification", text }]);
 }
 function clearAbilityNoticeQueue(): void {
   for (const node of [...abilityNoticeTimers.keys()]) removeAbilityNotice(node);
@@ -227,9 +237,9 @@ function attachFullscreenListener(): void {
   attachAbilityNoticePositionListener();
 }
 function toggleFullscreen(): void {
-  if (document.fullscreenElement) { void document.exitFullscreen().catch(() => present("无法退出全屏。")); return; }
-  if (!document.documentElement.requestFullscreen) { present("当前环境不支持全屏。"); return; }
-  void document.documentElement.requestFullscreen().catch(() => present("全屏请求未获允许。"));
+  if (document.fullscreenElement) { void document.exitFullscreen().catch(() => enqueueNotification("无法退出全屏。")); return; }
+  if (!document.documentElement.requestFullscreen) { enqueueNotification("当前环境不支持全屏。"); return; }
+  void document.documentElement.requestFullscreen().catch(() => enqueueNotification("全屏请求未获允许。"));
 }
 const PHASE_LABELS: Readonly<Record<MatchState["round"]["phase"], string>> = {
   dealing: "发牌中", "initial-blackjack-check": "检查黑杰克", turns: "行动阶段", settlement: "结算中",
@@ -258,18 +268,6 @@ const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
 function decisionLabel(action: "hit" | "stand" | undefined): string { return action === "hit" ? "Hit 要牌" : action === "stand" ? "Stand 停牌" : "—"; }
 function displayedHandValue(state: MatchState, actor: Actor): number {
   return state.round.outcome?.comparisonScores?.[actor] ?? handValue(state[actor].hand);
-}
-function roundResultText(state: MatchState, opponentName: string): string {
-  const outcome = state.round.outcome;
-  if (!outcome) return "本轮结果待揭晓。";
-  const player = displayedHandValue(state, "player");
-  const opponent = displayedHandValue(state, "opponent");
-  const scores = `策展人 ${player}｜${opponentName} ${opponent}`;
-  if (!outcome.winner) return `本轮平局｜${scores}｜双方都没有获得惩罚。`;
-  const winner = outcome.winner === "player" ? "你获胜" : `${opponentName} 获胜`;
-  const reason = outcome.reason === "blackjack" ? "黑杰克" : outcome.reason === "bust" ? `${outcome.penaltyTarget === "player" ? "策展人" : opponentName} 爆牌` : "点数比较";
-  const bullets = outcome.bulletsAdded > 0 ? `｜为${outcome.penaltyTarget === "player" ? "策展人" : opponentName}装填 ${outcome.bulletsAdded} 发` : "";
-  return `${winner}｜${scores}｜${reason}${bullets}。`;
 }
 function legal(state: MatchState, action: Action): boolean { return getLegalActions(state).some((candidate) => JSON.stringify(candidate) === JSON.stringify(action)); }
 function actionButton(label: string, action: Action, state: MatchState, className = "secondary-button"): string { const enabled = legal(state, action); return `<button class="${className}" data-action='${JSON.stringify(action)}' ${enabled ? "" : "disabled"}>${label}</button>`; }
@@ -406,23 +404,13 @@ function presentDelta(before: MatchState, after: MatchState): void {
   const abilityNotices = after.scene === "match" && after.view === "table"
     ? [
         ...abilityTriggerNotice(events, currentCharacter.name, after),
-        ...(triggerPreview ? pendingTriggerAbilityNotices(triggerPreview, currentCharacter.name) : [])
+        ...(triggerPreview ? pendingTriggerAbilityNotices(triggerPreview, currentCharacter.name) : []),
+        ...abilityExpiredNotices(events)
       ]
     : [];
   if (abilityNotices.length > 0) enqueueAbilityNotices(abilityNotices);
   const trigger = events.find((candidate) => candidate.type === "TRIGGER_PULLED");
-  const expired = events.find((candidate) => candidate.type === "ABILITY_EXPIRED");
-  const event = (abilityNotices.length === 0 ? events.find((candidate) => candidate.type === "PENDING_EVENT_CANCELLED") : undefined) ?? trigger ?? events.find((candidate) => candidate.type === "BUST") ?? events.find((candidate) => candidate.type === "BLACKJACK") ?? events.find((candidate) => candidate.type === "BULLET_ADDED") ?? events.find((candidate) => candidate.type === "TRIGGER_SURVIVED") ?? expired;
-  if (event) {
-    if (event.type === "BUST") present(`${event.actor === "player" ? "策展人" : currentCharacter.name} 爆牌`, "danger");
-    else if (event.type === "BLACKJACK") present("黑杰克", "gold");
-    else if (event.type === "BULLET_ADDED") present(`已装填 ${event.amount} 发子弹`, "danger");
-    else if (event.type === "TRIGGER_PULLED") present(event.result === "fired" ? "砰！" : event.result === "misfire" ? "哑火——击锤落下，子弹却没有击发" : "咔哒……空膛", event.fired ? "danger" : "gold");
-    else if (event.type === "TRIGGER_SURVIVED") present("空枪，暂时活下来了", "gold");
-    else if (event.type === "ABILITY_EXPIRED") present(`${getAbilityDefinition(event.definitionId)?.name ?? "被动技能"}的效果已耗尽`, "gold");
-    else if (event.type === "PENDING_EVENT_CANCELLED") present("本次免于扣扳机", "gold");
-    return;
-  }
+  if (trigger) present(triggerResultText(trigger), trigger.fired ? "danger" : "gold");
 }
 function wireActions(container: ParentNode, handler: (action: Action) => void): void { container.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => element.addEventListener("click", () => handler(JSON.parse(element.dataset.action ?? "{}") as Action))); }
 function requestDispatch(action: Action): void { dispatch(action); }
@@ -603,6 +591,7 @@ function wireDefeatedGuestLoader(): void {
 function renderLobby(layer: LobbyLayer = "menu"): void {
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer);
   gameAudio.stopHeartbeat();
+  gameAudio.setBgmScene("lobby");
   clearAbilityNoticeQueue();
   detachFullscreenListener();
   lastDialogueKey = null;
@@ -677,6 +666,7 @@ function trophyCardMarkup(record: CharacterDefeatRecord): string {
 
 function renderTrophyRoom(): void {
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer); autosave = null;
+  gameAudio.setBgmScene("lobby");
   const records = [...save.defeats].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
   const cards = records.map(trophyCardMarkup).join("");
   root.innerHTML = `<main class="trophy-shell"><header class="topbar"><button class="icon-button" data-trophy-back aria-label="返回大厅">←</button><span class="eyebrow">独特藏品</span><button type="button" class="history-shortcut" data-open-history><span>查看历史记录</span><small>${save.history.length}</small></button></header><section class="trophy-heading"><p class="kicker">策展人的收藏时间线</p><h1>战利品<br><em>陈列室</em></h1><p>每名被首次击败的与会者只留下一个独特藏品；再次对局不会改变收藏时间。</p></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有战利品</h2><p>首次击败一名与会者后，藏品会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
@@ -914,6 +904,7 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
   skillDrawerOpen = false;
   clearAbilityNoticeQueue();
   detachFullscreenListener();
+  gameAudio.setBgmScene("match");
   gameAudio.unlock();
   gameAudio.preloadMatch();
   gameAudio.play("shuffle");
@@ -967,6 +958,7 @@ async function prepareMatchResources(character: CharacterDefinition, state: Matc
 }
 async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinition): Promise<void> {
   clearAiSchedule();
+  gameAudio.setBgmScene("match");
   currentCharacter = loadedCharacter ?? await loadCharacter(match.opponentId);
   gameAudio.preloadMatch();
   await prepareMatchResources(currentCharacter, match);
@@ -976,7 +968,9 @@ async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinit
   if (state.view === "match-summary") renderSummary(state);
   else {
     renderMatch(state);
-    const triggerPreview = previewPendingTrigger(state);
+    const triggerPreview = state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger"
+      ? previewPendingTrigger(state)
+      : null;
     if (triggerPreview) enqueueAbilityNotices(pendingTriggerAbilityNotices(triggerPreview, currentCharacter.name));
     syncMatchAudioState(gameAudio, state);
     scheduleAiTurn(state);
@@ -1031,7 +1025,8 @@ function renderMatch(state: MatchState): void {
   const dialogueMarkup = shouldType ? "" : escapeHtml(dialogue);
   const staffProp = state.round.phase === "roulette-trigger" && state.round.outcome?.penaltyTarget === "opponent"
     ? `<img class="trigger-prop" style="--revolver-top:${character.revolverPlacement.top}px;--revolver-left:${character.revolverPlacement.left}px;--revolver-mobile-top:${character.revolverPlacement.mobileTop}px;--revolver-mobile-left:${character.revolverPlacement.mobileLeft}px" src="${character.assets.staffRevolver}" alt="工作人员用 7mm 左轮对准 ${character.name} 的太阳穴" />` : "";
-  const notice = state.round.phase === "round-reveal" ? roundResultText(state, character.name) : "";
+  const penaltyPreview = state.round.phase === "round-reveal" ? previewPendingTrigger(state) : null;
+  const notice = state.round.phase === "round-reveal" ? roundResultText(state, character.name, penaltyPreview?.cancelled ?? false) : "";
   const bustLimitActor = state.round.currentActor ?? "player";
   const bustLimit = getActiveBustLimit(state, bustLimitActor);
   const gunStatuses = `<section class="roulette-status" aria-label="轮盘弹巢状态">${gunStatusMarkup(character.name, state.roulette.opponent.bullets, state.roulette.opponent.capacity)}${gunStatusMarkup("策展人", state.roulette.player.bullets, state.roulette.player.capacity)}</section>`;
@@ -1048,7 +1043,7 @@ function renderMatch(state: MatchState): void {
   const drawMarkup = drawOffer ? `<section class="skill-draw-backdrop is-entering"><div class="skill-draw-modal" role="dialog" aria-modal="true" aria-labelledby="skill-draw-title"><h2 id="skill-draw-title">选一张你心仪的技能卡</h2><div class="skill-draw-grid">${drawCards}</div></div></section>` : "";
   root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}${infoBar}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${dialogueMarkup}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} <strong>${reveal ? displayedHandValue(state, "opponent") : observation.opponent.value ?? "?"}</strong></span><div class="cards">${opponentCards}</div></div></section><div class="table-notice-row"><output class="bust-limit-indicator" aria-label="当前爆牌上限：${bustLimit}" data-actor="${bustLimitActor}"><span>爆牌上限</span><strong>${bustLimit}</strong></output><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section></div><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 <strong>${displayedHandValue(state, "player")}</strong></span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${character.infoBar ? `<dialog id="ai-info-dialog" class="modal ai-info-modal" aria-labelledby="ai-info-title"><button class="modal-close" type="button" data-ai-info-close aria-label="关闭机制信息说明">×</button><p class="eyebrow">${escapeHtml(character.name)} // 机制信息</p><h2 id="ai-info-title">${escapeHtml(character.infoBar.label)}</h2><div class="ai-info-current"><span>当前值</span><output aria-label="当前值：${escapeHtml(infoBarValueText(resolvedInfoBarValue, character.infoBar.format))}">${infoBarValueMarkup(resolvedInfoBarValue, character.infoBar.format)}</output></div><p>${escapeHtml(character.infoBar.description)}</p></dialog>` : ""}${devHud(state)}</main>${skillDrawerMarkup}${drawMarkup}`;
   wireActions(root, requestDispatch); root.querySelector<HTMLButtonElement>("[data-copy-debug]")?.addEventListener("click", () => { const text = root.querySelector<HTMLTextAreaElement>("#debug-json")?.value ?? ""; void navigator.clipboard?.writeText(text); });
-  root.querySelectorAll<HTMLButtonElement>("[data-skill-blocked]").forEach((button) => button.addEventListener("click", () => present("技能被禁用", "danger")));
+  root.querySelectorAll<HTMLButtonElement>("[data-skill-blocked]").forEach((button) => button.addEventListener("click", () => enqueueNotification("技能被禁用")));
   attachFullscreenListener(); syncFullscreenButton(); syncAbilityNoticePosition();
   root.querySelector<HTMLButtonElement>("[data-fullscreen]")?.addEventListener("click", toggleFullscreen);
   const skillDrawer = root.querySelector<HTMLElement>(".skill-sidebar");

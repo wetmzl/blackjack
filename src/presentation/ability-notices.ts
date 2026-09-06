@@ -3,10 +3,10 @@ import type { PendingTriggerPreview } from "../core/match/reducer";
 import type { MatchState, GameEvent } from "../core/match/types";
 import type { AbilityRule, Effect } from "../core/abilities/types";
 
-export type AbilityNoticeTone = "player" | "ai";
+export type AbilityNoticeTone = "player" | "ai" | "notification";
 
 export interface AbilityNotice {
-  readonly owner: "player" | "opponent";
+  readonly owner: "player" | "opponent" | "system";
   readonly tone: AbilityNoticeTone;
   readonly text: string;
 }
@@ -114,4 +114,14 @@ export function pendingTriggerAbilityNotices(preview: PendingTriggerPreview, opp
     });
   }
   return notices;
+}
+
+export function abilityExpiredNotices(events: readonly GameEvent[]): AbilityNotice[] {
+  return events
+    .filter((event): event is Extract<GameEvent, { type: "ABILITY_EXPIRED" }> => event.type === "ABILITY_EXPIRED")
+    .map((event) => ({
+      owner: "system",
+      tone: "notification",
+      text: `${getAbilityDefinition(event.definitionId)?.name ?? "被动技能"}的效果已耗尽`
+    }));
 }
