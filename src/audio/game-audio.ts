@@ -1,4 +1,4 @@
-const BGM_SRC = "/assets/audio/bgm/table-theme.mp3";
+import { TABLE_BGM_URL } from "../resources/cache-policy";
 
 export const SOUND_SOURCES = {
   shuffle: "/assets/audio/sfx/card-shuffle.mp3",
@@ -74,11 +74,15 @@ export class GameAudio {
     }
   }
 
-  /** Starts network/cache reads while the player is still in the lobby. */
-  preload(): void {
+  /** Prepares only the streamed BGM metadata while the player is in the lobby. */
+  preloadLobby(): void {
+    if (!this.enabled) return;
     this.ensureBgm().load();
-    // Fetch compressed bytes early, but do not decode every clip at once. Bulk
-    // decoding competes with UI timers on lower-end Android devices.
+  }
+
+  /** Fetches compressed table cues after a match has been entered. */
+  preloadMatch(): void {
+    if (!this.enabled) return;
     for (const cue of Object.keys(SOUND_SOURCES) as SoundCue[]) void this.loadEncodedAudio(cue);
   }
 
@@ -239,9 +243,9 @@ export class GameAudio {
 
   private ensureBgm(): HTMLAudioElement {
     if (this.bgm) return this.bgm;
-    const bgm = new Audio(BGM_SRC);
+    const bgm = new Audio(TABLE_BGM_URL);
     bgm.loop = true;
-    bgm.preload = "auto";
+    bgm.preload = "metadata";
     bgm.volume = BGM_VOLUME;
     this.bgm = bgm;
     return bgm;

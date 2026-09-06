@@ -27,6 +27,7 @@ import { presentMatchHaptics } from "./presentation/haptics";
 import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
 import { downloadResourcePack, ResourcePackDownloadError, type ResourcePackProgress } from "./resources/resource-pack";
+import { characterResourcePlan, lobbyResourceUrls, resourceLoader } from "./resources/resource-loader";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) throw new Error("App root is missing");
@@ -58,6 +59,8 @@ let abilityNoticePositionAttached = false;
 type LobbyLayer = "menu" | "characters";
 let lobbyLayer: LobbyLayer = "menu";
 let guestSelectionIds: string[] = [];
+let defeatedGuestObserver: IntersectionObserver | null = null;
+const DEFEATED_GUEST_BATCH_SIZE = 3;
 const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 const TROPHY_GALLERY_COFFIN_IMAGE = "/assets/characters/trophy-gallery-coffin.png";
 const RESET_CONFIRM_MESSAGE = "删除长期存档将清除战绩、历史、角色与技能解锁及设置，但不会删除未完成牌局。确定继续吗？";
@@ -538,6 +541,57 @@ function characterCardMarkup(character: (typeof CHARACTER_CATALOG)[number], opti
   return `<article class="character-card ${defeated ? "is-defeated" : "is-guest"}" data-character-id="${escapeHtml(character.id)}"><div class="portrait"><img class="scaled-character-art" style="--character-art-scale:${character.portraitScales.selection}" src="${escapeHtml(character.previewImage)}" alt="${escapeHtml(character.name)}" loading="lazy" decoding="async" /></div><div class="character-copy"><p class="eyebrow">与会者 // ${escapeHtml(character.tier)}级</p><h2>${escapeHtml(character.name)}</h2><p>${escapeHtml(character.subtitle)}</p><button class="card-invite" data-invite-character="${escapeHtml(character.id)}">邀请 <span>→</span></button></div></article>`;
 }
 
+function defeatedCharactersNewestFirst(): (typeof CHARACTER_CATALOG)[number][] {
+  return [...defeatedCharacterIdsByFirstDefeat(save.defeats)]
+    .reverse()
+    .map((id) => getCharacterMetadata(id))
+    .filter((character): character is NonNullable<typeof character> => Boolean(character));
+}
+
+function defeatedLoadMoreMarkup(remaining: number): string {
+  if (remaining <= 0) return "";
+  return `<button type="button" class="defeated-load-more" data-load-more-defeated aria-controls="defeated-character-list" aria-label="加载更多已击败宾客，剩余 ${remaining} 名"><span>继续下拉查看</span><small>剩余 ${remaining} 名</small><i aria-hidden="true">⌄</i></button>`;
+}
+
+function wireInviteButtons(container: ParentNode): void {
+  container.querySelectorAll<HTMLButtonElement>("[data-invite-character]:not([data-invite-wired])").forEach((button) => {
+    button.dataset.inviteWired = "true";
+    button.addEventListener("click", () => void openProfile(button.dataset.inviteCharacter ?? ""));
+  });
+}
+
+function loadMoreDefeatedGuests(): void {
+  const list = root.querySelector<HTMLElement>("#defeated-character-list");
+  const control = root.querySelector<HTMLButtonElement>("[data-load-more-defeated]");
+  if (!list || !control) return;
+  const defeatedCharacters = defeatedCharactersNewestFirst();
+  const visibleCount = list.querySelectorAll(":scope > .character-card").length;
+  const nextCharacters = defeatedCharacters.slice(visibleCount, visibleCount + DEFEATED_GUEST_BATCH_SIZE);
+  list.insertAdjacentHTML("beforeend", nextCharacters.map((character) => characterCardMarkup(character, { defeated: true })).join(""));
+  wireInviteButtons(list);
+  const remaining = defeatedCharacters.length - visibleCount - nextCharacters.length;
+  if (remaining <= 0) {
+    defeatedGuestObserver?.disconnect();
+    defeatedGuestObserver = null;
+    control.remove();
+    return;
+  }
+  control.setAttribute("aria-label", `加载更多已击败宾客，剩余 ${remaining} 名`);
+  const count = control.querySelector("small");
+  if (count) count.textContent = `剩余 ${remaining} 名`;
+}
+
+function wireDefeatedGuestLoader(): void {
+  const control = root.querySelector<HTMLButtonElement>("[data-load-more-defeated]");
+  if (!control) return;
+  control.addEventListener("click", loadMoreDefeatedGuests);
+  if (!("IntersectionObserver" in window)) return;
+  defeatedGuestObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) loadMoreDefeatedGuests();
+  }, { rootMargin: "0px 0px 160px" });
+  defeatedGuestObserver.observe(control);
+}
+
 function renderLobby(layer: LobbyLayer = "menu"): void {
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer);
   gameAudio.stopHeartbeat();
@@ -546,26 +600,33 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   lastDialogueKey = null;
   autosave = null;
   lobbyLayer = layer;
+  void resourceLoader.enqueue(lobbyResourceUrls(
+    CHARACTER_CATALOG.filter((character) => isCharacterUnlocked(character, save.defeats))
+  ), "background");
+  defeatedGuestObserver?.disconnect();
+  defeatedGuestObserver = null;
   if (layer === "characters") {
     const eligible = new Set(eligibleGuestIds());
     const expectedCount = Math.min(3, eligible.size);
     if (guestSelectionIds.length !== expectedCount || guestSelectionIds.some((id) => !eligible.has(id))) guestSelectionIds = selectGuestIds();
   }
   const guestCharacters = guestSelectionIds.map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
-  const defeatedIds = defeatedCharacterIdsByFirstDefeat(save.defeats);
-  const defeatedCharacters = defeatedIds.map((id) => getCharacterMetadata(id)).filter((character): character is NonNullable<typeof character> => Boolean(character));
+  const defeatedCharacters = defeatedCharactersNewestFirst();
+  const visibleDefeatedCharacters = defeatedCharacters.slice(0, DEFEATED_GUEST_BATCH_SIZE);
   const characterCards = guestCharacters.map((character) => characterCardMarkup(character)).join("");
-  const defeatedCards = defeatedCharacters.map((character) => characterCardMarkup(character, { defeated: true })).join("");
+  const defeatedCards = visibleDefeatedCharacters.map((character) => characterCardMarkup(character, { defeated: true })).join("");
+  const defeatedGuestsRemaining = defeatedCharacters.length - visibleDefeatedCharacters.length;
   root.innerHTML = layer === "menu"
     ? `<main class="lobby-shell lobby-menu-shell"><header class="lobby-invitation"><span>Blackjack & Roulette</span><button type="button" class="icon-button lobby-settings-button" data-open="settings" aria-label="打开设置">⚙</button></header><section class="lobby-title-block" aria-labelledby="lobby-title"><h1 id="lobby-title">绝命之夜</h1><div class="menu-subtitle"><span></span><strong>终焉赌局</strong></div><div class="menu-oath"><p>奉上自己的一切，包括自己的身体。</p><p>一点点的技巧和运气，以及全部的决心。</p><strong>祂终将有求必应。</strong></div></section><nav class="lobby-menu" aria-label="古堡主菜单"><button type="button" class="lobby-menu-button lobby-primary-action" data-enter-duel><span class="button-copy"><strong>对决</strong><small>选择一名与会者</small></span><span class="button-arrow" aria-hidden="true">›</span></button><div class="lobby-secondary-menu"><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="rules"><strong>玩法说明</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open="skills"><strong>技能与天赋</strong></button><button type="button" class="lobby-menu-button lobby-secondary-action" data-open-trophies><strong>战利品陈列室</strong><small>${save.defeats.length} 件</small></button></div></nav>${lobbyDialogsMarkup()}</main>`
-    : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">她们因为渴求走进古堡，<br>却被永远留在了这里。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="guest-section" aria-labelledby="guest-title"><div class="guest-heading"><div><p class="kicker">等待入场</p><h2 id="guest-title">候场宾客</h2></div><button type="button" class="quiet-button" data-refresh-guests aria-label="刷新候场宾客">刷新</button></div><section class="character-list">${characterCards || `<div class="empty-history"><span>◇</span><p>暂时没有可赴约的宾客。</p></div>`}</section></section><section class="guest-section defeated-section" aria-labelledby="defeated-title"><div class="guest-heading"><div><p class="kicker">回想</p><h2 id="defeated-title">已死亡宾客</h2></div></div><section class="character-list">${defeatedCards || `<div class="empty-history"><span>◇</span><p>还没有战利品呢，快去狩猎吧。</p></div>`}</section></section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${defeatedCharacters.length} 名已击败宾客</span></footer>${lobbyDialogsMarkup()}</main>`;
+    : `<main class="lobby-shell lobby-character-shell"><header class="topbar"><button class="icon-button" data-lobby-home aria-label="返回绝命之夜主菜单">←</button><span class="eyebrow">古堡二层 // 与会者名册</span><span class="topbar-balance" aria-hidden="true"></span></header><section class="hero selection-hero"><p class="kicker">回应邀请之人</p><h1>选择<br><em>与会者</em></h1><p class="hero-copy">她们因为渴求走进古堡，<br>却被永远留在了这里。</p><div class="hero-rule"><span></span><b>02</b><span></span></div></section><section class="guest-section" aria-labelledby="guest-title"><div class="guest-heading"><div><p class="kicker">等待入场</p><h2 id="guest-title">候场宾客</h2></div><button type="button" class="quiet-button" data-refresh-guests aria-label="刷新候场宾客">刷新</button></div><section class="character-list">${characterCards || `<div class="empty-history"><span>◇</span><p>暂时没有可赴约的宾客。</p></div>`}</section></section><section class="guest-section defeated-section" aria-labelledby="defeated-title"><div class="guest-heading"><div><p class="kicker">回想</p><h2 id="defeated-title">已死亡宾客</h2></div></div><section id="defeated-character-list" class="character-list" aria-live="polite">${defeatedCards || `<div class="empty-history"><span>◇</span><p>还没有战利品呢，快去狩猎吧。</p></div>`}</section>${defeatedLoadMoreMarkup(defeatedGuestsRemaining)}</section><div class="lobby-tools"><span class="quiet-record">策展人记录 // ${save.profile.matchesPlayed}</span></div><footer class="footer"><span>古堡牌室 // 02</span><span>${defeatedCharacters.length} 名已击败宾客</span></footer>${lobbyDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-enter-duel]")?.addEventListener("click", () => { guestSelectionIds = []; renderLobby("characters"); });
   root.querySelector<HTMLButtonElement>("[data-lobby-home]")?.addEventListener("click", () => renderLobby("menu"));
   root.querySelector<HTMLButtonElement>("[data-refresh-guests]")?.addEventListener("click", () => { guestSelectionIds = selectGuestIds(); renderLobby("characters"); });
   root.querySelectorAll<HTMLButtonElement>("[data-open]:not([data-open=skills])").forEach((button) => button.addEventListener("click", () => document.querySelector<HTMLDialogElement>(`#${button.dataset.open}`)?.showModal()));
   root.querySelector<HTMLButtonElement>("[data-open=skills]")?.addEventListener("click", openSkillManagement);
   root.querySelectorAll<HTMLButtonElement>("[data-close]").forEach((button) => button.addEventListener("click", () => button.closest("dialog")?.close()));
-  root.querySelectorAll<HTMLButtonElement>("[data-invite-character]").forEach((button) => button.addEventListener("click", () => void openProfile(button.dataset.inviteCharacter ?? "")));
+  wireInviteButtons(root);
+  wireDefeatedGuestLoader();
   root.querySelector<HTMLButtonElement>("[data-open-trophies]")?.addEventListener("click", renderTrophyRoom);
   root.querySelectorAll<HTMLInputElement>("[data-setting]").forEach((input) => input.addEventListener("change", updateSettings));
   root.querySelector<HTMLButtonElement>("[data-export]")?.addEventListener("click", () => void exportSave());
@@ -846,6 +907,7 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
   clearAbilityNoticeQueue();
   detachFullscreenListener();
   gameAudio.unlock();
+  gameAudio.preloadMatch();
   gameAudio.play("shuffle");
   const requestToken = ++characterLoadToken;
   characterLoadInFlight = true;
@@ -857,6 +919,7 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
     if (!defeated && !isCharacterUnlocked(metadata, save.defeats)) throw new Error("该角色尚未解锁。");
     const character = await loadCharacter(metadata.id);
     if (requestToken !== characterLoadToken) return;
+    root.innerHTML = `<main class="loading-shell"><span class="mark">✦</span><p>正在布置牌桌……</p></main>`;
     currentCharacter = character;
     selectedCharacterId = character.id;
     lastAction = null;
@@ -878,9 +941,27 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
     } else renderError(error);
   } finally { if (requestToken === characterLoadToken) characterLoadInFlight = false; }
 }
+function initiallyVisibleCharacterArt(character: CharacterDefinition, state: MatchState): string {
+  if (state.view !== "match-summary") return tablePortrait(state, character);
+  if (state.outcome?.winner === "player") return character.assets.defeatedSummary;
+  if (state.outcome?.reason === "escaped") return character.assets.conflicted;
+  return character.assets.relaxed;
+}
+async function prepareMatchResources(character: CharacterDefinition, state: MatchState): Promise<void> {
+  const plan = characterResourcePlan(character, {
+    visibleArt: [initiallyVisibleCharacterArt(character, state)],
+    includeTableBase: state.view === "table"
+  });
+  const visible = resourceLoader.enqueue(plan.visible, "visible");
+  void resourceLoader.enqueue(plan.display, "display");
+  void resourceLoader.enqueue(plan.background, "background");
+  await visible;
+}
 async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinition): Promise<void> {
   clearAiSchedule();
   currentCharacter = loadedCharacter ?? await loadCharacter(match.opponentId);
+  gameAudio.preloadMatch();
+  await prepareMatchResources(currentCharacter, match);
   selectedCharacterId = currentCharacter.id;
   autosave = createAutosaveController(repository, save, match);
   const state = autosave.getState();
@@ -1097,7 +1178,7 @@ async function boot(): Promise<void> {
     }
     document.body.classList.toggle("reduced-motion", save.settings.reducedMotion);
     gameAudio.configure(save.settings.soundEnabled);
-    gameAudio.preload();
+    gameAudio.preloadLobby();
     const unlockAudio = () => { gameAudio.unlock(); const state = autosave?.getState(); if (state) syncMatchAudioState(gameAudio, state); };
     document.addEventListener("pointerdown", unlockAudio, { capture: true, once: true });
     document.addEventListener("keydown", unlockAudio, { capture: true, once: true });

@@ -117,7 +117,7 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 ## PWA 与资源缓存
 
-Vite PWA 配置生成 manifest 和 Service Worker。核心应用 shell 由 Workbox 预缓存，图片与音频使用运行时 NetworkFirst：在线时先请求服务器并更新缓存，离线时回退到缓存中的资源，确保同名文件内容更新后不会永久显示旧版本。大型可选媒体通过构建生成的 `/resource-pack.json` 及 `src/resources/` 下载器并发写入独立 Cache Storage。
+Vite PWA 配置生成 manifest 和 Service Worker。核心应用 shell 由 Workbox 预缓存，图片与音频使用运行时 NetworkFirst：在线时先请求服务器并更新缓存，离线时回退到缓存中的资源，确保同名文件内容更新后不会永久显示旧版本。自动资源加载由 `src/resources/resource-loader.ts` 分层调度：大厅只缓存当前已解锁角色的 `previewImage` 与大厅背景，BGM 只预读流媒体元数据，不在首屏拉取全部短音效；进入或恢复对局时，当前画面所需的角色图、牌桌背景和共享左轮使用最高优先级，剩余牌桌/结算立绘次优先，角色定义中递归发现的收藏图等资源进入后台队列。后台任务最多占用并发槽位中的 `n - 1` 个，保证对局可见资源随时能够插队。大型可选媒体仍可通过构建生成的 `/resource-pack.json` 及 `src/resources/` 下载器并发写入同一 Cache Storage。
 
 ## 验证边界
 

@@ -719,7 +719,7 @@ test("首次胜利会显示第一阶段角色解锁，刷新候场时确保换�
   await page.screenshot({ path: testInfo.outputPath("guest-selection-unlocked-320.png"), fullPage: true });
 });
 
-test("已击败宾客按首次胜利时间去重排列且可以再次邀请", async ({ page }) => {
+test("已击败宾客按首次胜利时间倒序排列且可以再次邀请", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.history = [
     victoryRecord("irene-late", "irene", "2026-08-30T12:00:00.000Z"),
@@ -741,13 +741,45 @@ test("已击败宾客按首次胜利时间去重排列且可以再次邀请", as
   expect(candidateIds.every((id) => id !== undefined && ["w", "nian", "plume", "platinum", "lappland-the-decadenza"].includes(id))).toBe(true);
   const defeatedCards = page.locator(".defeated-section .character-card");
   await expect(defeatedCards).toHaveCount(2);
-  expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual(["texas", "irene"]);
+  expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual(["irene", "texas"]);
   await expect(defeatedCards.locator("[data-invite-character]")).toHaveCount(2);
-  await defeatedCards.first().locator("[data-invite-character='texas']").click();
+  await defeatedCards.first().locator("[data-invite-character='irene']").click();
   await expect(page.locator("#profile")).toContainText("已经成为了一具尸体");
   await expect(page.locator("#profile [data-profile-start]")).toHaveCount(1);
   await page.locator("#profile [data-profile-start]").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+});
+
+test("已击败宾客向下滚动时每批懒加载三名", async ({ page }) => {
+  const imported = createDefaultSave("2026-09-01T00:00:00.000Z");
+  const defeatedIds = ["plume", "w", "texas", "irene", "nian", "platinum", "lappland-the-decadenza", "ho-olheyak"];
+  imported.defeats = defeatedIds.map((opponentId, index) => ({
+    opponentId,
+    timestamp: new Date(Date.UTC(2026, 8, index + 1)).toISOString()
+  }));
+  imported.profile = { ...imported.profile, matchesPlayed: defeatedIds.length, wins: defeatedIds.length };
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "lazy-defeated-guests.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await enterCharacterSelection(page);
+
+  const defeatedCards = page.locator(".defeated-section .character-card");
+  await expect(defeatedCards).toHaveCount(3);
+  expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual([
+    "ho-olheyak", "lappland-the-decadenza", "platinum"
+  ]);
+  await expect(page.locator("[data-load-more-defeated]")).toHaveAttribute("aria-label", /剩余 5 名/);
+
+  await page.locator("[data-load-more-defeated]").evaluate((element) => element.scrollIntoView());
+  await expect(defeatedCards).toHaveCount(6);
+  await expect(page.locator("[data-load-more-defeated]")).toHaveAttribute("aria-label", /剩余 2 名/);
+  await page.locator("[data-load-more-defeated]").evaluate((element) => element.scrollIntoView());
+  await expect(defeatedCards).toHaveCount(8);
+  expect(await defeatedCards.evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.characterId))).toEqual([
+    "ho-olheyak", "lappland-the-decadenza", "platinum", "nian", "irene", "texas", "w", "plume"
+  ]);
+  await expect(page.locator("[data-load-more-defeated]")).toHaveCount(0);
 });
 
 test("年在击败 S 级角色后显示解离式档案并按需载入", async ({ page }) => {
