@@ -322,7 +322,7 @@ describe("boot and repositories", () => {
     expect(cleared.defeats).toEqual(completed.defeats);
     expect(cleared.profile).toEqual(completed.profile);
     expect(cleared.skipTutorial).toBe(true);
-    expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza"]);
+    expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "irene", "plume", "platinum", "lappland-the-decadenza"]);
     expect(unlockedPlayerSkillIdsForDefeats(cleared.defeats)).toContain("blueberry-and-dark-chocolate");
     expect(cleared.updatedAt).toBe("2026-08-31T00:00:00.000Z");
   });

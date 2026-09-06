@@ -43,6 +43,24 @@ export const CharacterCatalogSchema = z.object({ defaultCharacterId: z.string().
 });
 
 const dialoguePool = z.array(z.string().min(1)).min(1);
+const trophyDossierFieldIds = ["name", "race", "gender", "tier", "weight", "virginity"] as const;
+const trophyDossier = z.object({
+  title: z.string().min(1),
+  recordLabel: z.string().min(1),
+  openLabel: z.string().min(1),
+  closeLabel: z.string().min(1),
+  fields: z.array(z.object({
+    id: z.enum(trophyDossierFieldIds),
+    label: z.string().min(1),
+    value: z.string().min(1)
+  }).strict()).length(trophyDossierFieldIds.length),
+  condition: z.object({ label: z.string().min(1), description: z.string().min(1) }).strict()
+}).strict().superRefine((dossier, ctx) => {
+  const ids = new Set(dossier.fields.map((field) => field.id));
+  for (const id of trophyDossierFieldIds) {
+    if (!ids.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["fields"], message: `战利品档案缺少字段：${id}` });
+  }
+});
 const infoBarActor = z.enum(["owner", "rival"]);
 const infoBarScalar: z.ZodType<unknown> = z.lazy(() => z.union([
   z.number().finite(),
@@ -63,6 +81,10 @@ const infoBar = z.object({
 });
 const dialogueShape = Object.fromEntries(DIALOGUE_EVENT_CODES.map((code) => [code, dialoguePool])) as Record<DialogueEvent, typeof dialoguePool>;
 const dialogue = z.object(dialogueShape).strict();
+const trophyCloseupVariant = z.object({
+  image: z.string().min(1),
+  description: z.string().min(1)
+}).strict();
 const trophyGallery = z.object({
   headshot: z.string().min(1),
   fullBody: z.string().min(1),
@@ -77,7 +99,8 @@ const trophyGallery = z.object({
     x: z.number().finite().min(0).max(100),
     y: z.number().finite().min(0).max(100),
     image: z.string().min(1),
-    description: z.string().min(1)
+    description: z.string().min(1),
+    variants: z.array(trophyCloseupVariant).min(1).optional()
   }).strict())
 }).strict().superRefine((gallery, ctx) => {
   const ids = new Set<string>();
@@ -98,6 +121,7 @@ export const CharacterDataSchema = z.object({
     staffRevolver: z.string().min(1), unconscious: z.string().min(1), defeatedSummary: z.string().min(1)
   }).strict(),
   profile: z.object({ description: z.string().min(1) }).strict(),
+  trophyDossier,
   matchSummary: z.object({ playerVictory: z.string().min(1), playerDefeat: z.string().min(1), escaped: z.string().min(1) }).strict(),
   infoBar: infoBar.optional(),
   trophyGallery: trophyGallery.optional(),

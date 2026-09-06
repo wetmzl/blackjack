@@ -12,6 +12,21 @@
   "profile": {
     "description": "来自叙拉古的孤狼，如今似乎已经连“孤狼”这个称呼也不怎么在意了。拉普兰德没有需要奇迹挽回的人，也没有非实现不可的宏愿——她只是听说，高位面的策展人在古堡里摆了一张真正会死人的赌桌：二十一点决定谁向左轮里装弹，最后活下来的人还能向主人索取一个愿望。她觉得这听起来相当有趣，于是欣然接受邀请，甚至颇为满意地换上了策展人为她准备的礼服。至于获胜后究竟想要什么？她还没决定。毕竟，比愿望更难得的，是一场结局连她自己都猜不到的游戏。"
   },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 07",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "拉普兰德" },
+      { "id": "race", "label": "种族", "value": "鲁珀" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "S" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": { "label": "尸体状况", "description": "确认死亡；遗体已完成初步收容，礼服与随身饰件保存完整。" }
+  },
   "matchSummary": {
     "playerVictory": "枪声落下，拉普兰德向后倒进椅背。刚才还饶有兴致注视着牌桌的银灰色眼睛终于失去了神采，嘴角却仍残留着一点若有若无的笑意。直到最后，她也没等到那个出乎所有人意料的结局——或者说，这声枪响本身就是了。",
     "playerDefeat": "最后一声枪响击中了天花板。拉普兰德安静了片刻，随后笑着把面前的牌推开。面对那个足以实现任何愿望的承诺，她似乎第一次认真思考了几秒：‘愿望啊……那就下一场让我来定规则吧。你不会反悔的，对吧，策展人？’",
@@ -76,12 +91,18 @@
         "description": "黑色裙摆露出内层的红蓝纹样，金属扣件固定着带有金色纹章的黑色腿环，与披肩配色彼此呼应。"
       },
       {
-        "id": "feet-white-socks",
-        "name": "卸下长靴",
+        "id": "feet",
+        "name": "长靴与短袜",
         "x": 50,
         "y": 88,
-        "image": "/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png",
-        "description": "长靴被移开后，白色罗纹短袜与黑色软垫形成鲜明对比，作为礼服足部结构的补充档案被单独记录。"
+        "image": "/assets/characters/lappland-the-decadenza-trophy-detail-feet-boots-p0.png",
+        "description": "黑色长靴以银色狼首扣件、交叉鞋带和厚实鞋底延续礼服的锐利轮廓，完整记录了她赴宴时的足部装备。",
+        "variants": [
+          {
+            "image": "/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png",
+            "description": "长靴被移开后，白色罗纹短袜与黑色软垫形成鲜明对比，作为礼服足部结构的补充档案被单独记录。"
+          }
+        ]
       }
     ]
   },

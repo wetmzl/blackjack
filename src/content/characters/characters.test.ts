@@ -8,6 +8,7 @@ import nianData from "./data/nian.json";
 import plumeData from "./data/plume.json";
 import platinumData from "./data/platinum.json";
 import lapplandData from "./data/lappland-the-decadenza.json";
+import hoOlheyakData from "./data/ho-olheyak.json";
 import { CharacterCatalogSchema, CharacterDataSchema, DIALOGUE_EVENT_CODES } from "./schema";
 import { getAbilityDefinition } from "../../core/abilities/registry";
 
@@ -22,7 +23,7 @@ describe("data-driven character registry", () => {
     expect(CHARACTER_METADATA_BY_ID.platinum).toBe(CHARACTER_CATALOG[5]);
     expect(CHARACTER_METADATA_BY_ID["lappland-the-decadenza"]).toBe(CHARACTER_CATALOG[6]);
     expect(CHARACTER_METADATA_BY_ID["ho-olheyak"]).toBe(CHARACTER_CATALOG[7]);
-    expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("texas");
+    expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("plume");
     expect(getCharacterTags(CHARACTER_METADATA_BY_ID.w)).toEqual(expect.arrayContaining(["tier:s", "explosive", "chaotic"]));
     expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.tags)).toBe(true);
     expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.unlock)).toBe(true);
@@ -177,8 +178,14 @@ describe("data-driven character registry", () => {
       ],
       closeups: [
         expect.objectContaining({ id: "face-dazed", name: "失焦的脸", x: 50, y: 17, image: "/assets/characters/texas-trophy-detail-face-dazed.png" }),
-        expect.objectContaining({ id: "boots", name: "制服短靴", x: 46, y: 85, image: "/assets/characters/texas-trophy-detail-boots.png" }),
-        expect.objectContaining({ id: "boots-removed", name: "卸下的短靴", x: 58, y: 85, image: "/assets/characters/texas-trophy-detail-boots-removed.png" })
+        expect.objectContaining({
+          id: "boots",
+          name: "制服短靴",
+          x: 52,
+          y: 85,
+          image: "/assets/characters/texas-trophy-detail-boots.png",
+          variants: [expect.objectContaining({ image: "/assets/characters/texas-trophy-detail-boots-removed.png" })]
+        })
       ]
     });
     expect(irene.trophyGallery).toEqual({
@@ -242,7 +249,14 @@ describe("data-driven character registry", () => {
         expect.objectContaining({ id: "face-inspected", name: "落幕后的神情", x: 50, y: 15, image: "/assets/characters/lappland-the-decadenza-trophy-detail-face-inspected.png" }),
         expect.objectContaining({ id: "chest-tie", name: "礼服领结", x: 51, y: 29, image: "/assets/characters/lappland-the-decadenza-trophy-detail-chest-tie.png" }),
         expect.objectContaining({ id: "skirt-thigh", name: "裙摆与腿环", x: 50, y: 51, image: "/assets/characters/lappland-the-decadenza-trophy-detail-skirt-thigh.png" }),
-        expect.objectContaining({ id: "feet-white-socks", name: "卸下长靴", x: 50, y: 88, image: "/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png" })
+        expect.objectContaining({
+          id: "feet",
+          name: "长靴与短袜",
+          x: 50,
+          y: 88,
+          image: "/assets/characters/lappland-the-decadenza-trophy-detail-feet-boots-p0.png",
+          variants: [expect.objectContaining({ image: "/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png" })]
+        })
       ]
     });
     expect("trophyDefeated" in w.assets).toBe(false);
@@ -293,7 +307,7 @@ describe("data-driven character registry", () => {
     expect(getCharacterMetadata("plume")?.tier).toBe("B");
     expect(getCharacterMetadata("w")?.tier).toBe("S");
     expect(getCharacterMetadata("lappland-the-decadenza")?.tier).toBe("S");
-    expect(getCharacterMetadata("lappland-the-decadenza")?.unlock).toBeUndefined();
+    expect(getCharacterMetadata("lappland-the-decadenza")?.unlock).toEqual({ type: "defeat-any" });
     expect(w.aiSkills).toEqual([
       { definitionId: "bomb-maniac", enabled: true, parameters: {} },
       { definitionId: "w-night-queen", enabled: true, parameters: {} }
@@ -397,12 +411,26 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {}, extra: true }] }).success).toBe(false);
   });
 
-  it("supports any number of bounded, uniquely identified trophy closeups", () => {
+  it("supports any number of bounded, uniquely identified trophy closeups and per-point variants", () => {
     const gallery = nianData.trophyGallery;
+    const overhead = gallery.closeups.find((point) => point.id === "feet-overhead");
     expect(gallery.closeups).toHaveLength(4);
+    expect(overhead?.variants).toEqual([{
+      image: "/assets/characters/nian-trophy-detail-feet-overhead-p1.png",
+      description: expect.stringContaining("白色高跟鞋已被移开")
+    }]);
+    expect(wData.trophyGallery.closeups.find((point) => point.id === "boots")?.variants?.[0]?.image).toBe("/assets/characters/w-trophy-detail-boots-p1.png");
+    expect(texasData.trophyGallery.closeups.find((point) => point.id === "boots")?.variants?.[0]?.image).toBe("/assets/characters/texas-trophy-detail-boots-removed.png");
+    expect(ireneData.trophyGallery.closeups.find((point) => point.id === "shoes")?.variants?.[0]?.image).toBe("/assets/characters/irene-trophy-detail-shoes-p1.png");
+    expect(plumeData.trophyGallery.closeups.find((point) => point.id === "boots")?.variants?.[0]?.image).toBe("/assets/characters/plume-trophy-detail-boots-p1.png");
+    expect(platinumData.trophyGallery.closeups.find((point) => point.id === "feet")?.variants?.[0]?.image).toBe("/assets/characters/platinum-trophy-detail-feet-p1.png");
+    expect(lapplandData.trophyGallery.closeups.find((point) => point.id === "feet")?.variants?.[0]?.image).toBe("/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png");
+    expect(hoOlheyakData.trophyGallery.closeups.find((point) => point.id === "shoes")?.variants?.[0]?.image).toBe("/assets/characters/ho-olheyak-trophy-detail-shoes-p1.png");
     expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [] } }).success).toBe(true);
     expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [...gallery.closeups, gallery.closeups[0]] } }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [{ ...gallery.closeups[0], x: 101 }] } }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [{ ...gallery.closeups[0], variants: [] }] } }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...nianData, trophyGallery: { ...gallery, closeups: [{ ...gallery.closeups[0], variants: [{ image: "/p1.png" }] }] } }).success).toBe(false);
   });
 
   it("supports uniquely identified transparent trophy pose layers", () => {
@@ -416,6 +444,23 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse(wData).success).toBe(true);
     expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [...gallery.poses, gallery.poses[0]] } }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [{ ...gallery.poses[0], unknown: true }] } }).success).toBe(false);
+  });
+
+  it("requires a complete data-driven administrative trophy dossier for every attendee", () => {
+    const characterData = [wData, texasData, ireneData, nianData, plumeData, platinumData, lapplandData, hoOlheyakData];
+    const expectedFieldIds = ["name", "race", "gender", "tier", "weight", "virginity"];
+    expect(characterData.every((data) => CharacterDataSchema.safeParse(data).success)).toBe(true);
+    expect(characterData.map((data) => data.trophyDossier.fields.map((field) => field.id))).toEqual(characterData.map(() => expectedFieldIds));
+    expect(characterData.every((data) => data.trophyDossier.title === "人物档案")).toBe(true);
+    expect(characterData.every((data) => data.trophyDossier.condition.label === "尸体状况")).toBe(true);
+    expect(characterData.every((data) => data.trophyDossier.condition.description.length > 0)).toBe(true);
+    expect(characterData.map((data) => data.trophyDossier.fields.find((field) => field.id === "name")?.value)).toEqual(CHARACTER_CATALOG.map((character) => character.name));
+    expect(characterData.map((data) => data.trophyDossier.fields.find((field) => field.id === "tier")?.value)).toEqual(CHARACTER_CATALOG.map((character) => character.tier));
+    expect(new Set(characterData.map((data) => data.trophyDossier.recordLabel)).size).toBe(characterData.length);
+    const { trophyDossier: _missing, ...withoutDossier } = wData;
+    expect(CharacterDataSchema.safeParse(withoutDossier).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, trophyDossier: { ...wData.trophyDossier, fields: wData.trophyDossier.fields.slice(0, 5) } }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, trophyDossier: { ...wData.trophyDossier, fields: [...wData.trophyDossier.fields.slice(0, 5), wData.trophyDossier.fields[0]] } }).success).toBe(false);
   });
 
   it("rejects unknown characters", async () => {

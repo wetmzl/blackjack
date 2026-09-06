@@ -73,15 +73,18 @@ Use the `active-skill-card` tag for player-skill definitions with action/card
 activation. Statuses may block that tag to suppress only actively played skill
 cards without suppressing passive player skills or card-free character actions.
 
-Every player-facing `ABILITY_TRIGGERED` event is presented in the table's
-central notice bar for both active and passive abilities. The UI combines the
-event owner, ability name, and the matching rule's `triggerNotice`; when the
-rule omits it, the definition-level `triggerNotice` and then `description` are
-used as fallbacks. Write `triggerNotice` as a concise player-facing effect
-sentence when the description also contains activation conditions or other
-context. A bookkeeping-only rule may declare
-`"notify": false`; it still emits the domain event but does not occupy the
-central notice bar.
+Every player-facing `ABILITY_TRIGGERED` event from a Player Skill or AI Skill
+is presented as its own stacked toast above the table for both active and
+passive abilities. The UI combines the event owner, ability name, and the
+matching rule's `triggerNotice`; when the rule omits it, the definition-level
+`triggerNotice` and then `description` are used as fallbacks. Toasts insert at
+the top, live for 2.5 seconds, then fade out independently. When the same batch
+contains a concrete result (such as `TRIGGER_PULLED`, `CARD_SUIT_REVEALED`, or
+published advice), prefer that final data over a formula. Write
+`triggerNotice` as a concise player-facing effect sentence when the description
+also contains activation conditions or other context. Talent events and
+bookkeeping-only rules may declare `"notify": false`; they still emit domain
+events but do not occupy the toast stack.
 
 Every new primitive should have a focused unit test for valid data, rejected
 extra fields, deterministic RNG, and atomic failure. Prefer owner/rival

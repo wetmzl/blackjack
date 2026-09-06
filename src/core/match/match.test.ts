@@ -134,7 +134,7 @@ describe("createMatch and legal actions", () => {
     const next = gameReducer({ ...ended, round }, { type: "ACK_ROUND_RESULT" });
     const memory = next.abilities.statuses.find((status) => status.statusDefinitionId === "ho-olheyak-memory-card");
     expect(memory).toMatchObject({ owner: "opponent", parameters: { rank: "Q", suit: "diamonds", origin: "shoe" } });
-    expect(abilityTriggerNotice(next.history, "霍尔海雅")).toBeNull();
+    expect(abilityTriggerNotice(next.history, "霍尔海雅")).toEqual([]);
   });
 
   it("Ho-olheyak still busts when the remembered replacement exceeds the final limit", () => {

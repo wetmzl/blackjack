@@ -58,6 +58,28 @@ export interface CharacterMatchSummary {
   readonly escaped: string;
 }
 
+export type CharacterTrophyDossierFieldId = "name" | "race" | "gender" | "tier" | "weight" | "virginity";
+
+export interface CharacterTrophyDossierField {
+  readonly id: CharacterTrophyDossierFieldId;
+  readonly label: string;
+  readonly value: string;
+}
+
+/** Presentation copy for the administrative drawer shown over a trophy-gallery stage. */
+export interface CharacterTrophyDossier {
+  readonly title: string;
+  readonly recordLabel: string;
+  readonly openLabel: string;
+  readonly closeLabel: string;
+  /** Exactly one entry for each CharacterTrophyDossierFieldId, in display order. */
+  readonly fields: readonly CharacterTrophyDossierField[];
+  readonly condition: {
+    readonly label: string;
+    readonly description: string;
+  };
+}
+
 /** Declarative, single-slot information shown for an attendee on the table. */
 export interface CharacterInfoBar {
   /** Enabled AI Skill whose lifetime controls whether this information remains active. */
@@ -68,6 +90,11 @@ export interface CharacterInfoBar {
   readonly value: AbilityInfoValue;
 }
 
+export interface TrophyCloseupVariant {
+  readonly image: string;
+  readonly description: string;
+}
+
 /** Percentage coordinates are relative to the shared coffin plus the attendee's default fullBody layer. */
 export interface TrophyCloseupPoint {
   readonly id: string;
@@ -76,6 +103,8 @@ export interface TrophyCloseupPoint {
   readonly y: number;
   readonly image: string;
   readonly description: string;
+  /** Optional p1, p2… frames; image and description above are always p0. */
+  readonly variants?: readonly TrophyCloseupVariant[];
 }
 
 export interface TrophyGalleryPose {
@@ -109,6 +138,7 @@ export interface CharacterData {
   readonly $schema: "../character.schema.json";
   readonly assets: CharacterAssets;
   readonly profile: CharacterProfile;
+  readonly trophyDossier: CharacterTrophyDossier;
   readonly matchSummary: CharacterMatchSummary;
   readonly infoBar?: CharacterInfoBar;
   readonly trophyGallery?: CharacterTrophyGallery;

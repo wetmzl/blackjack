@@ -12,6 +12,21 @@
   "profile": {
     "description": "曾经是拉特兰的黎博利戍卫队成员，但因为违反纪律被开除，是罗德岛接纳了她。翎羽非常珍视她在罗德岛的朋友们，但她太弱小了，朋友们一个一个的死去，她却束手无策。于是她接受了你的条件，只希望自己能够变得足够强大，再也不必眼睁睁看着珍视的人从身边消失。"
   },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 05",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "翎羽" },
+      { "id": "race", "label": "种族", "value": "黎博利" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "B" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": { "label": "尸体状况", "description": "确认死亡；遗体已完成初步收容，服装与双翼保存完整。" }
+  },
   "matchSummary": {
     "playerVictory": "子弹没有受到多少阻力就穿过了少女的头颅，翎羽无力地靠进椅背。她只是一名平凡的，有些努力的黎博利女孩，她的梦想也很朴素，不过这些对你来说都不重要，你在乎的，只有她失神的眼睛，微妙透肉的黑丝的紧质的大腿。",
     "playerDefeat": "翎羽没有任何特殊技能，单纯靠自己的赤诚之心赢下了对局，但她没有庆祝，只是郑重要求你兑现承诺，显然，你不满意这样的结局。",
@@ -68,7 +83,13 @@
         "x": 50,
         "y": 88,
         "image": "/assets/characters/plume-trophy-detail-boots.png",
-        "description": "俯视视角记录黑色短靴的浅灰护片、金色包边与靴面结构；仰卧时鞋底与陈列舱软垫近似垂直，只显出窄边。"
+        "description": "俯视视角记录黑色短靴的浅灰护片、金色包边与靴面结构；仰卧时鞋底与陈列舱软垫近似垂直，只显出窄边。",
+        "variants": [
+          {
+            "image": "/assets/characters/plume-trophy-detail-boots-p1.png",
+            "description": "短靴被移开后，黑色丝袜包裹的双足平置在陈列舱底部，仍沿用默认靴部记录的正俯视构图。"
+          }
+        ]
       }
     ]
   },

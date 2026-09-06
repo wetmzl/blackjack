@@ -12,6 +12,21 @@
   "profile": {
     "description": "大炎巨兽“岁”的十二碎片之一，排行老九的铸造巨匠“年”。嗜辣、好热闹，闲下来便拍些没人爱看的片子，仿佛世上没有什么值得她正经太久。只是她比许多人都更清楚：若“岁”真正复苏，今日这些拥有姓名、脾气与生活的个体也许会重新变回某种更古老之物。年并不把自己当成谁的救世主；她只是很不喜欢有人替自己，也替那些兄弟姐妹，决定什么才算“本来如此”。"
   },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 04",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "年" },
+      { "id": "race", "label": "种族", "value": "岁兽碎片" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "S" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": { "label": "尸体状况", "description": "确认死亡；遗体已完成初步收容，旗袍、手串与龙尾保存完整。" }
+  },
   "matchSummary": {
     "playerVictory": "枪声骤响，硝烟弥漫，子弹瞬间贯穿头颅，剧烈抽搐中伴随着难以自控的失禁水声，温热的液体顺着旗袍下摆流下。也许她的肉身还能重塑，但是至少这一具已经成为了你的战利品。",
     "playerDefeat": "牌局终于分出胜负。年把牌往桌上一扣，活动了两下发酸的肩膀，笑得像刚赢完一场没什么品位的赌局：“行，老板，愿赌服输。至于你打算怎么履约——那是你的事。别装没听见就成。”",
@@ -60,7 +75,13 @@
         "x": 43,
         "y": 86,
         "image": "/assets/characters/nian-trophy-detail-feet-overhead.png",
-        "description": "两只秀美的脚丫还蜷缩在白色的高跟鞋里，和主人生前一样吊儿郎当地自然错开。"
+        "description": "两只秀美的脚丫还蜷缩在白色的高跟鞋里，和主人生前一样吊儿郎当地自然错开。",
+        "variants": [
+          {
+            "image": "/assets/characters/nian-trophy-detail-feet-overhead-p1.png",
+            "description": "白色高跟鞋已被移开，双足以同样松散的姿态停在黑色软垫上，俯视角度完整记录了脚背与趾端。"
+          }
+        ]
       },
       {
         "id": "feet-side",
@@ -68,7 +89,13 @@
         "x": 58,
         "y": 86,
         "image": "/assets/characters/nian-trophy-detail-feet-side.png",
-        "description": "换到低侧角度，鞋跟和鞋尖的轮廓更清楚，也让这场赌命烂片的彻底落幕有了安静的注脚。"
+        "description": "换到低侧角度，鞋跟和鞋尖的轮廓更清楚，也让这场赌命烂片的彻底落幕有了安静的注脚。",
+        "variants": [
+          {
+            "image": "/assets/characters/nian-trophy-detail-feet-side-p1.png",
+            "description": "卸下高跟鞋后再从足端观察，双足脚底、足弓与趾端的线条取代了原先的鞋底和细跟。"
+          }
+        ]
       }
     ]
   },

@@ -6,7 +6,7 @@
   "$comment": "叙事映射固定为 player=来自高位面的策展人，opponent/AI=回应邀请的与会者，staff=执行轮盘惩罚的发牌员。与会者被实弹命中会当场死亡；策展人受罚时枪口朝向天花板，player-killed 只是兼容性标识，公开结果是与会者赢得一个愿望，隐藏结果是策展人回溯到本局以前重开，且与会者绝不知情。对话解析顺序固定为：轮盘状态 > 本轮结果特殊牌型 > Blackjack/Bust/Comparison/Push > 当前轮最新行动 > MATCH_START。一次渲染只会选择一个池。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "assets", "profile", "matchSummary", "revolverPlacement", "ai", "aiSkills", "dialogue"],
+  "required": ["$schema", "assets", "profile", "trophyDossier", "matchSummary", "revolverPlacement", "ai", "aiSkills", "dialogue"],
   "properties": {
     "$schema": {
       "const": "../character.schema.json",
@@ -33,6 +33,43 @@
       "additionalProperties": false,
       "required": ["description"],
       "properties": { "description": { "type": "string", "minLength": 1, "description": "与会者档案正文；不得让与会者知晓策展人的时间回溯能力。" } }
+    },
+    "trophyDossier": {
+      "type": "object",
+      "description": "战利品鉴赏页右侧拉出的纸质行政档案；全部可见文案均由角色数据维护。",
+      "additionalProperties": false,
+      "required": ["title", "recordLabel", "openLabel", "closeLabel", "fields", "condition"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "description": "档案大标题。" },
+        "recordLabel": { "type": "string", "minLength": 1, "description": "右上角档案编号。" },
+        "openLabel": { "type": "string", "minLength": 1, "description": "抽屉收起时露出的侧边标签。" },
+        "closeLabel": { "type": "string", "minLength": 1, "description": "抽屉展开后的侧边标签。" },
+        "fields": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "description": "按显示顺序填写姓名、种族、性别、评级、重量和处女性；运行时 Schema 会校验六种 ID 各出现一次。",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "value"],
+            "properties": {
+              "id": { "enum": ["name", "race", "gender", "tier", "weight", "virginity"] },
+              "label": { "type": "string", "minLength": 1 },
+              "value": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "condition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "description"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1 },
+            "description": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
     },
     "matchSummary": {
       "type": "object",
@@ -105,8 +142,22 @@
               "name": { "type": "string", "minLength": 1, "description": "面向策展人的记录点名称。" },
               "x": { "type": "number", "minimum": 0, "maximum": 100, "description": "记录点中心相对底图左侧的百分比。" },
               "y": { "type": "number", "minimum": 0, "maximum": 100, "description": "记录点中心相对底图顶部的百分比。" },
-              "image": { "$ref": "#/$defs/assetPath", "description": "1:1 方形局部收藏图。" },
-              "description": { "type": "string", "minLength": 1, "description": "该记录点的与会者专属说明。" }
+              "image": { "$ref": "#/$defs/assetPath", "description": "1:1 方形局部收藏图，固定作为点击记录点后显示的 p0。" },
+              "description": { "type": "string", "minLength": 1, "description": "p0 对应的与会者专属说明。" },
+              "variants": {
+                "type": "array",
+                "minItems": 1,
+                "description": "可选的 p1、p2……差分；按数组顺序在点击局部立绘时循环。",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["image", "description"],
+                  "properties": {
+                    "image": { "$ref": "#/$defs/assetPath", "description": "1:1 方形局部差分图。" },
+                    "description": { "type": "string", "minLength": 1, "description": "仅对应该差分图的说明。" }
+                  }
+                }
+              }
             }
           }
         }

@@ -30,6 +30,10 @@ export function loadCharacter(id: string): Promise<CharacterDefinition> {
   const pending = loader().then(({ default: rawData }) => {
     const data = CharacterDataSchema.parse(rawData) as CharacterData;
     for (const binding of data.aiSkills) validateAbilityBinding(binding);
+    const dossierName = data.trophyDossier.fields.find((field) => field.id === "name")?.value;
+    const dossierTier = data.trophyDossier.fields.find((field) => field.id === "tier")?.value;
+    if (dossierName !== metadata.name) throw new Error(`角色战利品档案与目录不一致：${id}.name`);
+    if (dossierTier !== metadata.tier) throw new Error(`角色战利品档案与目录不一致：${id}.tier`);
     const definition: CharacterDefinition = { ...metadata, ...data };
     for (const key of METADATA_KEYS) {
       if (definition[key] !== metadata[key]) throw new Error(`角色定义与目录不一致：${id}.${key}`);

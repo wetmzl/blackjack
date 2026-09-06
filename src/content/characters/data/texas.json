@@ -12,6 +12,21 @@
   "profile": {
     "description": "来自叙拉古的孤狼。为了换取那个能彻底‘治愈拉普兰德绝症’的奇迹，她神色平静地踏入古堡。在这张胜者获得愿望、败者被子弹爆头的魔鬼牌桌上，她冷静地计算着每一张手牌的生还率。她深知自己只要走错一步便会脑浆涂地——但为了那个疯子的性命，她愿意赌一把。"
   },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 02",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "德克萨斯" },
+      { "id": "race", "label": "种族", "value": "鲁珀" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "A" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": { "label": "尸体状况", "description": "确认死亡；遗体已完成初步收容，服装与随身饰件保存完整。" }
+  },
   "matchSummary": {
     "playerVictory": "枪声骤响，德克萨斯无力地倒在高背椅上，琥珀色眼眸彻底涣散。子弹贯穿的头部斜靠在扶手边，痉挛让她的狼尾微弱抽动，硬挺的白色短靴在地上不断地。她没能带回拯救拉普兰德的良药",
     "playerDefeat": "牌局在窒息的沉默中决出胜负。德克萨斯按住胸口微微喘息，琥珀色的眼眸直视着策展人，平静地索要治愈拉普兰德的解药——然而这场胜利，转瞬便消散在策展人悄然启动的时间回溯之中。",
@@ -49,18 +64,16 @@
       {
         "id": "boots",
         "name": "制服短靴",
-        "x": 46,
+        "x": 52,
         "y": 85,
         "image": "/assets/characters/texas-trophy-detail-boots.png",
-        "description": "黑色短靴与蓝色束带延续制服的冷色调，鞋底安静地停在深色陈列软垫上。"
-      },
-      {
-        "id": "boots-removed",
-        "name": "卸下的短靴",
-        "x": 58,
-        "y": 85,
-        "image": "/assets/characters/texas-trophy-detail-boots-removed.png",
-        "description": "短靴被作为装备单独放在一旁，完整展示鞋带、蓝色束带和硬挺鞋帮的构造。"
+        "description": "黑色短靴与蓝色束带延续制服的冷色调，鞋底安静地停在深色陈列软垫上。",
+        "variants": [
+          {
+            "image": "/assets/characters/texas-trophy-detail-boots-removed.png",
+            "description": "短靴被卸下并作为装备放在一旁，完整展示鞋带、蓝色束带和硬挺鞋帮的构造。"
+          }
+        ]
       }
     ]
   },

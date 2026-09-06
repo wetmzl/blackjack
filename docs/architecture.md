@@ -67,7 +67,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 完整角色 JSON 由 `character.schema.json` 和运行时 Zod Schema 校验，包含档案、结算文案、资源、瞄准点、AI、机制和完整有限状态对白。未知 ID、不安全文件名、目录/数据不一致、非法机制绑定或缺少对白都会失败。新增角色的操作步骤见 [新增与会者工作流](adding-a-character.md)。
 
-全屏战利品鉴赏采用表现层分层合成：应用固定加载共享 `trophy-gallery-coffin.png` 作为底图，角色 JSON 的 `trophyGallery.fullBody` 与可选 `poses` 只提供同尺寸透明角色层。局部记录坐标只绑定默认 `fullBody`，姿势切换不进入领域状态或存档。
+全屏战利品鉴赏采用表现层分层合成：应用固定加载共享 `trophy-gallery-coffin.png` 作为底图，角色 JSON 的 `trophyGallery.fullBody` 与可选 `poses` 只提供同尺寸透明角色层。局部记录坐标只绑定默认 `fullBody`；每个记录点以 `image` / `description` 作为 p0，并可用 `variants` 配置带独立描述的 p1、p2……循环差分。右侧纸质行政档案由必填的 `trophyDossier` 驱动，图片复用 `assets.defeatedSummary`；抽屉只属于表现层，收放状态、姿势和局部差分切换都不进入领域状态或存档。
 
 ## 技能与抽卡边界
 
@@ -93,7 +93,7 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 显式 Stand 会广播 `after-stand`。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
 
-表现层以 `ABILITY_TRIGGERED` 为唯一的技能发动事实，统一在牌桌中央组合显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。仅用于内部状态清理的规则可声明 `notify: false`，仍保留领域事件但不占用中央通知栏。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
+表现层以 `ABILITY_TRIGGERED` 为唯一的技能发动事实，为每条可见事件生成独立技能通知气泡，显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。同批 `TRIGGER_PULLED`、`CARD_SUIT_REVEALED` 与 after 状态可用于补充最终概率、行动建议和实际花色等结果数据。仅 Player Skill 与 AI Skill 进入气泡；Talent 以及仅用于内部状态清理的 `notify: false` 规则不提示。通知按最新在上堆叠，各自显示 2.5 秒后渐隐移除，不改变领域状态。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
 
 普通点数比较先按双方各自生效中的爆牌上限，计算手牌可取的不爆牌最大总点数，再让能力通过 pending comparison 叠加点数修正；修正值不参与爆牌判定。即使基础点数相同，也必须先完成该能力窗口才能判定平局。最终比较分写入 `RoundOutcome.comparisonScores`，结算文案和牌桌点数均读取该值；`on-round-end` 规则也可通过通用 `round-final-score` 标量读取这个最终显示值，并用 `set-status-stacks` 将它保存为下一轮的公开阈值。
 

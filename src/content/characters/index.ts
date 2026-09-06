@@ -2,4 +2,4 @@ export { CHARACTER_CATALOG, CHARACTER_METADATA_BY_ID, DEFAULT_CHARACTER_ID, getC
 export { loadCharacter, loadDefaultCharacter, clearCharacterCache } from "./loader";
 export { defeatedCharacterIds, defeatedCharacterIdsByFirstDefeat, isCharacterUnlocked, newlyUnlockedCharacterIds, newlyUnlockedForDefeat, unlockedCharacterIdsForDefeats } from "./unlocks";
 export { TABLE_ART_BASELINE } from "./types";
-export type { CharacterAssets, CharacterData, CharacterDefinition, CharacterMetadata, CharacterPortraitScales, CharacterPortraitSurface, CharacterTrophyGallery, CharacterUnlockCondition, RevolverPlacement, Tier, TrophyCloseupPoint } from "./types";
+export type { CharacterAssets, CharacterData, CharacterDefinition, CharacterMetadata, CharacterPortraitScales, CharacterPortraitSurface, CharacterTrophyDossier, CharacterTrophyDossierField, CharacterTrophyDossierFieldId, CharacterTrophyGallery, CharacterUnlockCondition, RevolverPlacement, Tier, TrophyCloseupPoint, TrophyCloseupVariant } from "./types";

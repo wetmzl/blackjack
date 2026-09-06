@@ -12,6 +12,21 @@
   "profile": {
     "description": "来自哥伦比亚的历史与文献学者，曾在漫长岁月里追索失落的血脉与旧日的天空。她接受策展人的邀请，换上为她准备的礼服，想在这场黑杰克轮盘赌里验证：被遗忘的传承是否仍能替人挡下一次注定的终局。"
   },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 08",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "霍尔海雅" },
+      { "id": "race", "label": "种族", "value": "黎博利" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "S" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": { "label": "尸体状况", "description": "确认死亡；遗体已完成初步收容，礼服与种族特征保存完整。" }
+  },
   "matchSummary": {
     "playerVictory": "最后一声枪响后，霍尔海雅倚在椅背上，眼中的风暴终于归于寂静。她没能从牌堆里找回那双旧日的羽翼，却把最后的记忆留在了你的收藏中。",
     "playerDefeat": "霍尔海雅将牌面整齐收拢，像是替某段传承合上书页：‘不错的牌局。现在，策展人，请把你的愿望交给我。’",
@@ -35,7 +50,20 @@
       { "id": "face", "name": "沉静的面容", "x": 50, "y": 16, "image": "/assets/characters/ho-olheyak-trophy-detail-face.png", "description": "曾经望向天空的双眼安静地合上，角与耳的轮廓仍保留着她独有的翼族气质。" },
       { "id": "chest-costume", "name": "礼服胸饰", "x": 50, "y": 31, "image": "/assets/characters/ho-olheyak-trophy-detail-chest-costume.png", "description": "礼服的胸前结构与金属饰件在陈列灯下清晰可见，记录下她为这场赌局换上的新装。" },
       { "id": "upper-hem", "name": "裙摆纹样", "x": 50, "y": 55, "image": "/assets/characters/ho-olheyak-trophy-detail-upper-hem.png", "description": "深色裙摆与细密纹样收住了身体线条，像一页尚未读完的旧档案。" },
-      { "id": "shoes", "name": "鞋履", "x": 50, "y": 88, "image": "/assets/characters/ho-olheyak-trophy-detail-shoes.png", "description": "鞋履与陈列舱软垫保持整齐的收纳姿态，补全了这套礼服的足部记录。" }
+      {
+        "id": "shoes",
+        "name": "鞋履",
+        "x": 50,
+        "y": 88,
+        "image": "/assets/characters/ho-olheyak-trophy-detail-shoes.png",
+        "description": "礼服鞋与深色丝袜在软垫上整齐交叠，鞋面、搭扣与低跟的结构清晰可辨。",
+        "variants": [
+          {
+            "image": "/assets/characters/ho-olheyak-trophy-detail-shoes-p1.png",
+            "description": "褪去鞋履后，深色丝袜仍完整包裹双腿，足部轮廓在陈列灯下变得更加清楚。"
+          }
+        ]
+      }
     ]
   },
   "revolverPlacement": { "top": 140, "left": 124, "mobileTop": 110, "mobileLeft": 112 },

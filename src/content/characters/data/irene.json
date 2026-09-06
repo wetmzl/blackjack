@@ -12,6 +12,21 @@
   "profile": {
     "description": "伊比利亚审判庭的前审判官，大审判官达里奥的弟子。为了换取能够彻底平息海嗣危机、拯救伊比利亚’，她带上了老师的提灯，毅然决然踏入古堡。。"
   },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 03",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "艾丽妮" },
+      { "id": "race", "label": "种族", "value": "黎博利" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "A" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": { "label": "尸体状况", "description": "确认死亡；遗体已完成初步收容，服装与随身饰件保存完整。" }
+  },
   "matchSummary": {
     "playerVictory": "枪声骤响，硝烟散去，背负着伊比利亚命运的小鸟彻底瘫软在椅子上。子弹贯穿头颅，夺走了她稚嫩的生命，鲜血和脑浆洒向了精致的女仆装，真是可惜。",
     "playerDefeat": "牌局在惊心动魄的较量中落下帷幕。艾丽妮按住剧烈起伏的胸口，眼眶泛红却拼命挺直腰杆，要求你履行承诺——然而这场来之不易的胜利，马上就会被彻底撤销。",
@@ -86,7 +101,13 @@
         "x": 52,
         "y": 87,
         "image": "/assets/characters/irene-trophy-detail-shoes.png",
-        "description": "圆头玛丽珍鞋，看上去十分小巧精致。"
+        "description": "圆头玛丽珍鞋，看上去十分小巧精致。",
+        "variants": [
+          {
+            "image": "/assets/characters/irene-trophy-detail-shoes-p1.png",
+            "description": "鞋履全部卸下后，白色丝袜与脚踝褶边一直延伸到双足，旁侧的礼服鞋则记录着她原本的穿着。"
+          }
+        ]
       }
     ]
   },
