@@ -1,4 +1,5 @@
 import { getAbilityDefinition } from "../core/abilities/registry";
+import type { PendingTriggerPreview } from "../core/match/reducer";
 import type { MatchState, GameEvent } from "../core/match/types";
 import type { AbilityRule, Effect } from "../core/abilities/types";
 
@@ -12,6 +13,11 @@ export interface AbilityNotice {
 
 function actorName(owner: "player" | "opponent", opponentName: string): string {
   return owner === "player" ? "策展人" : opponentName;
+}
+
+function modifiesPendingTriggerMisfire(rule: AbilityRule | undefined): boolean {
+  return rule?.trigger === "before-trigger-pull"
+    && rule.effects.some((effect) => effect.type === "add-to-pending-trigger-misfire-chance");
 }
 
 function suitLabel(suit: "hearts" | "diamonds" | "clubs" | "spades"): string {
@@ -73,17 +79,38 @@ function ruleNotice(
 /** Present each visible ability trigger independently; talents are not table toasts. */
 export function abilityTriggerNotice(events: readonly GameEvent[], opponentName: string, after?: MatchState): AbilityNotice[] {
   const notices: AbilityNotice[] = [];
+  const resolvedTrigger = events.some((event) => event.type === "TRIGGER_PULLED");
   for (const event of events) {
     if (event.type !== "ABILITY_TRIGGERED") continue;
     const definition = getAbilityDefinition(event.definitionId);
     if (!definition || (definition.sourceKind !== "player-skill" && definition.sourceKind !== "ai-skill")) continue;
     const rule = definition.rules.find((candidate) => candidate.id === event.ruleId);
     if (rule?.notify === false) continue;
+    // Pending trigger modifiers are announced when the heartbeat window opens.
+    if (resolvedTrigger && modifiesPendingTriggerMisfire(rule)) continue;
     const name = actorName(event.owner, opponentName);
     notices.push({
       owner: event.owner,
       tone: event.owner === "player" ? "player" : "ai",
       text: `${name}发动「${definition.name}」：${ruleNotice(event, rule, definition, events, after)}`
+    });
+  }
+  return notices;
+}
+
+/** Formats deterministic before-trigger previews for the heartbeat window. */
+export function pendingTriggerAbilityNotices(preview: PendingTriggerPreview, opponentName: string): AbilityNotice[] {
+  const notices: AbilityNotice[] = [];
+  for (const event of preview.events) {
+    if (event.type !== "ABILITY_TRIGGERED") continue;
+    const definition = getAbilityDefinition(event.definitionId);
+    if (!definition || (definition.sourceKind !== "player-skill" && definition.sourceKind !== "ai-skill")) continue;
+    const rule = definition.rules.find((candidate) => candidate.id === event.ruleId);
+    if (rule?.notify === false || !modifiesPendingTriggerMisfire(rule)) continue;
+    notices.push({
+      owner: event.owner,
+      tone: event.owner === "player" ? "player" : "ai",
+      text: `${actorName(event.owner, opponentName)}发动「${definition.name}」：本轮哑火概率为${Math.round(preview.misfireChance * 100)}%`
     });
   }
   return notices;

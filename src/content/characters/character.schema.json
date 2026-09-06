@@ -200,7 +200,7 @@
         "MATCH_START", "PLAYER_HIT", "PLAYER_STAND",
         "OPPONENT_FIRST_HIT", "OPPONENT_FIRST_STAND", "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND",
         "PLAYER_BLACKJACK", "OPPONENT_BLACKJACK", "PLAYER_BUST", "OPPONENT_BUST",
-        "PLAYER_SURVIVED_TRIGGER", "OPPONENT_SURVIVED_TRIGGER", "PLAYER_TRIGGER_MISFIRED", "OPPONENT_TRIGGER_MISFIRED",
+        "PLAYER_SURVIVED_TRIGGER", "OPPONENT_SURVIVED_TRIGGER",
         "PLAYER_WIN_ROUND", "OPPONENT_WIN_ROUND", "PUSH_ROUND",
         "PLAYER_TRIGGER_READY", "OPPONENT_TRIGGER_READY", "PLAYER_TRIGGER_HIT", "OPPONENT_TRIGGER_HIT",
         "SPECIAL_TWENTY_ONE_PUSH", "SPECIAL_LOW_PUSH"
@@ -218,8 +218,6 @@
         "OPPONENT_BUST": { "$ref": "#/$defs/dialoguePool", "description": "仅与会者爆牌。" },
         "PLAYER_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "策展人朝天花板扣下扳机但未击发。" },
         "OPPONENT_SURVIVED_TRIGGER": { "$ref": "#/$defs/dialoguePool", "description": "发牌员对准与会者头部扣下扳机但未击发。" },
-        "PLAYER_TRIGGER_MISFIRED": { "$ref": "#/$defs/dialoguePool", "description": "策展人的左轮因技能干预而哑火；不同于自然空膛。" },
-        "OPPONENT_TRIGGER_MISFIRED": { "$ref": "#/$defs/dialoguePool", "description": "发牌员扣下扳机后，面向与会者的左轮因技能干预而哑火；不同于自然空膛。" },
         "PLAYER_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由策展人获胜；不含 Blackjack、爆牌和特殊牌型。" },
         "OPPONENT_WIN_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "仅普通点数比较由与会者获胜；不含 Blackjack、爆牌和特殊牌型。" },
         "PUSH_ROUND": { "$ref": "#/$defs/dialoguePool", "description": "不属于特殊 21 对 21 或低点数平局的普通平局。" },

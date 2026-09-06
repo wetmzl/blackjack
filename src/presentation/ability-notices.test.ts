@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { abilityTriggerNotice } from "./ability-notices";
+import { abilityTriggerNotice, pendingTriggerAbilityNotices } from "./ability-notices";
 import type { GameEvent, MatchState } from "../core/match/types";
+import type { PendingTriggerPreview } from "../core/match/reducer";
 
 const afterWithAdvice = (advice: "hit" | "stand"): MatchState => ({ playerSkills: { advice } } as MatchState);
 
@@ -30,10 +31,12 @@ describe("ability trigger notices", () => {
     expect(abilityTriggerNotice([event], "德克萨斯")).toEqual([]);
   });
 
-  it("uses the final trigger misfire chance from the same batch", () => {
+  it("announces the final misfire chance during the pending trigger window", () => {
     const ability: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "skill", definitionId: "sword-and-handcannon", ruleId: "misfire-after-rival-hits", owner: "player" };
     const trigger: GameEvent = { type: "TRIGGER_PULLED", actor: "player", probability: 0.2, baseProbability: 0.2, misfireChance: 0.99, result: "misfire", fired: false };
-    expect(abilityTriggerNotice([ability, trigger], "德克萨斯")[0]?.text).toBe("策展人发动「剑与手炮」：本轮哑火概率为99%");
+    const preview: PendingTriggerPreview = { actor: "player", misfireChance: 0.99, events: [ability] };
+    expect(pendingTriggerAbilityNotices(preview, "德克萨斯")[0]?.text).toBe("策展人发动「剑与手炮」：本轮哑火概率为99%");
+    expect(abilityTriggerNotice([ability, trigger], "德克萨斯")).toEqual([]);
   });
 
   it("uses the published action advice from after state", () => {

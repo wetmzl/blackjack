@@ -143,8 +143,6 @@ describe("finite dialogue state resolver", () => {
       reveal([card("10"), card("8")], [card("10", "hearts"), card("9", "hearts"), card("5", "clubs")], { winner: "player", reason: "bust", penaltyTarget: "opponent", bulletsAdded: 1}),
       triggerState("player", "empty-chamber"),
       triggerState("opponent", "empty-chamber"),
-      triggerState("player", "misfire"),
-      triggerState("opponent", "misfire"),
       reveal([card("10"), card("7")], [card("10", "hearts"), card("8", "hearts")], comparison("opponent")),
       reveal([card("10"), card("7")], [card("9", "hearts"), card("8", "hearts")], push),
       rouletteState("roulette-reaction"),
@@ -158,5 +156,10 @@ describe("finite dialogue state resolver", () => {
     const selected = states.map((state) => resolveDialogueState(state).event);
     expect(new Set(selected)).toEqual(new Set(DIALOGUE_EVENT_CODES));
     expect(selected).toHaveLength(DIALOGUE_EVENT_CODES.length);
+  });
+
+  it("reuses the ordinary non-firing dialogue pools for ability misfires", () => {
+    expect(resolveDialogueState(triggerState("player", "misfire")).event).toBe("PLAYER_SURVIVED_TRIGGER");
+    expect(resolveDialogueState(triggerState("opponent", "misfire")).event).toBe("OPPONENT_SURVIVED_TRIGGER");
   });
 });

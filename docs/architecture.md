@@ -93,7 +93,7 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 显式 Stand 会广播 `after-stand`。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
 
-表现层以 `ABILITY_TRIGGERED` 为唯一的技能发动事实，为每条可见事件生成独立技能通知气泡，显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。同批 `TRIGGER_PULLED`、`CARD_SUIT_REVEALED` 与 after 状态可用于补充最终概率、行动建议和实际花色等结果数据。仅 Player Skill 与 AI Skill 进入气泡；Talent 以及仅用于内部状态清理的 `notify: false` 规则不提示。通知按最新在上堆叠，各自显示 2.5 秒后渐隐移除，不改变领域状态。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
+表现层以 `ABILITY_TRIGGERED` 为技能发动事实，为每条可见事件生成独立技能通知气泡，显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。`before-trigger-pull` 的哑火修正是唯一的提前展示场景：进入心跳等待窗口时，以不提交 TTL、计数器或 RNG 的确定性预览计算最终概率并显示一次，实际扣扳机批次不重复提示。同批 `CARD_SUIT_REVEALED` 与 after 状态仍可用于补充行动建议和实际花色等结果数据。仅 Player Skill 与 AI Skill 进入气泡；Talent 以及仅用于内部状态清理的 `notify: false` 规则不提示。通知按最新在上堆叠，各自显示 2.5 秒后渐隐移除，不改变领域状态。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
 
 普通点数比较先按双方各自生效中的爆牌上限，计算手牌可取的不爆牌最大总点数，再让能力通过 pending comparison 叠加点数修正；修正值不参与爆牌判定。即使基础点数相同，也必须先完成该能力窗口才能判定平局。最终比较分写入 `RoundOutcome.comparisonScores`，结算文案和牌桌点数均读取该值；`on-round-end` 规则也可通过通用 `round-final-score` 标量读取这个最终显示值，并用 `set-status-stacks` 将它保存为下一轮的公开阈值。
 
@@ -101,7 +101,7 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 `replace-pending-draw` 的 `create-derived-card` fallback 只在实体牌堆没有合适候选时创建衍生牌。衍生牌不修改实体牌堆、不进入弃牌堆，离开手牌或本轮结束后不作为实体牌保存回牌堆。
 
-能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。能力事件还提供爆牌检查、扳机前待处理修改、TTL 到期事实，以及主动能力成功后的观察广播；标量表达式和衍生牌效果均由能力 RNG 确定性解析。修改子弹判定的规则必须在 `before-trigger-pull` 提交，最终 `TRIGGER_PULLED` 明确记录命中、能力哑火或自然空膛，表现层据此选择独立文案和音频 cue。新增能力流程见 [新增能力工作流](adding-an-ability.md)。
+能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。能力事件还提供爆牌检查、扳机前待处理修改、TTL 到期事实，以及主动能力成功后的观察广播；标量表达式和衍生牌效果均由能力 RNG 确定性解析。修改子弹判定的规则必须在 `before-trigger-pull` 提交，最终 `TRIGGER_PULLED` 明确记录命中、能力哑火或自然空膛；结果提示与音效可据此区分，角色对白则统一进入既有未击发存活状态池。新增能力流程见 [新增能力工作流](adding-an-ability.md)。
 
 ## 持久化
 

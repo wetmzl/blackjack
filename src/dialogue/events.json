@@ -11,8 +11,6 @@
   { "code": "OPPONENT_BUST", "label": "对手爆牌" },
   { "code": "PLAYER_SURVIVED_TRIGGER", "label": "玩家空枪存活" },
   { "code": "OPPONENT_SURVIVED_TRIGGER", "label": "对手空枪存活" },
-  { "code": "PLAYER_TRIGGER_MISFIRED", "label": "玩家因哑火存活" },
-  { "code": "OPPONENT_TRIGGER_MISFIRED", "label": "对手因哑火存活" },
   { "code": "PLAYER_WIN_ROUND", "label": "玩家赢轮" },
   { "code": "OPPONENT_WIN_ROUND", "label": "对手赢轮" },
   { "code": "PUSH_ROUND", "label": "平局" },

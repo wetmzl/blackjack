@@ -3,7 +3,7 @@ import { handValue } from "./core/blackjack/hand";
 import type { Card } from "./core/blackjack/types";
 import type { MatchHistoryRecord } from "./core/match/history";
 import { buildObservation } from "./core/ai/observation";
-import { abilityWorld, createMatch, getActiveBustLimit, getLegalActions, getRoundHitCounts } from "./core/match/reducer";
+import { abilityWorld, createMatch, getActiveBustLimit, getLegalActions, getRoundHitCounts, previewPendingTrigger } from "./core/match/reducer";
 import type { Action, Actor, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
 import { getPlayerSkillDefinition, PLAYER_SKILL_DEFINITIONS } from "./core/skills/definitions";
@@ -22,7 +22,7 @@ import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
 import { SaveValidationError, type CharacterDefeatRecord, type LongTermSave } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
-import { abilityTriggerNotice, type AbilityNotice } from "./presentation/ability-notices";
+import { abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
 import { presentMatchHaptics } from "./presentation/haptics";
 import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
@@ -400,7 +400,15 @@ function startTypewriter(text: string): void {
 }
 function presentDelta(before: MatchState, after: MatchState): void {
   const events = after.history.slice(before.history.length);
-  const abilityNotices = after.scene === "match" && after.view === "table" ? abilityTriggerNotice(events, currentCharacter.name, after) : [];
+  const triggerWindowOpened = events.some((event) => event.type === "ROUND_RESULT_ACKNOWLEDGED")
+    && (after.round.phase === "roulette-reaction" || after.round.phase === "roulette-trigger");
+  const triggerPreview = triggerWindowOpened ? previewPendingTrigger(after) : null;
+  const abilityNotices = after.scene === "match" && after.view === "table"
+    ? [
+        ...abilityTriggerNotice(events, currentCharacter.name, after),
+        ...(triggerPreview ? pendingTriggerAbilityNotices(triggerPreview, currentCharacter.name) : [])
+      ]
+    : [];
   if (abilityNotices.length > 0) enqueueAbilityNotices(abilityNotices);
   const trigger = events.find((candidate) => candidate.type === "TRIGGER_PULLED");
   const expired = events.find((candidate) => candidate.type === "ABILITY_EXPIRED");
@@ -966,7 +974,13 @@ async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinit
   autosave = createAutosaveController(repository, save, match);
   const state = autosave.getState();
   if (state.view === "match-summary") renderSummary(state);
-  else { renderMatch(state); syncMatchAudioState(gameAudio, state); scheduleAiTurn(state); }
+  else {
+    renderMatch(state);
+    const triggerPreview = previewPendingTrigger(state);
+    if (triggerPreview) enqueueAbilityNotices(pendingTriggerAbilityNotices(triggerPreview, currentCharacter.name));
+    syncMatchAudioState(gameAudio, state);
+    scheduleAiTurn(state);
+  }
 }
 function dispatch(action: Action): void { if (!autosave) return; const before = autosave.getState(); const after = autosave.dispatch(action); if (after === before) return; lastAction = action; lastDomainEvent = after.history.at(-1)?.type ?? null; if (after.scene === "match" && after.view === "match-summary") renderSummary(after); else if (after.scene === "match") renderMatch(after); presentDelta(before, after); presentMatchAudio(gameAudio, before, after); presentMatchHaptics(before, after, !save.settings.reducedMotion); scheduleAiTurn(after); }
 

@@ -85,8 +85,6 @@
     "OPPONENT_BUST": ["爆牌了吗？也许这就是旧日给我的回答。"],
     "PLAYER_SURVIVED_TRIGGER": ["空膛。命运暂时还不肯替我们落笔。"],
     "OPPONENT_SURVIVED_TRIGGER": ["没响。看来这段传承还没有走到终点。"],
-    "PLAYER_TRIGGER_MISFIRED": ["哑火也是一种答案，只是它通常来得太迟。"],
-    "OPPONENT_TRIGGER_MISFIRED": ["枪没有响。记忆替我保留了这一页。"],
     "PLAYER_WIN_ROUND": ["这一轮你赢了。请把子弹装好，别让仪式失去秩序。"],
     "OPPONENT_WIN_ROUND": ["我赢了。失败的人总该为下一页付出一点代价。"],
     "PUSH_ROUND": ["平局。两段记忆重叠时，命运也只能暂时沉默。"],

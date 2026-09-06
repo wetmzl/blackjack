@@ -113,6 +113,16 @@ function ireneInfoBarMatch(): MatchState {
   throw new Error("No deterministic Irene information-bar fixture found");
 }
 
+function ireneMisfireRevealMatch(): MatchState {
+  const match = ireneInfoBarMatch();
+  const outcome = { winner: "player" as const, reason: "comparison" as const, penaltyTarget: "opponent" as const, bulletsAdded: 1 };
+  return {
+    ...match,
+    roulette: { ...match.roulette, opponent: { capacity: 6, bullets: 3 } },
+    round: { ...match.round, phase: "round-reveal", currentActor: null, outcome }
+  };
+}
+
 function lapplandInfoBarMatch(): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
     const dealt = createMatch(`e2e-lappland-info-${index}`, { opponentId: "lappland-the-decadenza", opponentAiSkills: lapplandCharacterData.aiSkills });
@@ -467,6 +477,25 @@ test("艾丽妮的信息栏显示本轮实际哑火概率", async ({ page }) => 
   const dialog = page.locator("#ai-info-dialog");
   await expect(dialog).toContainText("策展人本轮每次 Hit 会增加手枪33%的哑火概率");
   await expect(dialog.locator(".ai-info-number")).toHaveText("66%");
+});
+
+test("剑与手炮在心跳等待窗口提前提示当前哑火概率", async ({ page }) => {
+  const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
+  imported.settings.reducedMotion = true;
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "irene-misfire-window.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, ireneMisfireRevealMatch());
+
+  await page.getByRole("button", { name: "确认结果" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "roulette-trigger");
+  const notice = page.locator("#ability-notices .ability-notice-ai");
+  await expect(notice).toHaveCount(1);
+  await expect(notice).toContainText("艾丽妮发动「剑与手炮」：本轮哑火概率为66%");
+
+  await page.getByRole("button", { name: "静观好戏" }).click();
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "roulette-result");
+  await expect(notice).toHaveCount(1);
 });
 
 test("拉普兰德的信息栏显示当前狂欢指标并说明两项机制", async ({ page }) => {

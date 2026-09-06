@@ -8,7 +8,7 @@ import { calculateAiThreshold, decideAiAction, sampleAiNoise } from "../ai/polic
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
-import { createMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, resolveRound } from "./reducer";
+import { createMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, previewPendingTrigger, resolveRound } from "./reducer";
 import { canPlayAbility, playAbility } from "../abilities/engine";
 import { fixedCardValue } from "../abilities/card-zone-adapter";
 import { abilityTriggerNotice } from "../../presentation/ability-notices";
@@ -534,6 +534,11 @@ describe("round resolution and roulette", () => {
       ],
       round: { ...base.round, phase: "roulette-trigger", currentActor: null, outcome: { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1} }
     };
+    const preview = previewPendingTrigger(state);
+    expect(preview).toMatchObject({ actor: "opponent", misfireChance: 0.99 });
+    expect(preview?.events).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "ai-sword-and-handcannon" }));
+    expect(state.rng.roulette).toEqual(oldRng);
+    expect(state.abilities.instances.find((instance) => instance.definitionId === "ai-sword-and-handcannon")?.ttl?.remaining).toBe(30);
     const next = gameReducer(state, { type: "TRIGGER_ROULETTE" });
     const pulled = next.history.find((event) => event.type === "TRIGGER_PULLED");
     expect(pulled).toMatchObject({ actor: "opponent" });

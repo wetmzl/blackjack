@@ -92,6 +92,34 @@ export function getRoundHitCounts(state: MatchState): Readonly<Record<Actor, num
   return { player: events.filter((event) => event.type === "PLAYER_HIT").length, opponent: events.filter((event) => event.type === "OPPONENT_HIT").length };
 }
 
+export interface PendingTriggerPreview {
+  readonly actor: Actor;
+  readonly misfireChance: number;
+  readonly events: readonly GameEvent[];
+}
+
+/** Resolves the pending trigger against a discarded copy so the waiting UI can
+ * present deterministic modifiers without consuming TTL, counters or RNG. */
+export function previewPendingTrigger(state: MatchState): PendingTriggerPreview | null {
+  if (state.round.phase !== "roulette-reaction" && state.round.phase !== "roulette-trigger") return null;
+  const actor = state.round.outcome?.penaltyTarget;
+  if (!actor) return null;
+  const pending: PendingTrigger = { id: `trigger-preview:${state.roundIndex}:${state.history.length}`, actor };
+  const historyLength = state.history.length;
+  const prepared = runAbilityEvent(state, {
+    trigger: "before-trigger-pull",
+    sourceEventId: pending.id,
+    eventActor: actor,
+    roundHitCounts: getRoundHitCounts(state),
+    roundOutcome: state.round.outcome ?? undefined
+  }, { trigger: pending });
+  return {
+    actor,
+    misfireChance: prepared.pendingTrigger?.misfireChance ?? 0,
+    events: prepared.state.history.slice(historyLength)
+  };
+}
+
 function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourceEventId: string): MatchState {
   return actors.reduce((next, actor) => {
     const before = abilityWorld(next);

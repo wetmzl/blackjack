@@ -95,8 +95,6 @@ export function resolveDialogueState(state: MatchState): ResolvedDialogueState {
       if (trigger?.type !== "TRIGGER_PULLED") return resolved("MATCH_START", phase, roundStartIndex);
       const event = trigger.fired
         ? trigger.actor === "player" ? "PLAYER_TRIGGER_HIT" : "OPPONENT_TRIGGER_HIT"
-        : trigger.result === "misfire"
-          ? trigger.actor === "player" ? "PLAYER_TRIGGER_MISFIRED" : "OPPONENT_TRIGGER_MISFIRED"
         : trigger.actor === "player" ? "PLAYER_SURVIVED_TRIGGER" : "OPPONENT_SURVIVED_TRIGGER";
       return resolved(event, phase, triggerIndex);
     }
