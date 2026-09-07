@@ -2,11 +2,11 @@ import type { AbilityTtl, SkillCardInstance } from "../abilities/types";
 
 /** Closed player archetypes used only for skill-draw preferences. */
 export type SkillTag = "gambler" | "cheater" | "intelligence-officer" | "gunslinger";
-export const SKILL_TAG_METADATA: Readonly<Record<SkillTag, { readonly label: string; readonly symbol: string }>> = Object.freeze({
-  gambler: { label: "赌徒", symbol: "♠" },
-  cheater: { label: "老千", symbol: "♦" },
-  "intelligence-officer": { label: "情报官", symbol: "♥" },
-  gunslinger: { label: "枪手", symbol: "♣" }
+export const SKILL_TAG_METADATA: Readonly<Record<SkillTag, { readonly label: string; readonly symbol: string; readonly summary: string }>> = Object.freeze({
+  gambler: { label: "赌徒", symbol: "♠", summary: "操作自己的手牌，目标是做出更大的牌型，同时避免自己爆牌。此类技能主要作用于策展人的手牌，核心用途是提高黑杰克牌局的胜率。" },
+  cheater: { label: "老千", symbol: "♦", summary: "操纵牌桌规则与全局局势：提高爆牌上限、制造点数优势、调整或干预牌库。使用这些技能时，你是在明显地尝试控制整场赌局。" },
+  "intelligence-officer": { label: "情报官", symbol: "♥", summary: "获取原本无法直接得知的信息，例如暗牌、牌库或局势线索。情报本身不直接改变结果，但能帮助你做出更准确的行动选择。" },
+  gunslinger: { label: "枪手", symbol: "♣", summary: "操作俄罗斯轮盘相关机制，包括弹仓、子弹与扳机事件，甚至可以直接从轮盘过程中获取优势。" }
 });
 export const SKILL_TAGS: readonly SkillTag[] = Object.freeze(Object.keys(SKILL_TAG_METADATA) as SkillTag[]);
 
@@ -23,6 +23,7 @@ export interface PlayerSkillDefinition {
   readonly usage: string;
   readonly category: SkillCategory;
   readonly timing: readonly SkillTiming[];
+  /** The first entry is the primary catalog group; later entries are secondary draw affinities. */
   readonly skillTags: readonly SkillTag[];
   readonly primaryDomain: "blackjack" | "roulette" | "information" | "skill-economy" | "rule-control";
   readonly tags: readonly string[];

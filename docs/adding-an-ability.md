@@ -39,6 +39,9 @@ Player Skill catalog and offer pool.
 Every Player Skill and AI Skill declares one `primaryDomain` and at least one
 open-ended tag. Player Skills additionally declare one or more unique closed
 `skillTags` from `gambler`, `cheater`, `intelligence-officer`, and `gunslinger`.
+The first entry is the skill's primary tag and determines its group in the
+visible Skill Catalog; later entries are secondary affinities and still
+participate in draw-weight matching.
 The player's selected zero-to-two skill tags apply a single factor of 4 when a
 skill matches any selected tag. Player Skills also declare `drop.enabled`, positive
 `drop.baseWeight`, and `stackable`; active cards may repeat, while a held

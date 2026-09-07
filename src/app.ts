@@ -286,13 +286,19 @@ const SKILL_TAG_ART: Readonly<Record<SkillTag, string>> = {
 };
 const TALENT_PLACEHOLDER_MILESTONES = Object.freeze([3, 5, 7, 10]);
 
+function skillCatalogCardMarkup(skill: (typeof PLAYER_SKILL_DEFINITIONS)[number], unlocked: ReadonlySet<string>): string {
+  const available = unlocked.has(skill.id);
+  const source = skill.unlock ? `解锁来源：${skill.unlock.label}` : "初始技能";
+  const tags = skill.skillTags.map((tag) => `<span class="skill-tag-label">${SKILL_TAG_METADATA[tag].label}</span>`).join("");
+  return `<div class="loadout-skill ${available ? "" : "locked"}"><div><details class="profile-ability"><summary><strong>${escapeHtml(skill.name)}</strong><span>：${escapeHtml(skill.description)}</span></summary><p>${escapeHtml(skill.profileLore)}</p></details><div class="skill-list-meta"><span>${skill.category === "passive" ? "被动" : "主动"}</span>${tags}</div><small>${escapeHtml(source)} · ${available ? "已解锁，可在牌局中掉落" : "尚未解锁"}</small></div></div>`;
+}
+
 function skillCatalogMarkup(): string {
   const unlocked = new Set(unlockedPlayerSkillIdsForDefeats(save.defeats));
-  return PLAYER_SKILL_DEFINITIONS.map((skill) => {
-    const available = unlocked.has(skill.id);
-    const source = skill.unlock ? `解锁来源：${skill.unlock.label}` : "初始技能";
-    const tags = skill.skillTags.map((tag) => `<span class="skill-tag-label">${SKILL_TAG_METADATA[tag].label}</span>`).join("");
-    return `<div class="loadout-skill ${available ? "" : "locked"}"><div><details class="profile-ability"><summary><strong>${escapeHtml(skill.name)}</strong><span>：${escapeHtml(skill.description)}</span></summary><p>${escapeHtml(skill.profileLore)}</p></details><div class="skill-list-meta"><span>${skill.category === "passive" ? "被动" : "主动"}</span>${tags}</div><small>${escapeHtml(source)} · ${available ? "已解锁，可在牌局中掉落" : "尚未解锁"}</small></div></div>`;
+  return SKILL_TAGS.map((tag) => {
+    const metadata = SKILL_TAG_METADATA[tag];
+    const skills = PLAYER_SKILL_DEFINITIONS.filter((skill) => skill.skillTags[0] === tag);
+    return `<details class="skill-catalog-group" data-primary-skill-tag="${tag}"><summary><span class="skill-catalog-group-title"><span aria-hidden="true">${metadata.symbol}</span>${metadata.label}</span><small>${skills.length} 项技能</small></summary><div class="skill-catalog-group-list">${skills.map((skill) => skillCatalogCardMarkup(skill, unlocked)).join("")}</div></details>`;
   }).join("");
 }
 
@@ -345,9 +351,20 @@ function renderSkillList(statusMessage = ""): string {
   const tagCards = SKILL_TAGS.map((tag) => {
     const metadata = SKILL_TAG_METADATA[tag];
     const pressed = selected.has(tag);
-    return `<button type="button" class="skill-tag-card ${pressed ? "is-selected" : ""}" data-skill-tag="${tag}" aria-pressed="${pressed ? "true" : "false"}"><img src="${SKILL_TAG_ART[tag]}" alt="" aria-hidden="true" decoding="async"><span class="skill-tag-card-shade" aria-hidden="true"></span><span class="skill-tag-card-copy"><span class="skill-tag-symbol" aria-hidden="true">${metadata.symbol}</span><strong>${metadata.label}</strong><small>${pressed ? "已选择" : "选择流派"}</small></span><span class="skill-tag-check" aria-hidden="true">✓</span></button>`;
+    return `<div class="skill-tag-frame"><button type="button" class="skill-tag-card ${pressed ? "is-selected" : ""}" data-skill-tag="${tag}" aria-label="${pressed ? `取消选择${metadata.label}流派` : `选择${metadata.label}流派`}" aria-pressed="${pressed ? "true" : "false"}"><img src="${SKILL_TAG_ART[tag]}" alt="" aria-hidden="true" decoding="async"><span class="skill-tag-card-shade" aria-hidden="true"></span><span class="skill-tag-card-copy"><span class="skill-tag-symbol" aria-hidden="true">${metadata.symbol}</span><strong>${metadata.label}</strong><small>${pressed ? "已选择" : "选择流派"}</small></span><span class="skill-tag-check" aria-hidden="true">✓</span></button><button type="button" class="skill-tag-info-button" data-skill-tag-info="${tag}" aria-controls="skill-tag-info-dialog" aria-haspopup="dialog" aria-label="查看${metadata.label}流派说明"><span aria-hidden="true">i</span></button></div>`;
   }).join("");
-  return `<div class="skill-management-tabs" role="tablist" aria-label="技能与天赋"><button type="button" role="tab" id="skill-tab" aria-controls="skill-panel" aria-selected="${skillManagementTab === "skills"}" class="skill-management-tab ${skillManagementTab === "skills" ? "is-active" : ""}" data-skill-tab="skills">技能</button><button type="button" role="tab" id="talent-tab" aria-controls="talent-panel" aria-selected="${skillManagementTab === "talents"}" class="skill-management-tab ${skillManagementTab === "talents" ? "is-active" : ""}" data-skill-tab="talents">天赋</button></div>${skillManagementTab === "skills" ? `<section id="skill-panel" role="tabpanel" aria-labelledby="skill-tab" class="skill-management-panel"><div class="skill-tag-heading"><div><h3>选择你的流派</h3><p>最多选择两个，匹配流派的技能出现概率 ×4。</p></div><output aria-live="polite">已选 ${selectedCount}/2</output></div><div class="skill-tag-grid">${tagCards}</div><p id="skill-management-status" class="status-line" role="status" aria-live="polite">${escapeHtml(statusMessage)}</p><div class="skill-panel-footer"><p>局内候选来自全部已解锁技能；天赋不进入技能牌库。</p><button type="button" class="secondary-button skill-catalog-button" data-open-skill-catalog aria-controls="skill-catalog">技能大全</button></div></section>` : `<section id="talent-panel" role="tabpanel" aria-labelledby="talent-tab" class="skill-management-panel talent-panel">${talentRoadMarkup()}</section>`}`;
+  return `<div class="skill-management-tabs" role="tablist" aria-label="技能与天赋"><button type="button" role="tab" id="skill-tab" aria-controls="skill-panel" aria-selected="${skillManagementTab === "skills"}" class="skill-management-tab ${skillManagementTab === "skills" ? "is-active" : ""}" data-skill-tab="skills">技能</button><button type="button" role="tab" id="talent-tab" aria-controls="talent-panel" aria-selected="${skillManagementTab === "talents"}" class="skill-management-tab ${skillManagementTab === "talents" ? "is-active" : ""}" data-skill-tab="talents">天赋</button></div>${skillManagementTab === "skills" ? `<section id="skill-panel" role="tabpanel" aria-labelledby="skill-tab" class="skill-management-panel"><div class="skill-tag-heading"><h3>对应流派技能出现概率 ×4</h3><output aria-live="polite">已选 ${selectedCount}/2</output></div><div class="skill-tag-grid">${tagCards}</div><p id="skill-management-status" class="status-line" role="status" aria-live="polite">${escapeHtml(statusMessage)}</p><div class="skill-panel-footer"><p>局内候选来自全部已解锁技能；天赋不进入技能牌库。</p><button type="button" class="secondary-button skill-catalog-button" data-open-skill-catalog aria-controls="skill-catalog">技能大全</button></div></section>` : `<section id="talent-panel" role="tabpanel" aria-labelledby="talent-tab" class="skill-management-panel talent-panel">${talentRoadMarkup()}</section>`}`;
+}
+
+function showSkillTagInfo(tag: SkillTag): void {
+  if (!SKILL_TAGS.includes(tag)) return;
+  const dialog = root.querySelector<HTMLDialogElement>("#skill-tag-info-dialog");
+  const title = root.querySelector<HTMLElement>("#skill-tag-info-title");
+  const copy = root.querySelector<HTMLElement>("#skill-tag-info-copy");
+  if (!dialog || !title || !copy) return;
+  title.textContent = `${SKILL_TAG_METADATA[tag].label}流派`;
+  copy.textContent = SKILL_TAG_METADATA[tag].summary;
+  if (!dialog.open) dialog.showModal();
 }
 
 function renderSkillManagement(statusMessage = ""): void {
@@ -361,6 +378,11 @@ function renderSkillManagement(statusMessage = ""): void {
     if (tab) {
       skillManagementTab = tab.dataset.skillTab === "talents" ? "talents" : "skills";
       renderSkillManagement();
+      return;
+    }
+    const infoButton = target.closest<HTMLButtonElement>("[data-skill-tag-info]");
+    if (infoButton) {
+      showSkillTagInfo(infoButton.dataset.skillTagInfo as SkillTag);
       return;
     }
     const tagButton = target.closest<HTMLButtonElement>("[data-skill-tag]");
@@ -609,7 +631,7 @@ async function startResourcePackDownload(button: HTMLButtonElement): Promise<voi
 }
 
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-tag-info-dialog" class="modal skill-tag-info-dialog" aria-labelledby="skill-tag-info-title"><button class="modal-close" data-close aria-label="关闭流派说明">×</button><p class="eyebrow">流派说明</p><h2 id="skill-tag-info-title"></h2><p id="skill-tag-info-copy"></p></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
 }
 
 function randomUnit(): number {
@@ -782,7 +804,7 @@ function renderTrophyRoom(): void {
   gameAudio.setBgmScene("lobby");
   const records = [...save.defeats].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
   const cards = records.map(trophyCardMarkup).join("");
-  root.innerHTML = `<main class="trophy-shell"><header class="topbar"><button class="icon-button" data-trophy-back aria-label="返回大厅">←</button><span class="eyebrow">独特藏品</span><button type="button" class="history-shortcut" data-open-history><span>查看历史记录</span><small>${save.history.length}</small></button></header><section class="trophy-heading"><p class="kicker">策展人的收藏时间线</p><h1>战利品<br><em>陈列室</em></h1><p>每名被首次击败的与会者只留下一个独特藏品；再次对局不会改变收藏时间。</p></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有战利品</h2><p>首次击败一名与会者后，藏品会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
+  root.innerHTML = `<main class="trophy-shell"><header class="topbar"><button class="icon-button" data-trophy-back aria-label="返回大厅">←</button><span class="eyebrow">独特藏品</span><button type="button" class="history-shortcut" data-open-history><span>查看历史记录</span><small>${save.history.length}</small></button></header><section class="trophy-heading"><p class="kicker">你的战利品收藏</p><h1>死体<br><em>陈列室</em></h1><p>你可以尽情享用，她们已经没法反抗了不是吗。</p></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有战利品</h2><p>首次击败一名与会者后，藏品会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-trophy-back]")?.addEventListener("click", () => renderLobby("menu"));
   root.querySelector<HTMLButtonElement>("[data-open-history]")?.addEventListener("click", renderMatchHistory);
   root.querySelector<HTMLButtonElement>("[data-history-close]")?.addEventListener("click", () => {
@@ -795,7 +817,7 @@ function renderTrophyRoom(): void {
 function renderMatchHistory(): void {
   const records = [...save.history].reverse();
   const cards = records.map(historyCardMarkup).join("");
-  root.innerHTML = `<main class="trophy-shell history-shell"><header class="topbar"><button class="icon-button" data-history-back aria-label="返回战利品陈列室">←</button><span class="eyebrow">对局记录</span><span class="history-count">${records.length}</span></header><section class="trophy-heading history-heading"><p class="kicker">策展人的牌桌记录</p><h1>历史<br><em>记录</em></h1><p>这里保留每一局的结果与统计，可随时单独清理，不会移除战利品或影响解锁。</p><button type="button" class="danger-button clear-history-button" data-clear-history ${records.length === 0 ? "disabled" : ""}>清理对局记录</button></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有对局记录</h2><p>完成一场牌局后，统计会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
+  root.innerHTML = `<main class="trophy-shell history-shell"><header class="topbar"><button class="icon-button" data-history-back aria-label="返回战利品陈列室">←</button><span class="eyebrow">对局记录</span><span class="history-count">${records.length}</span></header><section class="trophy-heading history-heading"><p class="kicker">你的对局记录</p><h1>历史<br><em>记录</em></h1><p>这里保留每一局的结果与统计，可随时单独清理。</p><button type="button" class="danger-button clear-history-button" data-clear-history ${records.length === 0 ? "disabled" : ""}>清理对局记录</button></section><section class="trophy-list">${cards || `<div class="empty-history"><span>◇</span><h2>还没有对局记录</h2><p>完成一场牌局后，统计会出现在这里。</p></div>`}</section>${showcaseDialogsMarkup()}</main>`;
   root.querySelector<HTMLButtonElement>("[data-history-back]")?.addEventListener("click", renderTrophyRoom);
   root.querySelector<HTMLButtonElement>("[data-clear-history]")?.addEventListener("click", () => void clearHistoryFromUi());
   root.querySelector<HTMLButtonElement>("[data-history-close]")?.addEventListener("click", () => {

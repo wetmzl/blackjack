@@ -30,7 +30,7 @@
     "hidden": { "type": "boolean", "default": false },
     "sourceKind": { "enum": ["player-skill", "ai-skill", "talent"] },
     "primaryDomain": { "enum": ["blackjack", "roulette", "information", "skill-economy", "rule-control"] },
-    "skillTags": { "type": "array", "items": { "enum": ["gambler", "cheater", "intelligence-officer", "gunslinger"] }, "minItems": 1, "maxItems": 4, "uniqueItems": true },
+    "skillTags": { "description": "Closed archetype affinities. The first entry is the primary Skill Catalog group.", "type": "array", "items": { "enum": ["gambler", "cheater", "intelligence-officer", "gunslinger"] }, "minItems": 1, "maxItems": 4, "uniqueItems": true },
     "parameters": { "type": "object", "additionalProperties": { "$ref": "#/definitions/parameter" } },
     "activation": { "oneOf": [
       { "type": "object", "additionalProperties": false, "required": ["type", "windows", "consume"], "properties": { "type": { "const": "action" }, "windows": { "type": "array", "items": { "enum": ["owner-turn", "owner-roulette-reaction"] }, "minItems": 1 }, "consume": { "enum": ["card", "none"] }, "availability": { "type": "array", "items": { "$ref": "#/definitions/condition" } } } },
