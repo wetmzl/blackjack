@@ -162,13 +162,40 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
   }
 }
 
+export interface ComparisonScorePreview {
+  readonly baseScores: Readonly<Record<Actor, number>>;
+  readonly scores: Readonly<Record<Actor, number>>;
+}
+
+function comparisonBaseScores(state: MatchState): Readonly<Record<Actor, number>> {
+  return {
+    player: handValueAtLimit(state.player.hand, state.player.bustLimit ?? 21),
+    opponent: handValueAtLimit(state.opponent.hand, state.opponent.bustLimit ?? 21)
+  };
+}
+
+/** Dry-runs the normal comparison window so the table can project score
+ * modifiers during play without consuming ability state or randomness. */
+export function previewComparisonScores(state: MatchState): ComparisonScorePreview {
+  const baseScores = comparisonBaseScores(state);
+  const finalScores = state.round.outcome?.comparisonScores;
+  if (finalScores) return { baseScores, scores: finalScores };
+  if (state.round.phase !== "turns" || state.round.outcome) return { baseScores, scores: baseScores };
+  const comparison: PendingComparison = { id: `comparison-preview:${state.roundIndex}:${state.history.length}`, scores: baseScores };
+  const provisionalOutcome = comparisonOutcome(baseScores);
+  const prepared = runAbilityEvent(state, {
+    trigger: "before-round-resolution",
+    sourceEventId: `round-resolution:${state.roundIndex}:${state.history.length}`,
+    eventActor: provisionalOutcome.winner ?? undefined,
+    roundOutcome: { reason: "comparison", penaltyTarget: provisionalOutcome.penaltyTarget }
+  }, { comparison });
+  return { baseScores, scores: prepared.pendingComparison?.scores ?? baseScores };
+}
+
 function resolveComparison(state: MatchState): MatchState {
   const comparison: PendingComparison = {
     id: `comparison:${state.roundIndex}:${state.history.length}`,
-    scores: {
-      player: handValueAtLimit(state.player.hand, state.player.bustLimit ?? 21),
-      opponent: handValueAtLimit(state.opponent.hand, state.opponent.bustLimit ?? 21)
-    }
+    scores: comparisonBaseScores(state)
   };
   return resolveRound(state, comparisonOutcome(comparison.scores), comparison);
 }

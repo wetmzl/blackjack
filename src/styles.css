@@ -386,7 +386,8 @@ h2 { font-size: 1.5rem; }
 .opponent-zone::after { content: ""; position: absolute; z-index: -1; left: -16px; right: -16px; bottom: 0; height: 170px; border: 2px solid #80b1a580; border-radius: 50% 50% 10% 10% / 28% 28% 5% 5%; background: linear-gradient(180deg, #23636bcc, #0d3339f5); box-shadow: 0 -22px 40px #07182399, inset 0 20px 28px #75c4b633; transform: perspective(500px) rotateX(26deg); transform-origin: bottom; }
 .hand-row { position: relative; z-index: 5; display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: end; gap: 7px; margin-top: -20px; }
 .hand-label { min-width: 0; color: var(--muted); font-size: .68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hand-label strong { display: block; color: var(--ink); font-size: 1.35rem; margin-top: 3px; }
+.hand-score { display: block; color: var(--ink); font-size: 1.35rem; font-weight: 700; margin-top: 3px; }
+.hand-score-modifier { margin-left: 2px; color: var(--amber); font-size: .58em; font-weight: 800; vertical-align: .16em; }
 .cards { display: flex; flex: 1 1 auto; min-width: 0; justify-content: flex-start; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 4px 0 9px; }
 .card { flex: 0 0 46px; width: 46px; height: 66px; display: flex; flex-direction: column; justify-content: space-between; border: 2px solid #d6c49a; border-radius: 7px; padding: 6px; color: #1b2734; background: linear-gradient(145deg, #fffdf0, #e7dac0); box-shadow: 3px 6px 0 #07131b99; font-weight: 700; }
 .card b { font-size: 1rem; }
@@ -468,6 +469,20 @@ h2 { font-size: 1.5rem; }
 .ability-notice-ai { border-color: #65d6e3aa; background: #112b39eb; color: #a6edf0; }
 .ability-notice-notification { border-color: #dc6f6fcc; background: #381b21f2; color: #ffc0bd; }
 .ability-notice.leaving { animation: ability-notice-leave .28s ease forwards; }
+.tutorial-popover { position: fixed; z-index: 210; top: max(10px, env(safe-area-inset-top)); right: max(10px, calc((100vw - 470px) / 2 + 10px)); width: min(260px, calc(100vw - 20px)); overflow: hidden; border: 1px solid #c69d62b3; border-radius: 11px; background: linear-gradient(145deg, #1d2935c7, #0b1119c7); color: var(--ink); padding: 12px; box-shadow: 0 12px 32px #02060d9e, inset 0 0 20px #f2c46b0a; backdrop-filter: blur(8px); pointer-events: none; animation: tutorial-popover-in .2s ease-out both; }
+.tutorial-heading { border-bottom: 1px solid #c69d624d; margin-bottom: 8px; padding-bottom: 7px; }
+.tutorial-heading span { display: block; margin-bottom: 4px; color: var(--amber); font-size: .66rem; letter-spacing: .06em; }
+.tutorial-popover h2 { margin: 0; color: #f6d58d; font-size: .95rem; line-height: 1.3; }
+.tutorial-popover > p { margin: 0; color: #e4e8ed; font-size: .875rem; line-height: 1.5; }
+.tutorial-resources { display: grid; gap: 8px; margin-top: 11px; }
+.tutorial-resource { margin: 0; overflow: hidden; border: 1px solid #527087; border-radius: 9px; background: #07101a; }
+.tutorial-resource img { display: block; width: 100%; max-height: 150px; object-fit: contain; }
+.tutorial-resource figcaption { padding: 7px 9px; color: var(--muted); font-size: .75rem; line-height: 1.4; }
+.tutorial-actions { display: grid; grid-template-columns: 1fr 1.25fr; gap: 7px; margin-top: 11px; }
+.tutorial-actions button { min-height: 44px; border-radius: 8px; padding: 7px 10px; font-size: .82rem; font-weight: 700; pointer-events: auto; }
+.tutorial-skip { border: 1px solid #527087; background: #142231; color: var(--muted); }
+.tutorial-next { border: 1px solid #d5ad62; background: linear-gradient(145deg, #664d23, #3d2d18); color: #ffe0a0; }
+.tutorial-actions button:focus-visible { outline: 2px solid #f4e2bb; outline-offset: 2px; }
 .skill-draw-backdrop { position: fixed; z-index: 180; inset: 0; display: grid; place-items: center; background: #0000003d; padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
 .skill-draw-backdrop.is-entering { animation: skill-draw-backdrop-in .24s ease-out both; }
 .skill-draw-modal { width: min(calc(100vw - 20px), 360px); max-height: calc(100svh - 20px); overflow: hidden; border: 1px solid #c69d6299; border-radius: 13px; background: #05090dc4; padding: 18px 12px 12px; box-shadow: 0 14px 38px #0008; }
@@ -508,6 +523,7 @@ h2 { font-size: 1.5rem; }
 @keyframes portrait-shake { 0%, 100% { transform: translateX(0) rotate(0) scale(var(--character-art-scale, 1)); } 25% { transform: translateX(-3px) rotate(-1deg) scale(var(--character-art-scale, 1)); } 75% { transform: translateX(3px) rotate(1deg) scale(var(--character-art-scale, 1)); } }
 @keyframes ability-notice-enter { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes ability-notice-leave { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-7px); } }
+@keyframes tutorial-popover-in { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes skill-draw-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes skill-draw-modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .cards .card { animation: deal-in .26s cubic-bezier(.22, .8, .35, 1) both; }

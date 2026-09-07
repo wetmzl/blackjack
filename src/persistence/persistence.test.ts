@@ -29,13 +29,25 @@ function createActiveMatch(seed: string, options: Parameters<typeof createMatch>
 }
 
 describe("long-term save schema and JSON boundary", () => {
-  it("round-trips only durable data and includes the tutorial preference", async () => {
+  it("round-trips only durable data and includes tutorial progress", async () => {
     const save = createDefaultSave(NOW);
     const imported = await importSave(exportSaveJson(save));
     expect(imported).toEqual(save);
     expect(imported.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(imported.skipTutorial).toBe(false);
+    expect(imported.tutorialProgress).toEqual({ completedIds: [] });
     expect(imported).not.toHaveProperty("activeMatch");
+  });
+
+  it("loads saves created before tutorial progress and accepts unknown future tutorial ids", () => {
+    const legacy = structuredClone(createDefaultSave(NOW)) as Partial<LongTermSave>;
+    delete legacy.tutorialProgress;
+    expect(validateLongTermSave(legacy).tutorialProgress).toEqual({ completedIds: [] });
+
+    const future = createDefaultSave(NOW);
+    future.tutorialProgress.completedIds.push("future-mechanic-tutorial");
+    expect(validateLongTermSave(future).tutorialProgress.completedIds).toEqual(["future-mechanic-tutorial"]);
+    expect(() => validateLongTermSave({ ...future, tutorialProgress: { completedIds: ["same", "same"] } })).toThrow(/duplicate completed tutorial id/);
   });
 
   it("rejects unknown fields, incompatible versions, and the former combined format", () => {
@@ -247,6 +259,7 @@ describe("boot and repositories", () => {
     expect(reset.history).toEqual([]);
     expect(reset.defeats).toEqual([]);
     expect(reset.skipTutorial).toBe(false);
+    expect(reset.tutorialProgress).toEqual({ completedIds: [] });
   });
 
   it("does not migrate or overwrite an incompatible long-term save", async () => {
@@ -323,15 +336,16 @@ describe("boot and repositories", () => {
     expect(repeated).toBe(first);
   });
 
-  it("clears match history without changing trophies, progression, totals, or tutorial preference", () => {
+  it("clears match history without changing trophies, progression, totals, or tutorial progress", () => {
     const base = createMatch("clear-history", { opponentId: "texas" });
     const acknowledged: MatchState = { ...base, status: "finished", scene: "lobby", view: "match-summary", outcome: { winner: "player", reason: "opponent-killed" } };
-    const completed = { ...acknowledgeMatchResult(createDefaultSave(NOW), acknowledged, NOW), skipTutorial: true };
+    const completed = { ...acknowledgeMatchResult(createDefaultSave(NOW), acknowledged, NOW), skipTutorial: true, tutorialProgress: { completedIds: ["skill-draw-system"] } };
     const cleared = clearMatchHistory(completed, "2026-08-31T00:00:00.000Z");
     expect(cleared.history).toEqual([]);
     expect(cleared.defeats).toEqual(completed.defeats);
     expect(cleared.profile).toEqual(completed.profile);
     expect(cleared.skipTutorial).toBe(true);
+    expect(cleared.tutorialProgress).toEqual(completed.tutorialProgress);
     expect(unlockedCharacterIdsForDefeats(cleared.defeats)).toEqual(["w", "irene", "plume", "platinum", "lappland-the-decadenza"]);
     expect(unlockedPlayerSkillIdsForDefeats(cleared.defeats)).toContain("blueberry-and-dark-chocolate");
     expect(cleared.updatedAt).toBe("2026-08-31T00:00:00.000Z");
@@ -384,6 +398,18 @@ describe("serial autosave", () => {
     expect(repository.commits[0]!.profile.matchesPlayed).toBe(1);
     expect(repository.runtime).toBeNull();
     expect(controller.getSave().profile.matchesPlayed).toBe(1);
+  });
+
+  it("serializes tutorial progress with runtime writes and preserves it in the final commit", async () => {
+    const repository = new DelayedRepository();
+    const initial = createDefaultSave(NOW);
+    const controller = createAutosaveController(repository, initial, createMatch("tutorial-autosave"), { now: () => NOW });
+    controller.updateSave({ ...initial, tutorialProgress: { completedIds: ["skill-draw-system"] } });
+    controller.dispatch({ type: "ESCAPE_MATCH" });
+    controller.dispatch({ type: "ACK_MATCH_RESULT" });
+    await controller.flush();
+    expect(repository.commits[0]?.tutorialProgress.completedIds).toEqual(["skill-draw-system"]);
+    expect(controller.getSave().tutorialProgress.completedIds).toEqual(["skill-draw-system"]);
   });
 });
 

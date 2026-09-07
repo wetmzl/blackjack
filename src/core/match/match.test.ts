@@ -8,7 +8,7 @@ import { calculateAiThreshold, decideAiAction, sampleAiNoise } from "../ai/polic
 import { addBullets, createGun, deathProbability, pullTrigger } from "../roulette/roulette";
 import { chooseDialogue } from "../../dialogue/types";
 import wData from "../../content/characters/data/w.json";
-import { createMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, previewPendingTrigger, resolveRound } from "./reducer";
+import { createMatch, gameReducer, getActiveBustLimit, getLegalActions, normalizeAbilityHands, previewComparisonScores, previewPendingTrigger, resolveRound } from "./reducer";
 import { canPlayAbility, playAbility } from "../abilities/engine";
 import { fixedCardValue } from "../abilities/card-zone-adapter";
 import { abilityTriggerNotice } from "../../presentation/ability-notices";
@@ -289,6 +289,38 @@ describe("createMatch and legal actions", () => {
     expect(reveal.round.outcome).toEqual(expect.objectContaining({ winner: "opponent", reason: "comparison", penaltyTarget: "player" }));
     expect(reveal.round.outcome?.comparisonScores).toEqual({ player: 17, opponent: 19 });
     expect(reveal.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "platinum-vision", ruleId: "apply-comparison-advantage" }));
+  });
+
+  it("previews current comparison modifiers during turns without consuming ability state", () => {
+    const configured = createMatch("platinum-live-comparison-preview", {
+      opponentAiSkills: [{ definitionId: "platinum-vision", enabled: true, parameters: {} }]
+    });
+    const source = configured.abilities.instances.find((entry) => entry.definitionId === "platinum-vision")!;
+    const status = { statusDefinitionId: "platinum-vision-advantage", owner: "opponent" as const, sourceInstanceId: source.instanceId, stacks: 2, duration: "match" as const, parameters: {}, createdAtSequence: source.createdAtSequence };
+    const ready = withHands({ ...configured, abilities: { ...configured.abilities, statuses: [status] } }, [card("10"), card("7")], [card("10"), card("8")]);
+    const abilitiesBefore = structuredClone(ready.abilities);
+
+    expect(previewComparisonScores(ready)).toEqual({
+      baseScores: { player: 17, opponent: 18 },
+      scores: { player: 17, opponent: 20 }
+    });
+    expect(ready.abilities).toEqual(abilitiesBefore);
+    expect(ready.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "platinum-vision" && event.ruleId === "apply-comparison-advantage")).toBe(false);
+  });
+
+  it("recalculates Lappland's live score modifier when the player's hand crosses the index", () => {
+    const configured = createMatch("lappland-live-comparison-preview", {
+      opponentId: "lappland-the-decadenza",
+      opponentAiSkills: [{ definitionId: "carnival-index", enabled: true, parameters: {} }]
+    });
+    const source = configured.abilities.instances.find((entry) => entry.definitionId === "carnival-index")!;
+    const threshold = { statusDefinitionId: "carnival-index-value", owner: "opponent" as const, sourceInstanceId: source.instanceId, stacks: 18, duration: "match" as const, parameters: {}, createdAtSequence: source.createdAtSequence };
+    const indexed = { ...configured, abilities: { ...configured.abilities, statuses: [threshold] } };
+    const below = withHands(indexed, [card("10"), card("7")], [card("10"), card("8")]);
+    const reached = withHands(indexed, [card("10"), card("8")], [card("10"), card("8")]);
+
+    expect(previewComparisonScores(below).scores).toEqual({ player: 17, opponent: 20 });
+    expect(previewComparisonScores(reached).scores).toEqual({ player: 19, opponent: 18 });
   });
 
   it("carries Lappland's adjusted player score into the next round's carnival index", () => {

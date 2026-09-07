@@ -148,7 +148,8 @@ bust limit), `before-trigger-pull` (with a pending misfire chance), and
 expressions can combine constants, hand totals, final displayed round scores,
 hand-card counts, current-round Hit counts, and add/subtract/multiply operations.
 `round-final-score` reads the score already stored for a completed point
-comparison and otherwise falls back to the same hand total shown by the table.
+comparison and otherwise falls back to the base hand total before any live
+comparison-score preview shown by the table.
 `hand-rank-has-suit-partner`
 checks a specified standard rank against a different card sharing its suit.
 `add-derived-card-for-exact-total`
@@ -159,7 +160,10 @@ normal point comparison is being resolved, including when both unmodified
 scores are equal. Each base score is the hand's highest total under that
 actor's active bust limit; modifiers are applied afterward and therefore do
 not cause a bust. The reducer derives the winner from the adjusted scores and
-stores those final scores in the round outcome for presentation.
+stores those final scores in the round outcome for presentation. During the
+turn phase, `previewComparisonScores` dry-runs that same window against a
+discarded copy so UI can display current modifiers without consuming ability
+state, events, counters, TTL, or RNG.
 `set-status-stacks` replaces a match-status stack count with a nonnegative,
 integer scalar result (zero removes the status), allowing a data-driven
 mechanic to carry one public numeric threshold between rounds.

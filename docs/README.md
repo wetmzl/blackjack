@@ -11,6 +11,7 @@
 
 - [新增与会者](adding-a-character.md)：角色美术、档案、目录、Schema、AI 信息栏、对白与验收。
 - [新增能力](adding-an-ability.md)：能力 JSON、通用原语、注册、版本与测试。
+- [新增教程](adding-a-tutorial.md)：启发式触发、分页与资源、标签批量完成及长期存档兼容。
 - [美术资源管线](../tools/art/README.md)：源图职责、透明通道、裁切缩放和资源落盘。
 
 ## 运行与交付

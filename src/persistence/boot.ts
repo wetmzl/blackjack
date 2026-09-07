@@ -28,6 +28,7 @@ export function createDefaultSave(now = new Date().toISOString()): LongTermSave 
     profile,
     settings,
     skipTutorial: false,
+    tutorialProgress: { completedIds: [] },
     history: [],
     defeats: []
   };

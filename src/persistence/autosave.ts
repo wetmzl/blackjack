@@ -6,6 +6,7 @@ import type { SaveRepository } from "./repository";
 
 export interface AutosaveController {
   dispatch(action: Action): MatchState;
+  updateSave(save: LongTermSave): void;
   flush(): Promise<void>;
   getState(): MatchState;
   getSave(): LongTermSave;
@@ -38,5 +39,11 @@ export function createAutosaveController(repository: SaveRepository, save: LongT
     return state;
   };
 
-  return { dispatch, flush: () => queue, getState: () => state, getSave: () => currentSave };
+  const updateSave = (next: LongTermSave): void => {
+    currentSave = next;
+    const snapshot = next;
+    queue = queue.catch(() => undefined).then(() => repository.saveLongTerm(snapshot));
+  };
+
+  return { dispatch, updateSave, flush: () => queue, getState: () => state, getSave: () => currentSave };
 }

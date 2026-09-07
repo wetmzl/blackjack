@@ -188,8 +188,16 @@ export const PlayerProfileSchema = z.object({
   wins: z.number().int().min(0), selectedSkillTags: z.array(z.enum(["gambler", "cheater", "intelligence-officer", "gunslinger"])).max(2)
 }).strict().superRefine((profile, ctx) => { if (new Set(profile.selectedSkillTags).size !== profile.selectedSkillTags.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate selected Skill Tag" }); });
 export const GameSettingsSchema = z.object({ soundEnabled: z.boolean(), reducedMotion: z.boolean() }).strict();
+export const TutorialProgressSchema = z.object({
+  completedIds: z.array(z.string().min(1).max(128))
+}).strict().superRefine((progress, ctx) => {
+  if (new Set(progress.completedIds).size !== progress.completedIds.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["completedIds"], message: "duplicate completed tutorial id" });
+  }
+});
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
 export type GameSettings = z.infer<typeof GameSettingsSchema>;
+export type TutorialProgress = z.infer<typeof TutorialProgressSchema>;
 const HistoryGunSchema = z.object({ capacity: z.number().int().positive(), bullets: z.number().int().min(0) }).strict()
   .refine((gun) => gun.bullets <= gun.capacity, "bullets cannot exceed capacity");
 const HistoryCountsSchema = z.object({ player: z.number().int().min(0), opponent: z.number().int().min(0) }).strict();
@@ -209,6 +217,7 @@ export const LongTermSaveSchema = z.object({
   format: z.literal(LONG_TERM_SAVE_FORMAT), schemaVersion: z.literal(CURRENT_LONG_TERM_SCHEMA_VERSION), gameVersion: z.string().min(1),
   createdAt: z.string().datetime({ offset: true }), updatedAt: z.string().datetime({ offset: true }),
   profile: PlayerProfileSchema, settings: GameSettingsSchema, skipTutorial: z.boolean(),
+  tutorialProgress: TutorialProgressSchema.default({ completedIds: [] }),
   history: z.array(MatchHistoryRecordSchema),
   defeats: z.array(CharacterDefeatRecordSchema)
 }).strict().superRefine((save, ctx) => {

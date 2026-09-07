@@ -150,6 +150,46 @@ function lapplandInfoBarMatch(): MatchState {
   throw new Error("No deterministic Lappland information-bar fixture found");
 }
 
+function comparisonScoreDisplayMatch(): MatchState {
+  const source = findTurnsMatch("e2e-comparison-score-display");
+  const player = { ...source.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "7")]), stood: true, busted: false };
+  const opponent = { ...source.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: true, busted: false };
+  const outcome = {
+    winner: "opponent" as const,
+    reason: "comparison" as const,
+    penaltyTarget: "player" as const,
+    bulletsAdded: 1,
+    comparisonScores: { player: 17, opponent: 20 }
+  };
+  return {
+    ...source,
+    player,
+    opponent,
+    round: { ...source.round, phase: "round-reveal", currentActor: null, player, opponent, outcome }
+  };
+}
+
+function liveComparisonScoreDisplayMatch(): MatchState {
+  const source = createMatch("e2e-live-comparison-score-display", {
+    opponentId: "platinum",
+    opponentAiSkills: [{ definitionId: "platinum-vision", enabled: true, parameters: {} }]
+  });
+  const ability = source.abilities.instances.find((instance) => instance.definitionId === "platinum-vision")!;
+  const player = { ...source.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "7")]), stood: false, busted: false };
+  const opponent = { ...source.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: true, busted: false };
+  return {
+    ...source,
+    player,
+    opponent,
+    shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 },
+    round: { ...source.round, phase: "turns", currentActor: "player", player, opponent, outcome: null },
+    abilities: {
+      ...source.abilities,
+      statuses: [{ statusDefinitionId: "platinum-vision-advantage", owner: "opponent", sourceInstanceId: ability.instanceId, stacks: 2, duration: "match", parameters: {}, createdAtSequence: ability.createdAtSequence }]
+    }
+  };
+}
+
 function hoOlheyakInfoBarMatch(suit: "hearts" | "spades" = "hearts"): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
     const dealt = createMatch(`e2e-ho-olheyak-info-${index}`, { opponentId: "ho-olheyak", opponentAiSkills: hoOlheyakCharacterData.aiSkills });
@@ -514,6 +554,39 @@ test("拉普兰德的信息栏显示当前狂欢指标并说明两项机制", as
   await expect(dialog.locator(".ai-info-number")).toHaveText("19");
 });
 
+test("行动阶段实时展示点数优势，结算时保留拆分并隐藏零加成", async ({ page }) => {
+  await page.goto("/");
+  await installRuntimeSave(page, liveComparisonScoreDisplayMatch());
+
+  const livePlayerScore = page.locator(".player-zone .hand-score");
+  const liveOpponentScore = page.locator(".opponent-zone .hand-score");
+  await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "turns");
+  await expect(livePlayerScore).toHaveText("17");
+  await expect(livePlayerScore.locator(".hand-score-modifier")).toHaveCount(0);
+  await expect(liveOpponentScore).toHaveText("10+2");
+  await expect(liveOpponentScore).toHaveAccessibleName("10加2，当前点数12");
+  await page.getByRole("button", { name: "Hit 要牌" }).click();
+  await expect(livePlayerScore).toHaveText("19");
+  await expect(liveOpponentScore).toHaveText("10");
+  await expect(liveOpponentScore.locator(".hand-score-modifier")).toHaveCount(0);
+
+  await installRuntimeSave(page, comparisonScoreDisplayMatch());
+
+  const playerScore = page.locator(".player-zone .hand-score");
+  const opponentScore = page.locator(".opponent-zone .hand-score");
+  await expect(playerScore).toHaveText("17");
+  await expect(playerScore.locator(".hand-score-modifier")).toHaveCount(0);
+  await expect(opponentScore.locator(".hand-score-base")).toHaveText("18");
+  await expect(opponentScore.locator(".hand-score-modifier")).toHaveText("+2");
+  await expect(opponentScore).toHaveAccessibleName("18加2，当前点数20");
+
+  const fontSizes = await opponentScore.evaluate((score) => ({
+    base: Number.parseFloat(getComputedStyle(score.querySelector(".hand-score-base")!).fontSize),
+    modifier: Number.parseFloat(getComputedStyle(score.querySelector(".hand-score-modifier")!).fontSize)
+  }));
+  expect(fontSizes.modifier).toBeLessThan(fontSizes.base);
+});
+
 test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌", async ({ page }) => {
   await page.goto("/");
   await installRuntimeSave(page, hoOlheyakInfoBarMatch());
@@ -544,8 +617,44 @@ test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌",
 
 test("早有准备提供一次主动抽卡且单击候选立即确认", async ({ page }) => {
   await page.goto("/?debug=1");
-  await installRuntimeSave(page, earlyPreparationDrawMatch());
+  const tutorialMatch = earlyPreparationDrawMatch();
+  const beforePlayerCanAct: MatchState = {
+    ...tutorialMatch,
+    round: {
+      ...tutorialMatch.round,
+      phase: "round-reveal",
+      currentActor: null,
+      outcome: { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 }
+    }
+  };
+  await installRuntimeSave(page, beforePlayerCanAct);
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator("#tutorial-popover")).toHaveCount(0);
+  await installRuntimeSave(page, tutorialMatch);
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  const tutorial = page.locator("#tutorial-popover");
+  await expect(tutorial).toBeVisible();
+  await expect(tutorial.getByRole("heading")).toHaveText("技能抽卡系统");
+  await expect(tutorial).toContainText("机制介绍：page 1/1");
+  await expect(tutorial).toContainText("你的对手会作弊，但你也可以。点击右下角的金色按钮抽取你的技能卡。");
+  await expect(tutorial.getByRole("button")).toHaveCount(2);
+  await expect(tutorial.getByRole("button", { name: "跳过" })).toBeVisible();
+  await tutorial.getByRole("button", { name: "好的" }).click();
+  await expect(tutorial).toHaveCount(0);
+  await expect.poll(() => page.evaluate(async () => {
+    const request = indexedDB.open("house-of-chances");
+    return new Promise<string[]>((resolve, reject) => {
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const transaction = request.result.transaction("saves", "readonly");
+        const get = transaction.objectStore("saves").get("long-term");
+        get.onsuccess = () => resolve((get.result as { data: { tutorialProgress: { completedIds: string[] } } }).data.tutorialProgress.completedIds);
+        get.onerror = () => reject(get.error);
+      };
+    });
+  })).toContain("skill-draw-system");
+  await installRuntimeSave(page, tutorialMatch);
+  await expect(tutorial).toHaveCount(0);
   const drawButton = page.locator(".draw-skill-button");
   await expect(drawButton).toBeEnabled();
   await expect(drawButton).toHaveAttribute("aria-label", "抽取技能，剩余 1 次");

@@ -95,7 +95,7 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 表现层以 `ABILITY_TRIGGERED` 为技能发动事实，为每条可见事件生成独立技能通知气泡，显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。`before-trigger-pull` 的哑火修正是唯一的提前展示场景：进入心跳等待窗口时，以不提交 TTL、计数器或 RNG 的确定性预览计算最终概率并显示一次，实际扣扳机批次不重复提示。同批 `CARD_SUIT_REVEALED` 与 after 状态仍可用于补充行动建议和实际花色等结果数据。气泡按消息来源配色：策展人技能为金色、AI 技能为青色；技能耗尽、技能禁用和全屏异常统一视为系统通知并使用红色，不占用牌桌中央结果栏。通知按最新在上堆叠，最多同时保留 5 条，各自显示 2.5 秒后渐隐移除，不改变领域状态。仅 Player Skill 与 AI Skill 的发动事件进入气泡；Talent 以及仅用于内部状态清理的 `notify: false` 规则不提示。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
 
-普通点数比较先按双方各自生效中的爆牌上限，计算手牌可取的不爆牌最大总点数，再让能力通过 pending comparison 叠加点数修正；修正值不参与爆牌判定。即使基础点数相同，也必须先完成该能力窗口才能判定平局。最终比较分写入 `RoundOutcome.comparisonScores`，结算文案和牌桌点数均读取该值；`on-round-end` 规则也可通过通用 `round-final-score` 标量读取这个最终显示值，并用 `set-status-stacks` 将它保存为下一轮的公开阈值。
+普通点数比较先按双方各自生效中的爆牌上限，计算手牌可取的不爆牌最大总点数，再让能力通过 pending comparison 叠加点数修正；修正值不参与爆牌判定。即使基础点数相同，也必须先完成该能力窗口才能判定平局。行动阶段的牌桌会针对当前状态只读预演同一个能力窗口，实时得到点数修正，但不提交 TTL、计数器、事件或 RNG；正式结算的最终比较分写入 `RoundOutcome.comparisonScores`。结算文案读取最终比较分，牌桌则以“基础点数 + 修正值”拆开展示且省略零修正；`on-round-end` 规则也可通过通用 `round-final-score` 标量读取这个最终比较分，并用 `set-status-stacks` 将它保存为下一轮的公开阈值。
 
 角色 JSON 可选的单个 `infoBar` 是 AI Skill 的持续信息投影，不进入 `MatchState` 或存档。它通过 `sourceAbilityId` 绑定角色已启用的 AI Skill；实例 TTL 归零后投影失效。`core/abilities/info-bar.ts` 使用与能力解释器相同的 hand/gun adapter，并接收核心层从当前轮历史计算的 Hit 计数，把声明式数值表达式、概率、花色或牌解析为当前显示值；UI 只负责格式化和打开角色数据中的说明弹窗。未声明时不渲染空信息栏，核心逻辑与表现层都不得按角色 ID 特判。
 
@@ -109,11 +109,13 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 两个保存边界分别使用严格 Zod Schema，验证：
 
-- 长期档：format、长期 schema version、profile、设置、`skipTutorial`、历史摘要与独立首次击败记录；
+- 长期档：format、长期 schema version、profile、设置、`skipTutorial`、`tutorialProgress`、历史摘要与独立首次击败记录；
 - 运行时档：format、运行时 schema version、角色与技能引用、牌、轮次、左轮和事件结构；
 - 运行时能力实例、状态来源、参数、目录版本和卡牌实例一致性。
 
-当前长期 Schema 版本为 9，运行时 Schema 版本为 5。长期档只保存至多两个 `selectedSkillTags`，天赋 ID 不再写入 profile，而是从 `defeats` 记录按 Talent 的 `unlock` 条件推导；运行时 MatchState 保留天赋与流派快照。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
+当前长期 Schema 版本为 9，运行时 Schema 版本为 5。长期档只保存至多两个 `selectedSkillTags`，天赋 ID 不再写入 profile，而是从 `defeats` 记录按 Talent 的 `unlock` 条件推导；运行时 MatchState 保留天赋与流派快照。教程完成状态使用开放字符串集合 `tutorialProgress.completedIds`，旧档缺失该字段时补为空集合；教程目录新增、删除或未知 ID 都不影响存档有效性，因此仅新增教程不得提升长期 Schema 版本。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
+
+教程目录与纯进度函数位于 `src/tutorials/`。应用编排层仅在真实领域状态变化或恢复后仍可观察到机制事实时派发 cue；右上角非模态弹窗负责分页、附加图片资源与完成交互。教程不写入运行时档、不进入 reducer、不影响 AI observation 或随机流。新增教程流程见 [新增教程](adding-a-tutorial.md)。
 
 ## PWA 与资源缓存
 

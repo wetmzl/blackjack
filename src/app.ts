@@ -3,8 +3,8 @@ import { handValue } from "./core/blackjack/hand";
 import type { Card } from "./core/blackjack/types";
 import type { MatchHistoryRecord } from "./core/match/history";
 import { buildObservation } from "./core/ai/observation";
-import { abilityWorld, createMatch, getActiveBustLimit, getLegalActions, getRoundHitCounts, previewPendingTrigger } from "./core/match/reducer";
-import type { Action, Actor, GameEvent, MatchState } from "./core/match/types";
+import { abilityWorld, createMatch, getActiveBustLimit, getLegalActions, getRoundHitCounts, previewComparisonScores, previewPendingTrigger } from "./core/match/reducer";
+import type { Action, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
 import { getPlayerSkillDefinition, PLAYER_SKILL_DEFINITIONS } from "./core/skills/definitions";
 import { SKILL_TAG_METADATA, SKILL_TAGS, type SkillTag } from "./core/skills/types";
@@ -30,6 +30,7 @@ import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
 import { downloadResourcePack, ResourcePackDownloadError, type ResourcePackProgress } from "./resources/resource-pack";
 import { characterResourcePlan, lobbyResourceUrls, resourceLoader } from "./resources/resource-loader";
+import { completeTutorial, firstTutorialForCue, type TutorialCue, type TutorialDefinition, type TutorialResource } from "./tutorials/tutorials";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
 if (!appRoot) throw new Error("App root is missing");
@@ -53,6 +54,7 @@ let lastAction: Action | null = null;
 let lastDomainEvent: GameEvent["type"] | null = null;
 let lastDialogueKey: string | null = null;
 let skillDrawerOpen = false;
+let activeTutorial: { readonly definition: TutorialDefinition; readonly pageIndex: number } | null = null;
 const abilityNoticeTimers = new Map<HTMLElement, { readonly expire: number; readonly remove: number }>();
 const ABILITY_NOTICE_TTL_MS = 2500;
 const ABILITY_NOTICE_LEAVE_MS = 280;
@@ -77,6 +79,54 @@ function secureSeed(): string {
   return [...bytes].map((value) => value.toString(16).padStart(8, "0")).join("");
 }
 function escapeHtml(value: string): string { return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" })[character] ?? character); }
+function tutorialResourceMarkup(resource: TutorialResource): string {
+  if (resource.type !== "image") return "";
+  return `<figure class="tutorial-resource"><img src="${escapeHtml(resource.src)}" alt="${escapeHtml(resource.alt)}">${resource.caption ? `<figcaption>${escapeHtml(resource.caption)}</figcaption>` : ""}</figure>`;
+}
+function clearTutorialSurface(): void { document.querySelector("#tutorial-popover")?.remove(); }
+function finishActiveTutorial(): void {
+  if (!activeTutorial) return;
+  const progress = completeTutorial(save.tutorialProgress, activeTutorial.definition.id);
+  activeTutorial = null;
+  clearTutorialSurface();
+  if (progress === save.tutorialProgress) return;
+  save = { ...save, tutorialProgress: { completedIds: [...progress.completedIds] }, updatedAt: new Date().toISOString() };
+  if (autosave) {
+    autosave.updateSave(save);
+    void autosave.flush().catch(() => enqueueNotification("教程进度保存失败，请稍后重试。"));
+  } else void repository.saveLongTerm(save).catch(() => enqueueNotification("教程进度保存失败，请稍后重试。"));
+}
+function renderTutorialSurface(): void {
+  clearTutorialSurface();
+  if (!activeTutorial) return;
+  const { definition, pageIndex } = activeTutorial;
+  const page = definition.pages[pageIndex];
+  if (!page) return;
+  const surface = document.createElement("aside");
+  surface.id = "tutorial-popover";
+  surface.className = "tutorial-popover";
+  surface.dataset.tutorialId = definition.id;
+  surface.setAttribute("role", "dialog");
+  surface.setAttribute("aria-modal", "false");
+  surface.setAttribute("aria-labelledby", "tutorial-title");
+  const lastPage = pageIndex === definition.pages.length - 1;
+  const resources = page.resources?.map(tutorialResourceMarkup).join("") ?? "";
+  surface.innerHTML = `<div class="tutorial-heading"><span>机制介绍：page ${pageIndex + 1}/${definition.pages.length}</span><h2 id="tutorial-title">${escapeHtml(definition.title)}</h2></div><p>${escapeHtml(page.body)}</p>${resources ? `<div class="tutorial-resources">${resources}</div>` : ""}<div class="tutorial-actions"><button type="button" class="tutorial-skip" data-tutorial-skip>跳过</button><button type="button" class="tutorial-next" data-tutorial-next>${lastPage ? "好的" : "下一步"}</button></div>`;
+  document.body.append(surface);
+  surface.querySelector<HTMLButtonElement>("[data-tutorial-skip]")?.addEventListener("click", finishActiveTutorial);
+  surface.querySelector<HTMLButtonElement>("[data-tutorial-next]")?.addEventListener("click", () => {
+    if (lastPage) { finishActiveTutorial(); return; }
+    activeTutorial = { definition, pageIndex: pageIndex + 1 };
+    renderTutorialSurface();
+  });
+}
+function offerTutorial(cue: TutorialCue): void {
+  if (activeTutorial) return;
+  const definition = firstTutorialForCue(cue, save.tutorialProgress, save.skipTutorial);
+  if (!definition) return;
+  activeTutorial = { definition, pageIndex: 0 };
+  renderTutorialSurface();
+}
 function uiError(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : fallback;
   if (/save|JSON|schema|match state|cursor|future/i.test(message)) return "存档无效：请检查文件格式与版本。";
@@ -267,8 +317,12 @@ const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
   CARD_SUIT_REVEALED: "识破暗牌花色"
 };
 function decisionLabel(action: "hit" | "stand" | undefined): string { return action === "hit" ? "Hit 要牌" : action === "stand" ? "Stand 停牌" : "—"; }
-function displayedHandValue(state: MatchState, actor: Actor): number {
-  return state.round.outcome?.comparisonScores?.[actor] ?? handValue(state[actor].hand);
+function displayedHandValueMarkup(baseScore: number | "?", modifier: number): string {
+  if (modifier === 0) return `<output class="hand-score"><span class="hand-score-base">${baseScore}</span></output>`;
+  const sign = modifier > 0 ? "+" : "−";
+  const accessibleOperation = modifier > 0 ? "加" : "减";
+  const finalScore = typeof baseScore === "number" ? baseScore + modifier : "未知";
+  return `<output class="hand-score" aria-label="${baseScore}${accessibleOperation}${Math.abs(modifier)}，当前点数${finalScore}"><span class="hand-score-base">${baseScore}</span><small class="hand-score-modifier" aria-hidden="true">${sign}${Math.abs(modifier)}</small></output>`;
 }
 function legal(state: MatchState, action: Action): boolean { return getLegalActions(state).some((candidate) => JSON.stringify(candidate) === JSON.stringify(action)); }
 function actionButton(label: string, action: Action, state: MatchState, className = "secondary-button"): string { const enabled = legal(state, action); return `<button class="${className}" data-action='${JSON.stringify(action)}' ${enabled ? "" : "disabled"}>${label}</button>`; }
@@ -546,6 +600,7 @@ function presentDelta(before: MatchState, after: MatchState): void {
   if (abilityNotices.length > 0) enqueueAbilityNotices(abilityNotices);
   const trigger = events.find((candidate) => candidate.type === "TRIGGER_PULLED");
   if (trigger) present(triggerResultText(trigger), trigger.fired ? "danger" : "gold");
+  if (legal(after, { type: "OPEN_SKILL_DRAW" })) offerTutorial("skill-draw-available");
 }
 function wireActions(container: ParentNode, handler: (action: Action) => void): void { container.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => element.addEventListener("click", () => handler(JSON.parse(element.dataset.action ?? "{}") as Action))); }
 function requestDispatch(action: Action): void { dispatch(action); }
@@ -724,6 +779,8 @@ function wireDefeatedGuestLoader(): void {
 }
 
 function renderLobby(layer: LobbyLayer = "menu"): void {
+  activeTutorial = null;
+  clearTutorialSurface();
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer);
   gameAudio.stopHeartbeat();
   gameAudio.setBgmScene("lobby");
@@ -1109,6 +1166,7 @@ async function resumeMatch(match: MatchState, loadedCharacter?: CharacterDefinit
       : null;
     if (triggerPreview) enqueueAbilityNotices(pendingTriggerAbilityNotices(triggerPreview, currentCharacter.name));
     syncMatchAudioState(gameAudio, state);
+    if (legal(state, { type: "OPEN_SKILL_DRAW" })) offerTutorial("skill-draw-available");
     scheduleAiTurn(state);
   }
 }
@@ -1118,6 +1176,14 @@ function renderMatch(state: MatchState): void {
   const character = currentCharacter;
   const observation = buildObservation(state, "player");
   const reveal = state.round.phase !== "turns";
+  const comparisonPreview = previewComparisonScores(state);
+  const hasFinalComparison = state.round.outcome?.comparisonScores !== undefined;
+  const playerBaseScore = hasFinalComparison ? comparisonPreview.baseScores.player : handValue(state.player.hand);
+  const opponentBaseScore = hasFinalComparison
+    ? comparisonPreview.baseScores.opponent
+    : reveal ? handValue(state.opponent.hand) : observation.opponent.value ?? "?";
+  const playerScoreModifier = comparisonPreview.scores.player - comparisonPreview.baseScores.player;
+  const opponentScoreModifier = comparisonPreview.scores.opponent - comparisonPreview.baseScores.opponent;
   const opponentSuit = revealedOpponentSuit(state);
   const opponentCards = reveal ? state.opponent.hand.cards.map((card) => cardMarkup(card)).join("") : observation.opponent.cards.map((card, index) => cardMarkup(card ?? state.opponent.hand.cards[index] ?? null, index > 0, index === 1 ? opponentSuit : undefined)).join("");
   const playerCards = state.player.hand.cards.map((card) => cardMarkup(card)).join("");
@@ -1177,7 +1243,7 @@ function renderMatch(state: MatchState): void {
     return `<span class="skill-draw-tile"><button type="button" class="skill-draw-card" data-action='${JSON.stringify(action)}'><span>${skill.category === "active" ? "主动" : "被动"}</span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.primaryDomain)}</small></button><button class="skill-info draw-skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
   }).join("") ?? "";
   const drawMarkup = drawOffer ? `<section class="skill-draw-backdrop is-entering"><div class="skill-draw-modal" role="dialog" aria-modal="true" aria-labelledby="skill-draw-title"><h2 id="skill-draw-title">选一张你心仪的技能卡</h2><div class="skill-draw-grid">${drawCards}</div></div></section>` : "";
-  root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}${infoBar}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${dialogueMarkup}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} <strong>${reveal ? displayedHandValue(state, "opponent") : observation.opponent.value ?? "?"}</strong></span><div class="cards">${opponentCards}</div></div></section><div class="table-notice-row"><output class="bust-limit-indicator" aria-label="当前爆牌上限：${bustLimit}" data-actor="${bustLimitActor}"><span>爆牌上限</span><strong>${bustLimit}</strong></output><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section></div><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 <strong>${displayedHandValue(state, "player")}</strong></span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${character.infoBar ? `<dialog id="ai-info-dialog" class="modal ai-info-modal" aria-labelledby="ai-info-title"><button class="modal-close" type="button" data-ai-info-close aria-label="关闭机制信息说明">×</button><p class="eyebrow">${escapeHtml(character.name)} // 机制信息</p><h2 id="ai-info-title">${escapeHtml(character.infoBar.label)}</h2><div class="ai-info-current"><span>当前值</span><output aria-label="当前值：${escapeHtml(infoBarValueText(resolvedInfoBarValue, character.infoBar.format))}">${infoBarValueMarkup(resolvedInfoBarValue, character.infoBar.format)}</output></div><p>${escapeHtml(character.infoBar.description)}</p></dialog>` : ""}${devHud(state)}</main>${skillDrawerMarkup}${drawMarkup}`;
+  root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}${infoBar}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${dialogueMarkup}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} ${displayedHandValueMarkup(opponentBaseScore, opponentScoreModifier)}</span><div class="cards">${opponentCards}</div></div></section><div class="table-notice-row"><output class="bust-limit-indicator" aria-label="当前爆牌上限：${bustLimit}" data-actor="${bustLimitActor}"><span>爆牌上限</span><strong>${bustLimit}</strong></output><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section></div><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 ${displayedHandValueMarkup(playerBaseScore, playerScoreModifier)}</span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${character.infoBar ? `<dialog id="ai-info-dialog" class="modal ai-info-modal" aria-labelledby="ai-info-title"><button class="modal-close" type="button" data-ai-info-close aria-label="关闭机制信息说明">×</button><p class="eyebrow">${escapeHtml(character.name)} // 机制信息</p><h2 id="ai-info-title">${escapeHtml(character.infoBar.label)}</h2><div class="ai-info-current"><span>当前值</span><output aria-label="当前值：${escapeHtml(infoBarValueText(resolvedInfoBarValue, character.infoBar.format))}">${infoBarValueMarkup(resolvedInfoBarValue, character.infoBar.format)}</output></div><p>${escapeHtml(character.infoBar.description)}</p></dialog>` : ""}${devHud(state)}</main>${skillDrawerMarkup}${drawMarkup}`;
   wireActions(root, requestDispatch); root.querySelector<HTMLButtonElement>("[data-copy-debug]")?.addEventListener("click", () => { const text = root.querySelector<HTMLTextAreaElement>("#debug-json")?.value ?? ""; void navigator.clipboard?.writeText(text); });
   root.querySelectorAll<HTMLButtonElement>("[data-skill-blocked]").forEach((button) => button.addEventListener("click", () => enqueueNotification("技能被禁用")));
   attachFullscreenListener(); syncFullscreenButton(); syncAbilityNoticePosition();

@@ -35,7 +35,7 @@
   "infoBar": {
     "sourceAbilityId": "platinum-vision",
     "label": "点数优势",
-    "description": "白金当前累积的点数优势。策展人本轮第一手选择 Stand 且此前没有主动 Hit 时增加1点；策展人选择 Hit 后清空。进入点数比较时，白金的点数视为原始点数加上该优势。",
+    "description": "白金当前累积的点数优势。策展人本轮第一手选择 Stand 且此前没有主动 Hit 时增加1点；策展人选择 Hit 后清空。优势会随牌面实时显示，并在点数比较时计入白金的原始点数。",
     "value": {
       "type": "number",
       "value": {
