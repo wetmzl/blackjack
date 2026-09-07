@@ -37,12 +37,15 @@ definition in the registry for testing, while excluding it from the visible
 Player Skill catalog and offer pool.
 
 Every Player Skill and AI Skill declares one `primaryDomain` and at least one
-open-ended tag. Player Skills additionally declare `drop.enabled`, positive
+open-ended tag. Player Skills additionally declare one or more unique closed
+`skillTags` from `gambler`, `cheater`, `intelligence-officer`, and `gunslinger`.
+The player's selected zero-to-two skill tags apply a single factor of 4 when a
+skill matches any selected tag. Player Skills also declare `drop.enabled`, positive
 `drop.baseWeight`, and `stackable`; active cards may repeat, while a held
 non-stackable passive is excluded from later draws. Definitions in any of the
-three domains may declare `skillDrawWeightModifiers`. Primary domains and tags
-share the draw matching namespace, and every matching weight factor multiplies
-rather than overrides. The draw candidate count is a single core constant and
+three domains may declare `skillDrawWeightModifiers`; modifier tags are closed
+Skill Tags and match only a Player Skill's `skillTags`. Every matching weight
+factor multiplies rather than overrides. The draw candidate count is a single core constant and
 is not modified by round outcomes or abilities. Use the generic
 `add-skill-draws` effect when a data-driven Talent or ability grants draws.
 
@@ -86,9 +89,12 @@ also contains activation conditions or other context. Talent events and
 bookkeeping-only rules may declare `"notify": false`; they still emit domain
 events but do not occupy the toast stack.
 
-Every new primitive should have a focused unit test for valid data, rejected
-extra fields, deterministic RNG, and atomic failure. Prefer owner/rival
-selectors so one definition can be bound to either actor.
+Talent definitions must declare an explicit data-driven `unlock`, currently
+`{ "type": "defeat-count", "count": N, "label": "..." }`; unlocked Talent IDs
+are derived from CharacterDefeatRecord facts and are not duplicated in the
+long-term profile. Every new primitive should have a focused unit test for valid
+data, rejected extra fields, deterministic RNG, and atomic failure. Prefer
+owner/rival selectors so one definition can be bound to either actor.
 
 能力定义中的 `description` 负责规则说明，`profileLore`（可选）负责角色档案
 中的文学化描写。档案页面根据角色 `aiSkills` 的启用绑定从能力注册表自动读取

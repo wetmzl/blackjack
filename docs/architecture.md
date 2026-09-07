@@ -73,7 +73,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 `src/core/skills/` 负责 Player Skill 投影、解锁集合、10 张卡牌容量和确定性加权无放回抽取。候选读取建局时保存的全部已解锁 Player Skill，不读取大厅装备状态。候选数固定为 3；抽卡次数、库存空位和选择合法性都由核心逻辑决定，UI 只提交 `OPEN_SKILL_DRAW` 与 `SELECT_SKILL_DRAW` Action。
 
-权重和规则修正是能力 Definition 的通用扩展点。核心收集当前活动的 Player Skill、AI Skill 与 Talent 实例上的 modifier；技能 `primaryDomain` 和开放式 `tags` 使用同一匹配命名空间，所有命中权重因子累乘。候选生成只依赖可保存的 loot RNG，不写具体技能或角色 ID。
+权重和规则修正是能力 Definition 的通用扩展点。Player Skill 以封闭 `skillTags`（gambler/cheater/intelligence-officer/gunslinger）声明流派；长期档快照的至多两个偏好流派在建局时写入 `MatchState.playerSkills`，匹配任一流派统一乘 4。活动 Definition 的 modifier 也只匹配 `skillTags`，所有其他命中因子继续累乘；`primaryDomain` 与开放式 `tags` 不进入流派权重空间。候选生成只依赖可保存的 loot RNG，不写具体技能或角色 ID。
 
 ## 能力底座
 
@@ -113,7 +113,7 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 - 运行时档：format、运行时 schema version、角色与技能引用、牌、轮次、左轮和事件结构；
 - 运行时能力实例、状态来源、参数、目录版本和卡牌实例一致性。
 
-当前长期 Schema 版本为 8，运行时 Schema 版本为 3。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
+当前长期 Schema 版本为 9，运行时 Schema 版本为 5。长期档只保存至多两个 `selectedSkillTags`，天赋 ID 不再写入 profile，而是从 `defeats` 记录按 Talent 的 `unlock` 条件推导；运行时 MatchState 保留天赋与流派快照。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
 
 ## PWA 与资源缓存
 

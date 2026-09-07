@@ -974,23 +974,40 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await returnToLobbyMenu(page);
   await page.getByRole("button", { name: "技能与天赋" }).click();
   const skills = page.locator("#skills");
-  await expect(skills.locator(".loadout-skill")).toHaveCount(8);
-  await expect(skills.locator(".loadout-skill.talent")).toContainText("早有准备");
-  await expect(skills).not.toContainText("罗德岛万人迷");
-  await expect(skills.locator(".profile-ability[open]")).toHaveCount(0);
-  await skills.locator(".profile-ability").first().locator("summary").click();
-  await expect(skills.locator(".profile-ability").first().locator("p")).toBeVisible();
-  await skills.locator(".profile-ability").first().locator("summary").click();
-  await skills.locator(".profile-ability").nth(1).locator("summary").click();
-  await expect(skills.locator(".profile-ability[open]")).toHaveCount(1);
+  await expect(skills.locator(".skill-tag-card img")).toHaveCount(4);
+  await expect(skills.locator(".loadout-skill")).toHaveCount(0);
+  await skills.getByRole("button", { name: "技能大全" }).click();
+  const catalog = page.locator("#skill-catalog");
+  await expect(catalog).toBeVisible();
+  await expect(catalog.locator(".loadout-skill")).toHaveCount(7);
+  await expect(catalog).not.toContainText("罗德岛万人迷");
+  await expect(catalog.locator(".profile-ability[open]")).toHaveCount(0);
+  await catalog.locator(".profile-ability").first().locator("summary").click();
+  await expect(catalog.locator(".profile-ability").first().locator("p")).toBeVisible();
+  await catalog.locator(".profile-ability").first().locator("summary").click();
+  await catalog.locator(".profile-ability").nth(1).locator("summary").click();
+  await expect(catalog.locator(".profile-ability[open]")).toHaveCount(1);
+  await catalog.getByRole("button", { name: "关闭技能大全" }).click();
+  await expect(skills).toBeVisible();
+  await skills.getByRole("tab", { name: "天赋" }).click();
+  await expect(skills.locator(".talent-checkpoint")).toHaveCount(5);
+  await expect(skills.locator(".talent-placeholder")).toHaveCount(4);
+  await expect(skills.locator('[data-talent-id="early-preparation"]')).toContainText("早有准备");
+  await expect(skills.locator('[data-talent-id="early-preparation"]')).toContainText("未解锁");
+  for (const threshold of [3, 5, 7, 10]) {
+    await expect(skills.locator(`[data-threshold="${threshold}"]`)).toContainText("敬请期待");
+  }
+  await skills.getByRole("tab", { name: "技能" }).click();
   await page.setViewportSize({ width: 320, height: 720 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(skills.locator("input[data-equip-skill]")).toHaveCount(0);
-  const lockedNightQueen = skills.locator(".loadout-skill").filter({ hasText: "暗夜女王" });
+  await skills.getByRole("button", { name: "技能大全" }).click();
+  const lockedNightQueen = catalog.locator(".loadout-skill").filter({ hasText: "暗夜女王" });
   await expect(lockedNightQueen).toHaveClass(/locked/);
   await lockedNightQueen.locator(".profile-ability summary").click();
   await expect(lockedNightQueen.locator(".profile-ability p")).toBeVisible();
+  await catalog.getByRole("button", { name: "关闭技能大全" }).click();
   await skills.locator("[data-close]").click();
   await openLobbySettings(page);
   page.once("dialog", (dialog) => void dialog.dismiss());
@@ -1007,6 +1024,52 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 0");
   await returnToLobbyMenu(page);
   await expect(page.locator("[data-open-trophies]")).toContainText("0 件");
+});
+
+test("技能流派最多选择两个并持久化，天赋按击败进度解锁", async ({ page }) => {
+  await page.goto("/");
+  await installLongTermSave(page, createDefaultSave("2026-08-30T00:00:00.000Z"));
+  await page.getByRole("button", { name: "技能与天赋" }).click();
+  const skills = page.locator("#skills");
+  const tags = skills.locator("[data-skill-tag]");
+  await expect(tags).toHaveCount(4);
+  await expect(skills.locator(".skill-tag-card img")).toHaveCount(4);
+  expect(await skills.locator(".skill-tag-grid").evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(/\s+/).filter(Boolean).length)).toBe(2);
+  await tags.nth(0).click();
+  await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await tags.nth(1).click();
+  await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await expect(tags.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await tags.nth(2).click();
+  await expect(skills.locator("#skill-management-status")).toContainText("最多选择两个流派");
+  await tags.nth(0).click();
+  await tags.nth(2).click();
+  await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "false");
+  await expect(tags.nth(2)).toHaveAttribute("aria-pressed", "true");
+  await expect(skills.locator("#skill-management-status")).toContainText("选择已保存");
+  await skills.locator("[data-close]").click();
+  await page.reload();
+  await page.getByRole("button", { name: "技能与天赋" }).click();
+  await expect(skills.locator("[data-skill-tag]").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(skills.locator("[data-skill-tag]").nth(2)).toHaveAttribute("aria-pressed", "true");
+  await skills.getByRole("tab", { name: "天赋" }).click();
+  await expect(skills.locator(".talent-checkpoint")).toHaveCount(5);
+  await expect(skills.locator(".talent-placeholder")).toHaveCount(4);
+  await expect(skills.locator('[data-talent-id="early-preparation"]')).toContainText("未解锁 · 进度 0/1");
+  for (const threshold of [3, 5, 7, 10]) {
+    await expect(skills.locator(`[data-threshold="${threshold}"]`)).toContainText("敬请期待");
+  }
+  await skills.locator("[data-close]").click();
+
+  await installLongTermSave(page, saveWithDefeats("plume"));
+  await page.getByRole("button", { name: "技能与天赋" }).click();
+  await page.locator("#skills").getByRole("tab", { name: "天赋" }).click();
+  await expect(page.locator('#skills [data-talent-id="early-preparation"].is-unlocked')).toContainText("早有准备");
+  await expect(page.locator('#skills [data-talent-id="early-preparation"]')).toContainText("已解锁");
+  await expect(page.locator("#skills .talent-checkpoint")).toHaveCount(5);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 320, height: 720 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("不兼容长期存档必须手动点击并确认删除", async ({ page }) => {
@@ -1102,7 +1165,8 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   expect(nativeDialogs).toBe(0);
   await page.getByRole("button", { name: "技能与天赋" }).click();
-  const nightQueen = page.locator("#skills .loadout-skill").filter({ hasText: "暗夜女王" });
+  await page.locator("#skills").getByRole("button", { name: "技能大全" }).click();
+  const nightQueen = page.locator("#skill-catalog .loadout-skill").filter({ hasText: "暗夜女王" });
   await expect(nightQueen).not.toHaveClass(/locked/);
   await expect(nightQueen).toContainText("已解锁，可在牌局中掉落");
 });

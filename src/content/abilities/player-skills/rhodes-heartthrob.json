@@ -1,1 +1,53 @@
-{"id":"rhodes-heartthrob","name":"罗德岛万人迷","description":"本轮下一次未满的装填免于扣扳机。","usage":"玩家回合可用；武装持续到本轮结束。","triggerNotice":"本轮下一次未满的装填免于扣扳机。","profileLore":"她把一场必然的惩罚说成漫不经心的邀请，连火药味也像被笑声吹散。","hidden":true,"sourceKind":"player-skill","primaryDomain":"roulette","activation":{"type":"action","windows":["owner-turn"],"consume":"card","availability":[{"type":"not","condition":{"type":"status-present","target":"owner","statusDefinitionId":"rhodes-heartthrob-armed"}}]},"rules":[{"id":"arm","trigger":"on-ability-played","conditions":[{"type":"not","condition":{"type":"status-present","target":"owner","statusDefinitionId":"rhodes-heartthrob-armed"}}],"effects":[{"type":"add-status","target":"owner","statusDefinitionId":"rhodes-heartthrob-armed"}]}],"tags":["active-skill-card","roulette","rule-control"],"drop":{"enabled":false,"baseWeight":1},"stackable":false}
+{
+  "id": "rhodes-heartthrob",
+  "name": "罗德岛万人迷",
+  "description": "本轮下一次未满的装填免于扣扳机。",
+  "usage": "玩家回合可用；武装持续到本轮结束。",
+  "triggerNotice": "本轮下一次未满的装填免于扣扳机。",
+  "profileLore": "她把一场必然的惩罚说成漫不经心的邀请，连火药味也像被笑声吹散。",
+  "hidden": true,
+  "sourceKind": "player-skill",
+  "primaryDomain": "roulette",
+  "skillTags": ["gunslinger"],
+  "activation": {
+    "type": "action",
+    "windows": ["owner-turn"],
+    "consume": "card",
+    "availability": [
+      {
+        "type": "not",
+        "condition": {
+          "type": "status-present",
+          "target": "owner",
+          "statusDefinitionId": "rhodes-heartthrob-armed"
+        }
+      }
+    ]
+  },
+  "rules": [
+    {
+      "id": "arm",
+      "trigger": "on-ability-played",
+      "conditions": [
+        {
+          "type": "not",
+          "condition": {
+            "type": "status-present",
+            "target": "owner",
+            "statusDefinitionId": "rhodes-heartthrob-armed"
+          }
+        }
+      ],
+      "effects": [
+        {
+          "type": "add-status",
+          "target": "owner",
+          "statusDefinitionId": "rhodes-heartthrob-armed"
+        }
+      ]
+    }
+  ],
+  "tags": ["active-skill-card", "roulette", "rule-control"],
+  "drop": { "enabled": false, "baseWeight": 1 },
+  "stackable": false
+}

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../rng/seeded";
 import { ABILITY_DEFINITIONS, AI_SKILL_ABILITY_DEFINITIONS, getAbilityDefinition, PLAYER_SKILL_ABILITY_DEFINITIONS, TALENT_ABILITY_DEFINITIONS } from "../abilities/registry";
+import { AbilityDefinitionSchema } from "../abilities/schema";
 import { createMatch, gameReducer, getLegalActions, resolveRound } from "../match/reducer";
 import type { MatchState, RoundOutcome } from "../match/types";
+import { unlockedTalentIdsForDefeats } from "../talents/definitions";
 import { getPlayerSkillDefinition, INITIAL_PLAYER_SKILL_IDS, PLAYER_SKILL_DEFINITIONS } from "./definitions";
 import {
   calculatePlayerSkillWeight, collectSkillDrawWeightModifiers, generateSkillDrawOffer, PLAYER_SKILL_INVENTORY_CAPACITY,
@@ -10,6 +12,16 @@ import {
 } from "./skills";
 
 describe("separate ability domains", () => {
+  it("derives the early preparation Talent from defeat count", () => {
+    expect(unlockedTalentIdsForDefeats([])).toEqual([]);
+    expect(unlockedTalentIdsForDefeats([{ opponentId: "w", timestamp: "2026-01-01T00:00:00.000Z" }])).toEqual(["early-preparation"]);
+  });
+
+  it("snapshots at most two unique valid Skill Tags at match creation", () => {
+    expect(createMatch("selected-tags", { selectedSkillTags: ["gambler", "gunslinger"] }).playerSkills.selectedSkillTags).toEqual(["gambler", "gunslinger"]);
+    expect(() => createMatch("duplicate-selected-tags", { selectedSkillTags: ["gambler", "gambler"] })).toThrow(/Selected Skill Tags/);
+    expect(() => createMatch("too-many-selected-tags", { selectedSkillTags: ["gambler", "cheater", "gunslinger"] })).toThrow(/Selected Skill Tags/);
+  });
   it("keeps Player Skill, AI Skill, and Talent catalogs disjoint and removes shared definitions", () => {
     const catalogs = [PLAYER_SKILL_ABILITY_DEFINITIONS, AI_SKILL_ABILITY_DEFINITIONS, TALENT_ABILITY_DEFINITIONS];
     const ids = catalogs.flatMap((catalog) => catalog.map((definition) => definition.id));
@@ -22,6 +34,25 @@ describe("separate ability domains", () => {
     expect(getAbilityDefinition("ai-sword-and-handcannon")?.sourceKind).toBe("ai-skill");
   });
 
+  it("requires every Player Skill to have unique valid closed Skill Tags", () => {
+    const allowed = new Set(["gambler", "cheater", "intelligence-officer", "gunslinger"]);
+    expect(PLAYER_SKILL_ABILITY_DEFINITIONS.every((definition) => definition.skillTags.length > 0 && new Set(definition.skillTags).size === definition.skillTags.length && definition.skillTags.every((tag) => allowed.has(tag)))).toBe(true);
+    expect(Object.fromEntries(PLAYER_SKILL_ABILITY_DEFINITIONS.map((definition) => [definition.id, definition.skillTags]))).toEqual({
+      "blueberry-and-dark-chocolate": ["gambler"],
+      "forge-heralds-the-year": ["gunslinger"],
+      "hunter-instinct": ["intelligence-officer"],
+      "night-queen": ["gambler"],
+      "rhodes-heartthrob": ["gunslinger"],
+      "scent-of-a-woman": ["intelligence-officer"],
+      switcheroo: ["cheater"],
+      "sword-and-handcannon": ["gunslinger"]
+    });
+    const base = getAbilityDefinition("switcheroo")!;
+    expect(AbilityDefinitionSchema.safeParse({ ...base, skillTags: undefined }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, skillTags: ["cheater", "cheater"] }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, skillTags: ["not-a-skill-tag"] }).success).toBe(false);
+  });
+
   it("requires classified, tagged Player and AI Skills", () => {
     expect([...PLAYER_SKILL_ABILITY_DEFINITIONS, ...AI_SKILL_ABILITY_DEFINITIONS].every((definition) =>
       definition.primaryDomain && definition.tags.length > 0 && new Set(definition.tags).size === definition.tags.length
@@ -31,32 +62,46 @@ describe("separate ability domains", () => {
 });
 
 describe("skill draw weighted candidates", () => {
+  it("applies a single four-times preference factor when any selected flow matches", () => {
+    const hunter = getPlayerSkillDefinition("hunter-instinct")!;
+    expect(calculatePlayerSkillWeight(hunter, [], ["intelligence-officer"])).toBe(4);
+    const futureMultiTagSkill = { ...hunter, skillTags: ["intelligence-officer", "gambler"] as const };
+    expect(calculatePlayerSkillWeight(futureMultiTagSkill, [], ["intelligence-officer", "gambler"])).toBe(4);
+    expect(calculatePlayerSkillWeight(hunter, [], ["gambler"])).toBe(1);
+  });
+
+  it("keeps every current character-provided Skill Tag weight neutral", () => {
+    const modifiers = AI_SKILL_ABILITY_DEFINITIONS.flatMap((definition) => definition.skillDrawWeightModifiers ?? []);
+    expect(modifiers.length).toBeGreaterThan(0);
+    expect(modifiers.every((modifier) => modifier.factor === 1)).toBe(true);
+  });
+
   it("multiplies every matching tag modifier, including repeated tags from multiple sources", () => {
     const skill = getPlayerSkillDefinition("switcheroo")!;
     expect(calculatePlayerSkillWeight(skill, [
-      { tag: "active-skill-card", factor: 0.5 },
-      { tag: "active-skill-card", factor: 0.5 },
-      { tag: "rule-control", factor: 2 }
-    ])).toBe(skill.drop.baseWeight * 0.5 * 0.5 * 2);
+      { tag: "cheater", factor: 0.5 },
+      { tag: "cheater", factor: 0.5 },
+      { tag: "gambler", factor: 2 }
+    ])).toBe(skill.drop.baseWeight * 0.5 * 0.5);
   });
 
   it("collects tag weights declared by an AI Skill through the generic extension point", () => {
     const aiSkill = getAbilityDefinition("action-advice-mechanic")!;
     expect(aiSkill.sourceKind).toBe("ai-skill");
     const modifiers = collectSkillDrawWeightModifiers([aiSkill]);
-    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers)).toBe(0.5);
+    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers)).toBe(1);
     expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("switcheroo")!, modifiers)).toBe(1);
   });
 
   it("multiplies modifiers from multiple AI Skills across multiple matching tags", () => {
     const first = { ...getAbilityDefinition("bomb-maniac")!, skillDrawWeightModifiers: [
-      { tag: "information", factor: 0.5 }, { tag: "blackjack", factor: 2 }
-    ] };
+      { tag: "intelligence-officer", factor: 0.5 }, { tag: "gambler", factor: 2 }
+    ] as const };
     const second = { ...getAbilityDefinition("w-night-queen")!, skillDrawWeightModifiers: [
-      { tag: "information", factor: 0.5 }
-    ] };
+      { tag: "intelligence-officer", factor: 0.5 }
+    ] as const };
     const modifiers = collectSkillDrawWeightModifiers([first, second]);
-    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers)).toBe(0.5);
+    expect(calculatePlayerSkillWeight(getPlayerSkillDefinition("hunter-instinct")!, modifiers)).toBe(0.25);
   });
 
   it("draws unlocked droppable definitions without replacement and permits held active definitions", () => {
@@ -80,8 +125,8 @@ describe("skill draw weighted candidates", () => {
   });
 
   it("handles zero-weight and undersized pools without duplicates or failure", () => {
-    const offer = generateSkillDrawOffer(createRng("zero-weight"), ["hunter-instinct", "switcheroo"], [], [{ tag: "active-skill-card", factor: 0 }]).offer;
-    expect(offer.candidateDefinitionIds).toEqual([]);
+    const offer = generateSkillDrawOffer(createRng("zero-weight"), ["hunter-instinct", "switcheroo"], [], [{ tag: "intelligence-officer", factor: 0 }]).offer;
+    expect(offer.candidateDefinitionIds).toEqual(["switcheroo"]);
   });
 });
 

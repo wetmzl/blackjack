@@ -59,13 +59,13 @@ bullets / capacity
 
 轮到策展人行动时，可以点击牌桌底部的“抽取技能”按钮。每次抽取固定生成 3 张候选，点击其中一张便立即获得该技能并消费 1 次抽卡次数，没有多选、二次确认或放弃步骤。弹窗打开期间不能执行 Hit、Stand 或主动技能；选牌后回到同一次行动决策。技能牌库已满时按钮不可用，尚未消费的抽卡次数保留。
 
-候选来自全部已解锁且 `drop.enabled` 的 Player Skill，而不是大厅预装列表。同一次抽取按修正后权重无放回抽取，因此不会出现重复 Definition；主动技能已经持有时仍可再次候选，不可叠加的被动技能持有后排除。`primaryDomain` 也参与 tag 匹配，来自 AI Skill、Talent、玩家被动技能等活动定义的所有命中权重因子依次乘算，领域随机数使用独立可保存的 loot RNG。
+候选来自全部已解锁且 `drop.enabled` 的 Player Skill，而不是大厅预装列表。同一次抽取按修正后权重无放回抽取，因此不会出现重复 Definition；主动技能已经持有时仍可再次候选，不可叠加的被动技能持有后排除。Player Skill 另声明封闭的 `skillTags` 流派（赌徒、老千、情报官、枪手），玩家可选择至多两个流派；匹配任一所选流派的技能权重统一乘 4（多标签不会重复乘）。活动能力 modifier 也只按这些流派匹配并继续依次累乘，`primaryDomain` 与开放 `tags` 不参与流派概率空间。
 
 策展人的局内技能牌库最多保存 10 个真实 `SkillCardInstance`，主动和被动统一占位。主动技能可有多个独立实例并分别消耗；被动 Player Skill 与被动 AI Skill 必须声明有限 `ttl`，可按完整回合或成功触发次数计数。条件未命中、解析失败不扣触发次数；归零后不再发动，玩家被动牌同时离开牌库并释放槽位。被动默认不可重复，未来允许叠加必须由 Definition 声明。Talent 属于局外成长，不使用局内 TTL。
 
 ## 能力与角色
 
-Player Skill、AI Skill 与 Talent 是三个独立内容领域，Definition ID 不得跨域共享；它们只复用声明式执行底座。定义分别位于 `src/content/abilities/player-skills/`、`ai-skills/` 和 `talents/`，AI Skill 通过角色 JSON 的 `aiSkills` 绑定。每个 Player Skill 和 AI Skill 都必须声明唯一 `primaryDomain` 与开放式 `tags`。具体数量、名称、数值和解锁来源以数据文件为准，不在本文复制一份易失真的清单。
+Player Skill、AI Skill 与 Talent 是三个独立内容领域，Definition ID 不得跨域共享；它们只复用声明式执行底座。定义分别位于 `src/content/abilities/player-skills/`、`ai-skills/` 和 `talents/`，AI Skill 通过角色 JSON 的 `aiSkills` 绑定。每个 Player Skill 和 AI Skill 都必须声明唯一 `primaryDomain` 与开放式 `tags`；Player Skill 还必须声明至少一个唯一 `skillTags` 流派。Talent 的解锁由数据定义（当前“早有准备”为击败 1 名角色），从 `defeats` 事实集合推导，不在 profile 中重复保存。
 
 能力只能组合已注册的触发器、条件、选择器、效果和状态。新增内容不得通过角色 ID、能力 ID 或任意脚本回调绕过通用规则。
 

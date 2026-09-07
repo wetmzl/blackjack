@@ -74,7 +74,8 @@ const primaryDomain = z.enum(["blackjack", "roulette", "information", "skill-eco
 const tags = z.array(z.string().min(1)).min(1).superRefine((values, ctx) => {
   if (new Set(values).size !== values.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "ability tags must be unique" });
 });
-const skillDrawWeightModifier = z.object({ tag: z.string().min(1), factor: z.number().finite().nonnegative() }).strict();
+const skillTag = z.enum(["gambler", "cheater", "intelligence-officer", "gunslinger"]);
+const skillDrawWeightModifier = z.object({ tag: skillTag, factor: z.number().finite().nonnegative() }).strict();
 const definitionBase = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), name: z.string().min(1), description: z.string().min(1),
   usage: z.string().min(1).optional(), triggerNotice: z.string().min(1).optional(), profileLore: z.string().min(1).optional(), hidden: z.boolean().default(false),
@@ -83,10 +84,11 @@ const definitionBase = z.object({
 });
 const playerSkillDefinition = definitionBase.extend({
   sourceKind: z.literal("player-skill"), drop: z.object({ enabled: z.boolean(), baseWeight: z.number().finite().positive() }).strict(), stackable: z.boolean().default(false),
+  skillTags: skillTag.array().min(1).superRefine((values, ctx) => { if (new Set(values).size !== values.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Player Skill skillTags must be unique" }); }),
   unlock: z.object({ opponentId: z.string().min(1), label: z.string().min(1) }).strict().optional()
 }).strict();
 const aiSkillDefinition = definitionBase.extend({ sourceKind: z.literal("ai-skill") }).strict();
-const talentDefinition = definitionBase.extend({ sourceKind: z.literal("talent") }).strict();
+const talentDefinition = definitionBase.extend({ sourceKind: z.literal("talent"), unlock: z.object({ type: z.literal("defeat-count"), count: z.number().int().positive(), label: z.string().min(1) }).strict() }).strict();
 export const AbilityDefinitionSchema = z.discriminatedUnion("sourceKind", [playerSkillDefinition, aiSkillDefinition, talentDefinition]).superRefine((definition, ctx) => {
   if (definition.sourceKind === "talent" && definition.ttl) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttl"], message: "Talents cannot expire inside a match" });
   if (definition.activation.type === "action" && definition.ttl) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttl"], message: "Active abilities are consumed explicitly and cannot declare TTL" });

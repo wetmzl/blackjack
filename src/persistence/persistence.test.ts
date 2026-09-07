@@ -48,11 +48,11 @@ describe("long-term save schema and JSON boundary", () => {
     expect(() => validateLongTermSave({ ...save, skipTutorial: undefined })).toThrow(/skipTutorial/);
   });
 
-  it("requires unique defeat facts and valid unique Talents", () => {
+  it("requires unique defeat facts and validates selected skill tags", () => {
     const save = createDefaultSave(NOW);
     expect(() => validateLongTermSave({ ...save, defeats: [{ opponentId: "w", timestamp: NOW }, { opponentId: "w", timestamp: NOW }] })).toThrow(/duplicate defeated character/);
-    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, talentIds: ["early-preparation", "early-preparation"] } })).toThrow(/duplicate Talent/);
-    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, talentIds: ["missing-talent"] } })).toThrow(/unknown Talent/);
+    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, selectedSkillTags: ["gambler", "gambler"] } })).toThrow(/duplicate selected Skill Tag/);
+    expect(() => validateLongTermSave({ ...save, profile: { ...save.profile, selectedSkillTags: ["missing-tag"] } })).toThrow(/profile/);
   });
 });
 
@@ -65,6 +65,16 @@ describe("runtime save schema and validation", () => {
     expect(imported.activeMatch.rng.deck).toEqual(runtime.activeMatch.rng.deck);
     expect(imported).not.toHaveProperty("profile");
     expect(imported).not.toHaveProperty("history");
+  });
+
+  it("persists the selected Skill Tag snapshot and rejects duplicates", () => {
+    const match = createMatch("selected-skill-tag-save", { selectedSkillTags: ["gambler", "cheater"] });
+    const runtime = JSON.parse(JSON.stringify(createRuntimeSave(match, NOW))) as Record<string, unknown>;
+    const imported = validateRuntimeSave(runtime);
+    expect(imported.activeMatch.playerSkills.selectedSkillTags).toEqual(["gambler", "cheater"]);
+    const skills = (runtime.activeMatch as Record<string, unknown>).playerSkills as Record<string, unknown>;
+    skills.selectedSkillTags = ["gambler", "gambler"];
+    expect(() => validateRuntimeSave(runtime)).toThrow(/duplicate selected Skill Tag/);
   });
 
   it("round-trips the suit-only private-card reveal event", () => {
@@ -227,13 +237,13 @@ describe("runtime save schema and validation", () => {
 });
 
 describe("boot and repositories", () => {
-  it("resetSave returns clean durable data with the initial Talent", () => {
+  it("resetSave returns clean durable data without initially owned Talents", () => {
     const reset = resetSave(NOW);
     expect(reset.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
     expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman"]);
-    expect(reset.profile.talentIds).toEqual(["early-preparation"]);
+    expect(reset.profile.selectedSkillTags).toEqual([]);
     expect(reset.history).toEqual([]);
     expect(reset.defeats).toEqual([]);
     expect(reset.skipTutorial).toBe(false);

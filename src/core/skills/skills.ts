@@ -2,30 +2,35 @@ import type { AbilityDefinition, SkillDrawWeightModifier } from "../abilities/ty
 import type { SeededRng, RngSnapshot } from "../rng/seeded";
 import type { CharacterDefeatRecord } from "../progression/defeats";
 import { INITIAL_PLAYER_SKILL_IDS, PLAYER_SKILL_DEFINITIONS } from "./definitions";
-import type { PlayerSkillDefinition, SkillDrawOffer } from "./types";
+import type { PlayerSkillDefinition, SkillDrawOffer, SkillTag } from "./types";
 
 export const PLAYER_SKILL_INVENTORY_CAPACITY = 10;
 export const SKILL_DRAW_CANDIDATE_COUNT = 3;
 
-/** Primary domains participate in the same matching namespace as open tags. */
-export function playerSkillHasTag(skill: PlayerSkillDefinition, tag: string): boolean {
-  return skill.primaryDomain === tag || skill.tags.includes(tag);
+export function playerSkillHasTag(skill: PlayerSkillDefinition, tag: SkillTag): boolean {
+  return skill.skillTags.includes(tag);
 }
 
-export function calculatePlayerSkillWeight(skill: PlayerSkillDefinition, modifiers: readonly SkillDrawWeightModifier[]): number {
-  return modifiers.reduce((weight, modifier) => playerSkillHasTag(skill, modifier.tag) ? weight * modifier.factor : weight, skill.drop.baseWeight);
+export function calculatePlayerSkillWeight(
+  skill: PlayerSkillDefinition,
+  modifiers: readonly SkillDrawWeightModifier[],
+  selectedSkillTags: readonly SkillTag[] = []
+): number {
+  const preferred = selectedSkillTags.some((tag) => playerSkillHasTag(skill, tag));
+  return modifiers.reduce((weight, modifier) => playerSkillHasTag(skill, modifier.tag) ? weight * modifier.factor : weight, skill.drop.baseWeight * (preferred ? 4 : 1));
 }
 
 export function canGenerateSkillDraw(
   unlockedDefinitionIds: readonly string[],
   heldDefinitionIds: readonly string[],
-  weightModifiers: readonly SkillDrawWeightModifier[] = []
+  weightModifiers: readonly SkillDrawWeightModifier[] = [],
+  selectedSkillTags: readonly SkillTag[] = []
 ): boolean {
   const unlocked = new Set(unlockedDefinitionIds);
   const held = new Set(heldDefinitionIds);
   return PLAYER_SKILL_DEFINITIONS.some((skill) => unlocked.has(skill.id) && skill.drop.enabled
     && (skill.category === "active" || skill.stackable || !held.has(skill.id))
-    && calculatePlayerSkillWeight(skill, weightModifiers) > 0);
+    && calculatePlayerSkillWeight(skill, weightModifiers, selectedSkillTags) > 0);
 }
 
 export function collectSkillDrawWeightModifiers(definitions: readonly AbilityDefinition[]): readonly SkillDrawWeightModifier[] {
@@ -48,13 +53,14 @@ export function generateSkillDrawOffer(
   unlockedDefinitionIds: readonly string[],
   heldDefinitionIds: readonly string[],
   weightModifiers: readonly SkillDrawWeightModifier[] = [],
-  offerId = "skill-draw"
+  offerId = "skill-draw",
+  selectedSkillTags: readonly SkillTag[] = []
 ): { readonly offer: SkillDrawOffer; readonly rng: RngSnapshot } {
   const unlocked = new Set(unlockedDefinitionIds);
   const held = new Set(heldDefinitionIds);
   const pool = PLAYER_SKILL_DEFINITIONS.filter((skill) => unlocked.has(skill.id) && skill.drop.enabled)
     .filter((skill) => skill.category === "active" || skill.stackable || !held.has(skill.id))
-    .map((skill) => ({ skill, weight: calculatePlayerSkillWeight(skill, weightModifiers) }))
+    .map((skill) => ({ skill, weight: calculatePlayerSkillWeight(skill, weightModifiers, selectedSkillTags) }))
     .filter((candidate) => candidate.weight > 0);
   const candidates: PlayerSkillDefinition[] = [];
   while (pool.length > 0 && candidates.length < SKILL_DRAW_CANDIDATE_COUNT) {

@@ -7,8 +7,9 @@ import { abilityWorld, createMatch, getActiveBustLimit, getLegalActions, getRoun
 import type { Action, Actor, GameEvent, MatchState } from "./core/match/types";
 import { SeededRng } from "./core/rng/seeded";
 import { getPlayerSkillDefinition, PLAYER_SKILL_DEFINITIONS } from "./core/skills/definitions";
+import { SKILL_TAG_METADATA, SKILL_TAGS, type SkillTag } from "./core/skills/types";
 import { playerSkillsUnlockedForVictory, unlockedPlayerSkillIdsForDefeats } from "./core/skills/skills";
-import { TALENT_DEFINITIONS } from "./core/talents/definitions";
+import { TALENT_DEFINITIONS, unlockedTalentIdsForDefeats } from "./core/talents/definitions";
 import { getAbilityDefinition } from "./core/abilities/registry";
 import { isAbilityBlockedByStatus } from "./core/abilities/engine";
 import { resolveAbilityInfoValue, type ResolvedInfoBarValue } from "./core/abilities/info-bar";
@@ -274,23 +275,135 @@ function actionButton(label: string, action: Action, state: MatchState, classNam
 function historyResultLabel(record: MatchHistoryRecord): string { return record.escaped ? "策展人离席" : record.winner === "player" ? "策展人胜利" : "策展人落败"; }
 function historyDate(timestamp: string): string { return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(timestamp)); }
 
-function renderSkillList(): string {
+let skillManagementTab: "skills" | "talents" = "skills";
+let skillSaveRequest = 0;
+let skillManagementSelectedTags: SkillTag[] | null = null;
+const SKILL_TAG_ART: Readonly<Record<SkillTag, string>> = {
+  gambler: "/assets/skills/archetype-gambler.png",
+  cheater: "/assets/skills/archetype-cheater.png",
+  "intelligence-officer": "/assets/skills/archetype-intelligence-officer.png",
+  gunslinger: "/assets/skills/archetype-gunslinger.png"
+};
+const TALENT_PLACEHOLDER_MILESTONES = Object.freeze([3, 5, 7, 10]);
+
+function skillCatalogMarkup(): string {
   const unlocked = new Set(unlockedPlayerSkillIdsForDefeats(save.defeats));
-  const cards = PLAYER_SKILL_DEFINITIONS.map((skill) => {
+  return PLAYER_SKILL_DEFINITIONS.map((skill) => {
     const available = unlocked.has(skill.id);
     const source = skill.unlock ? `解锁来源：${skill.unlock.label}` : "初始技能";
-    return `<div class="loadout-skill ${available ? "" : "locked"}"><div><details class="profile-ability"><summary><strong>${escapeHtml(skill.name)}</strong><span>：${escapeHtml(skill.description)}</span></summary><p>${escapeHtml(skill.profileLore)}</p></details><small>${skill.category === "passive" ? "被动" : "主动"} · ${escapeHtml(skill.primaryDomain)} · ${escapeHtml(source)} · ${available ? "已解锁，可在牌局中掉落" : "尚未解锁"}</small></div></div>`;
+    const tags = skill.skillTags.map((tag) => `<span class="skill-tag-label">${SKILL_TAG_METADATA[tag].label}</span>`).join("");
+    return `<div class="loadout-skill ${available ? "" : "locked"}"><div><details class="profile-ability"><summary><strong>${escapeHtml(skill.name)}</strong><span>：${escapeHtml(skill.description)}</span></summary><p>${escapeHtml(skill.profileLore)}</p></details><div class="skill-list-meta"><span>${skill.category === "passive" ? "被动" : "主动"}</span>${tags}</div><small>${escapeHtml(source)} · ${available ? "已解锁，可在牌局中掉落" : "尚未解锁"}</small></div></div>`;
   }).join("");
-  const talents = TALENT_DEFINITIONS.filter((talent) => save.profile.talentIds.includes(talent.id)).map((talent) => `<div class="loadout-skill talent"><div><details class="profile-ability"><summary><strong>${escapeHtml(talent.name)}</strong><span>：${escapeHtml(talent.description)}</span></summary><p>${escapeHtml(talent.profileLore ?? talent.description)}</p></details><small>天赋 · 不占用技能牌位置</small></div></div>`).join("");
-  return `<p class="loadout-count">局内候选来自全部已解锁技能；天赋不进入技能牌库。</p>${talents ? `<h3>天赋</h3><div class="loadout-list">${talents}</div>` : ""}<h3>Player Skill Catalog</h3><div class="loadout-list">${cards}</div>`;
 }
 
-function openSkillManagement(): void {
+function talentRoadMarkup(): string {
+  const defeatCount = defeatedCharacterIdsByFirstDefeat(save.defeats).length;
+  const unlockedTalentIds = new Set(unlockedTalentIdsForDefeats(save.defeats));
+  const talentNodes = TALENT_DEFINITIONS
+    .filter((talent) => !talent.hidden)
+    .map((talent) => ({
+      id: talent.id,
+      count: talent.unlock.count,
+      unlockLabel: talent.unlock.label,
+      name: talent.name,
+      description: talent.description,
+      placeholder: false,
+      unlocked: unlockedTalentIds.has(talent.id)
+    }));
+  const occupiedMilestones = new Set(talentNodes.map((node) => node.count));
+  const nodes = [
+    ...talentNodes,
+    ...TALENT_PLACEHOLDER_MILESTONES
+      .filter((count) => !occupiedMilestones.has(count))
+      .map((count) => ({
+        id: `preview-${count}`,
+        count,
+        unlockLabel: `击败 ${count} 名与会者`,
+        name: "敬请期待",
+        description: "新的策展人天赋仍在筹备中。",
+        placeholder: true,
+        unlocked: false
+      }))
+  ].sort((left, right) => left.count - right.count);
+  const lastReachedIndex = nodes.reduce((result, node, index) => defeatCount >= node.count ? index : result, -1);
+  const progress = nodes.length > 1 && lastReachedIndex >= 0 ? lastReachedIndex / (nodes.length - 1) : 0;
+  const checkpoints = nodes.map((node) => {
+    const reached = defeatCount >= node.count;
+    const stateClass = node.placeholder ? (reached ? "is-reached" : "is-locked") : (node.unlocked ? "is-unlocked" : "is-locked");
+    const progressCount = Math.min(defeatCount, node.count);
+    const status = node.placeholder
+      ? (reached ? "里程碑已到达" : `进度 ${progressCount}/${node.count}`)
+      : (node.unlocked ? "已解锁" : `未解锁 · 进度 ${progressCount}/${node.count}`);
+    return `<article class="talent-checkpoint ${node.placeholder ? "talent-placeholder" : ""} ${stateClass}" data-threshold="${node.count}" ${node.placeholder ? "" : `data-talent-id="${escapeHtml(node.id)}"`}><span class="talent-checkpoint-dot" aria-hidden="true"><b>${node.count}</b><small>胜</small></span><div class="talent-stage-card"><p class="eyebrow">${node.placeholder ? "未公开天赋" : `天赋奖励 · ${escapeHtml(node.unlockLabel)}`}</p><h3>${escapeHtml(node.name)}</h3><p>${escapeHtml(node.description)}</p><small>${status}</small></div></article>`;
+  }).join("");
+  return `<div class="talent-road-heading"><div><p class="eyebrow">策展人成长轨迹</p><h3>天赋路线</h3></div><output>已击败 ${defeatCount} 名与会者</output></div><div class="talent-progress-line" style="--talent-road-progress:${progress}">${checkpoints}</div>`;
+}
+
+function renderSkillList(statusMessage = ""): string {
+  const selected = new Set(skillManagementSelectedTags ?? save.profile.selectedSkillTags);
+  const selectedCount = selected.size;
+  const tagCards = SKILL_TAGS.map((tag) => {
+    const metadata = SKILL_TAG_METADATA[tag];
+    const pressed = selected.has(tag);
+    return `<button type="button" class="skill-tag-card ${pressed ? "is-selected" : ""}" data-skill-tag="${tag}" aria-pressed="${pressed ? "true" : "false"}"><img src="${SKILL_TAG_ART[tag]}" alt="" aria-hidden="true" decoding="async"><span class="skill-tag-card-shade" aria-hidden="true"></span><span class="skill-tag-card-copy"><span class="skill-tag-symbol" aria-hidden="true">${metadata.symbol}</span><strong>${metadata.label}</strong><small>${pressed ? "已选择" : "选择流派"}</small></span><span class="skill-tag-check" aria-hidden="true">✓</span></button>`;
+  }).join("");
+  return `<div class="skill-management-tabs" role="tablist" aria-label="技能与天赋"><button type="button" role="tab" id="skill-tab" aria-controls="skill-panel" aria-selected="${skillManagementTab === "skills"}" class="skill-management-tab ${skillManagementTab === "skills" ? "is-active" : ""}" data-skill-tab="skills">技能</button><button type="button" role="tab" id="talent-tab" aria-controls="talent-panel" aria-selected="${skillManagementTab === "talents"}" class="skill-management-tab ${skillManagementTab === "talents" ? "is-active" : ""}" data-skill-tab="talents">天赋</button></div>${skillManagementTab === "skills" ? `<section id="skill-panel" role="tabpanel" aria-labelledby="skill-tab" class="skill-management-panel"><div class="skill-tag-heading"><div><h3>选择你的流派</h3><p>最多选择两个，匹配流派的技能出现概率 ×4。</p></div><output aria-live="polite">已选 ${selectedCount}/2</output></div><div class="skill-tag-grid">${tagCards}</div><p id="skill-management-status" class="status-line" role="status" aria-live="polite">${escapeHtml(statusMessage)}</p><div class="skill-panel-footer"><p>局内候选来自全部已解锁技能；天赋不进入技能牌库。</p><button type="button" class="secondary-button skill-catalog-button" data-open-skill-catalog aria-controls="skill-catalog">技能大全</button></div></section>` : `<section id="talent-panel" role="tabpanel" aria-labelledby="talent-tab" class="skill-management-panel talent-panel">${talentRoadMarkup()}</section>`}`;
+}
+
+function renderSkillManagement(statusMessage = ""): void {
   const dialog = root.querySelector<HTMLDialogElement>("#skills");
   const content = root.querySelector<HTMLDivElement>("#skill-content");
   if (!dialog || !content) return;
-  content.innerHTML = renderSkillList();
-  dialog.showModal();
+  content.innerHTML = renderSkillList(statusMessage);
+  content.onclick = (event) => {
+    const target = event.target as Element;
+    const tab = target.closest<HTMLButtonElement>("[data-skill-tab]");
+    if (tab) {
+      skillManagementTab = tab.dataset.skillTab === "talents" ? "talents" : "skills";
+      renderSkillManagement();
+      return;
+    }
+    const tagButton = target.closest<HTMLButtonElement>("[data-skill-tag]");
+    if (tagButton) void toggleSkillTag(tagButton.dataset.skillTag as SkillTag);
+    const catalogButton = target.closest<HTMLButtonElement>("[data-open-skill-catalog]");
+    if (catalogButton) openSkillCatalog();
+  };
+}
+
+function openSkillCatalog(): void {
+  const dialog = root.querySelector<HTMLDialogElement>("#skill-catalog");
+  const content = root.querySelector<HTMLDivElement>("#skill-catalog-content");
+  if (!dialog || !content) return;
+  content.innerHTML = skillCatalogMarkup();
+  if (!dialog.open) dialog.showModal();
+}
+
+async function toggleSkillTag(tag: SkillTag): Promise<void> {
+  if (!SKILL_TAGS.includes(tag)) return;
+  const selected = [...save.profile.selectedSkillTags];
+  const index = selected.indexOf(tag);
+  if (index >= 0) selected.splice(index, 1);
+  else if (selected.length >= 2) { renderSkillManagement("最多选择两个流派"); return; }
+  else selected.push(tag);
+  const nextSave = { ...save, profile: { ...save.profile, selectedSkillTags: selected }, updatedAt: new Date().toISOString() };
+  save = nextSave;
+  skillManagementSelectedTags = selected;
+  const request = ++skillSaveRequest;
+  renderSkillManagement("正在保存…");
+  try {
+    await repository.saveLongTerm(nextSave);
+    if (request === skillSaveRequest) renderSkillManagement("选择已保存");
+  } catch {
+    if (request === skillSaveRequest) renderSkillManagement("保存失败，请重试");
+  }
+}
+
+function openSkillManagement(): void {
+  skillManagementTab = "skills";
+  skillManagementSelectedTags = [...save.profile.selectedSkillTags];
+  renderSkillManagement();
+  const dialog = root.querySelector<HTMLDialogElement>("#skills");
+  if (dialog && !dialog.open) dialog.showModal();
 }
 
 function isAiTurn(state: MatchState): boolean {
@@ -496,7 +609,7 @@ async function startResourcePackDownload(button: HTMLButtonElement): Promise<voi
 }
 
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2>技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
 }
 
 function randomUnit(): number {
@@ -927,7 +1040,8 @@ async function startMatch(characterId = selectedCharacterId): Promise<void> {
       opponentId: character.id,
       aiProfile: character.ai,
       unlockedPlayerSkillIds: unlockedPlayerSkillIdsForDefeats(save.defeats),
-      talentIds: save.profile.talentIds,
+      selectedSkillTags: save.profile.selectedSkillTags,
+      talentIds: unlockedTalentIdsForDefeats(save.defeats),
       opponentAiSkills: character.aiSkills
     });
     await resumeMatch(match, character);

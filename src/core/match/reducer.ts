@@ -4,6 +4,7 @@ import type { Card } from "../blackjack/types";
 import { deriveRng, SeededRng } from "../rng/seeded";
 import { addBullets, createGun, pullTrigger } from "../roulette/roulette";
 import { getPlayerSkillDefinition, INITIAL_PLAYER_SKILL_IDS } from "../skills/definitions";
+import { SKILL_TAGS, type SkillTag } from "../skills/types";
 import { canGenerateSkillDraw, collectSkillDrawWeightModifiers, generateSkillDrawOffer, PLAYER_SKILL_INVENTORY_CAPACITY } from "../skills/skills";
 import { decideAiAction, sampleAiNoise } from "../ai/policy";
 import { buildObservation } from "../ai/observation";
@@ -21,6 +22,7 @@ export interface CreateMatchOptions {
   readonly opponentId?: string;
   readonly aiProfile?: AiProfile;
   readonly unlockedPlayerSkillIds?: readonly string[];
+  readonly selectedSkillTags?: readonly SkillTag[];
   readonly talentIds?: readonly string[];
   readonly opponentAiSkills?: readonly AbilityBinding[];
   /** Engine fixture hook; production AI Skills are owned by the opponent. */
@@ -30,6 +32,12 @@ export interface CreateMatchOptions {
 function normalizeUnlocked(ids: readonly string[] | undefined): string[] {
   const values = [...new Set(ids ?? INITIAL_PLAYER_SKILL_IDS)];
   if (values.some((id) => !getPlayerSkillDefinition(id))) throw new RangeError("Unlocked Player Skill list contains an unknown definition");
+  return values;
+}
+function normalizeSelectedSkillTags(tags: readonly SkillTag[] | undefined): SkillTag[] {
+  const input = [...(tags ?? [])];
+  if (new Set(input).size !== input.length || input.length > 2 || input.some((tag) => !SKILL_TAGS.includes(tag))) throw new RangeError("Selected Skill Tags must contain at most two valid unique tags");
+  const values = input;
   return values;
 }
 function playerSkillState(state: MatchState, patch: Partial<MatchState["playerSkills"]> = {}): MatchState["playerSkills"] { return { ...state.playerSkills, ...patch }; }
@@ -259,7 +267,8 @@ function canOpenSkillDraw(state: MatchState): boolean {
   return canGenerateSkillDraw(
     state.playerSkills.unlockedDefinitionIds,
     state.playerSkills.cards.map((card) => card.definitionId),
-    modifiers
+    modifiers,
+    state.playerSkills.selectedSkillTags
   );
 }
 
@@ -270,7 +279,8 @@ function openSkillDraw(state: MatchState): MatchState {
   const result = generateSkillDrawOffer(
     rng, state.playerSkills.unlockedDefinitionIds,
     state.playerSkills.cards.map((card) => card.definitionId), modifiers,
-    `skill-draw-${state.roundIndex}-${state.history.length}`
+    `skill-draw-${state.roundIndex}-${state.history.length}`,
+    state.playerSkills.selectedSkillTags
   );
   if (result.offer.candidateDefinitionIds.length === 0) return state;
   return append({
@@ -466,6 +476,7 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
   let runtime = createAbilityRuntime(ability.snapshot());
   let instanceSerial = 0;
   const talentIds = [...new Set(options.talentIds ?? [])];
+  const selectedSkillTags = normalizeSelectedSkillTags(options.selectedSkillTags);
   for (const id of talentIds) {
     const definition = getAbilityDefinition(id);
     if (!definition || !supportsAbilitySourceKind(definition, "talent")) throw new RangeError(`Unknown Talent definition: ${id}`);
@@ -481,7 +492,7 @@ export function createMatch(seed: string, options: CreateMatchOptions = {}): Mat
   }
   const player = participant("player", []);
   const opponent = participant("opponent", []);
-  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player, opponent, shoe, roulette: { player: createGun(), opponent: createGun() }, playerSkills: { unlockedDefinitionIds: unlocked, cards: [], drawCount: 0, drawOffer: null, advice: null }, talentIds, abilities: runtime, round: { index: 0, phase: "dealing", starter: getRoundStarter(0), currentActor: null, player, opponent, outcome: null }, history: [], rng: { deck: deck.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
+  const base: MatchState = { id: options.id ?? `match-${seed}`, seed, opponentId: options.opponentId ?? "w", status: "active", scene: "match", view: "table", roundIndex: 0, player, opponent, shoe, roulette: { player: createGun(), opponent: createGun() }, playerSkills: { unlockedDefinitionIds: unlocked, selectedSkillTags, cards: [], drawCount: 0, drawOffer: null, advice: null }, talentIds, abilities: runtime, round: { index: 0, phase: "dealing", starter: getRoundStarter(0), currentActor: null, player, opponent, outcome: null }, history: [], rng: { deck: deck.snapshot(), roulette: roulette.snapshot(), ai: ai.snapshot(), loot: loot.snapshot(), dialogue: dialogue.snapshot() }, aiProfile: options.aiProfile ?? DEFAULT_AI_PROFILE, aiNoise, lastAiDecision: null };
   return dealCurrentRound(base);
 }
 

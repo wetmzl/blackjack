@@ -10,8 +10,8 @@ import characterCatalog from "../content/characters/catalog.json" with { type: "
 
 export const LONG_TERM_SAVE_FORMAT = "house-of-chances-save" as const;
 export const RUNTIME_SAVE_FORMAT = "house-of-chances-runtime" as const;
-export const CURRENT_LONG_TERM_SCHEMA_VERSION = 8 as const;
-export const CURRENT_RUNTIME_SCHEMA_VERSION = 4 as const;
+export const CURRENT_LONG_TERM_SCHEMA_VERSION = 9 as const;
+export const CURRENT_RUNTIME_SCHEMA_VERSION = 5 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -129,11 +129,12 @@ export const MatchStateSchema = z.object({
   view: z.enum(["table", "execution-room", "match-summary"]), roundIndex: z.number().int().min(0),
   player: ParticipantSchema, opponent: ParticipantSchema, shoe: ShoeSchema, roulette: RouletteSchema,
   playerSkills: z.object({
-    unlockedDefinitionIds: z.array(z.string().min(1)), cards: z.array(AbilityCardSchema).max(PLAYER_SKILL_INVENTORY_CAPACITY),
+    unlockedDefinitionIds: z.array(z.string().min(1)), selectedSkillTags: z.array(z.enum(["gambler", "cheater", "intelligence-officer", "gunslinger"])).max(2), cards: z.array(AbilityCardSchema).max(PLAYER_SKILL_INVENTORY_CAPACITY),
     drawCount: z.number().int().min(0),
     drawOffer: z.object({ id: z.string().min(1), candidateDefinitionIds: z.array(z.string().min(1)).min(1).max(3) }).strict().nullable(),
     advice: z.enum(["hit", "stand"]).nullable()
   }).strict().superRefine((skills, ctx) => {
+    if (new Set(skills.selectedSkillTags).size !== skills.selectedSkillTags.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedSkillTags"], message: "duplicate selected Skill Tag" });
     if (new Set(skills.unlockedDefinitionIds).size !== skills.unlockedDefinitionIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unlockedDefinitionIds"], message: "duplicate unlocked Player Skill" });
     for (const id of skills.unlockedDefinitionIds) if (!getPlayerSkillDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["unlockedDefinitionIds"], message: "unknown Player Skill" });
     const instanceIds = new Set<string>();
@@ -184,8 +185,8 @@ export const MatchStateSchema = z.object({
 
 export const PlayerProfileSchema = z.object({
   id: z.string().min(1), displayName: z.string().min(1), matchesPlayed: z.number().int().min(0),
-  wins: z.number().int().min(0), talentIds: z.array(z.string().min(1))
-}).strict().superRefine((profile, ctx) => { if (new Set(profile.talentIds).size !== profile.talentIds.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate Talent" }); for (const id of profile.talentIds) if (!getTalentDefinition(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unknown Talent" }); });
+  wins: z.number().int().min(0), selectedSkillTags: z.array(z.enum(["gambler", "cheater", "intelligence-officer", "gunslinger"])).max(2)
+}).strict().superRefine((profile, ctx) => { if (new Set(profile.selectedSkillTags).size !== profile.selectedSkillTags.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate selected Skill Tag" }); });
 export const GameSettingsSchema = z.object({ soundEnabled: z.boolean(), reducedMotion: z.boolean() }).strict();
 export type PlayerProfile = z.infer<typeof PlayerProfileSchema>;
 export type GameSettings = z.infer<typeof GameSettingsSchema>;

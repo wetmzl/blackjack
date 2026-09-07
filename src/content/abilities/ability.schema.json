@@ -6,11 +6,13 @@
   "additionalProperties": false,
   "required": ["id", "name", "description", "sourceKind", "primaryDomain", "activation", "rules", "tags"],
   "allOf": [
-    { "if": { "properties": { "sourceKind": { "const": "player-skill" } } }, "then": { "required": ["drop", "stackable"] } },
+    { "if": { "properties": { "sourceKind": { "const": "player-skill" } } }, "then": { "required": ["drop", "stackable", "skillTags"] } },
+    { "if": { "properties": { "sourceKind": { "enum": ["ai-skill", "talent"] } } }, "then": { "properties": { "skillTags": false } } },
+    { "if": { "properties": { "sourceKind": { "const": "talent" } } }, "then": { "required": ["unlock"] } },
     { "if": { "required": ["sourceKind", "activation"], "properties": { "sourceKind": { "enum": ["player-skill", "ai-skill"] }, "activation": { "required": ["type"], "properties": { "type": { "const": "passive" } } } } }, "then": { "required": ["ttl"] } },
     { "if": { "required": ["sourceKind"], "properties": { "sourceKind": { "const": "talent" } } }, "then": { "not": { "required": ["ttl"] } } },
     { "if": { "required": ["activation"], "properties": { "activation": { "required": ["type"], "properties": { "type": { "const": "action" } } } } }, "then": { "not": { "required": ["ttl"] } } },
-    { "if": { "required": ["sourceKind"], "properties": { "sourceKind": { "enum": ["ai-skill", "talent"] } } }, "then": { "allOf": [
+    { "if": { "required": ["sourceKind"], "properties": { "sourceKind": { "const": "ai-skill" } } }, "then": { "allOf": [
       { "not": { "required": ["drop"] } },
       { "not": { "required": ["stackable"] } },
       { "not": { "required": ["unlock"] } }
@@ -28,6 +30,7 @@
     "hidden": { "type": "boolean", "default": false },
     "sourceKind": { "enum": ["player-skill", "ai-skill", "talent"] },
     "primaryDomain": { "enum": ["blackjack", "roulette", "information", "skill-economy", "rule-control"] },
+    "skillTags": { "type": "array", "items": { "enum": ["gambler", "cheater", "intelligence-officer", "gunslinger"] }, "minItems": 1, "maxItems": 4, "uniqueItems": true },
     "parameters": { "type": "object", "additionalProperties": { "$ref": "#/definitions/parameter" } },
     "activation": { "oneOf": [
       { "type": "object", "additionalProperties": false, "required": ["type", "windows", "consume"], "properties": { "type": { "const": "action" }, "windows": { "type": "array", "items": { "enum": ["owner-turn", "owner-roulette-reaction"] }, "minItems": 1 }, "consume": { "enum": ["card", "none"] }, "availability": { "type": "array", "items": { "$ref": "#/definitions/condition" } } } },
@@ -42,16 +45,11 @@
     "tags": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
     "drop": { "type": "object", "additionalProperties": false, "required": ["enabled", "baseWeight"], "properties": { "enabled": { "type": "boolean" }, "baseWeight": { "type": "number", "exclusiveMinimum": 0 } } },
     "stackable": { "type": "boolean" },
-    "skillDrawWeightModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["tag", "factor"], "properties": { "tag": { "type": "string", "minLength": 1 }, "factor": { "type": "number", "minimum": 0 } } } },
-    "unlock": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["opponentId", "label"],
-      "properties": {
-        "opponentId": { "type": "string", "minLength": 1 },
-        "label": { "type": "string", "minLength": 1 }
-      }
-    }
+    "skillDrawWeightModifiers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["tag", "factor"], "properties": { "tag": { "enum": ["gambler", "cheater", "intelligence-officer", "gunslinger"] }, "factor": { "type": "number", "minimum": 0 } } } },
+    "unlock": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["opponentId", "label"], "properties": { "opponentId": { "type": "string", "minLength": 1 }, "label": { "type": "string", "minLength": 1 } } },
+      { "type": "object", "additionalProperties": false, "required": ["type", "count", "label"], "properties": { "type": { "const": "defeat-count" }, "count": { "type": "integer", "minimum": 1 }, "label": { "type": "string", "minLength": 1 } } }
+    ] }
   },
   "definitions": {
     "parameter": { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "enum": ["number", "boolean", "enum"] }, "minimum": { "type": "number" }, "maximum": { "type": "number" }, "values": { "type": "array", "items": { "type": "string" } }, "default": {} } },

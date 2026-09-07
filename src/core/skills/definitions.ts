@@ -11,6 +11,7 @@ function toPlayerSkillDefinition(definition: PlayerSkillAbilityDefinition): Play
     id: definition.id, name: definition.name, category, description: definition.description,
     usage: definition.usage ?? definition.description, triggerNotice: definition.triggerNotice ?? definition.description,
     profileLore: definition.profileLore ?? definition.description, timing, primaryDomain: definition.primaryDomain,
+    skillTags: definition.skillTags,
     tags: definition.tags, drop: definition.drop, stackable: definition.stackable, ttl: definition.ttl, unlock: definition.unlock,
     hidden: definition.hidden ?? false
   });

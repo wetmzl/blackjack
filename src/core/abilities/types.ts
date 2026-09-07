@@ -1,6 +1,7 @@
 import type { Card, CardOrigin, Hand, Rank, ShoeState } from "../blackjack/types";
 import type { GunState } from "../roulette/types";
 import type { RngSnapshot } from "../rng/seeded";
+import type { SkillTag } from "../skills/types";
 
 export type AbilityActor = "player" | "opponent";
 export type AbilitySourceKind = "player-skill" | "ai-skill" | "talent";
@@ -10,7 +11,7 @@ export type AbilityTtl =
   | { readonly type: "rounds"; readonly amount: number }
   | { readonly type: "triggers"; readonly amount: number };
 export interface AbilityInstanceTtl { readonly type: AbilityTtl["type"]; readonly remaining: number; }
-export interface SkillDrawWeightModifier { readonly tag: string; readonly factor: number; }
+export interface SkillDrawWeightModifier { readonly tag: SkillTag; readonly factor: number; }
 export type AbilityTrigger =
   | "on-match-created" | "on-ability-played" | "before-card-draw" | "after-card-draw"
   | "after-hand-changed" | "after-stand" | "before-bust-check" | "before-round-resolution" | "before-bullet-load" | "after-bullet-load"
@@ -131,9 +132,13 @@ export interface PlayerSkillAbilityDefinition extends AbilityDefinitionBase {
   /** Only passive skills consult this flag; active cards may always be duplicated. */
   readonly stackable: boolean;
   readonly unlock?: { readonly opponentId: string; readonly label: string };
+  readonly skillTags: readonly SkillTag[];
 }
 export interface AiSkillAbilityDefinition extends AbilityDefinitionBase { readonly sourceKind: "ai-skill"; }
-export interface TalentAbilityDefinition extends AbilityDefinitionBase { readonly sourceKind: "talent"; }
+export interface TalentAbilityDefinition extends AbilityDefinitionBase {
+  readonly sourceKind: "talent";
+  readonly unlock: { readonly type: "defeat-count"; readonly count: number; readonly label: string };
+}
 export type AbilityDefinition = PlayerSkillAbilityDefinition | AiSkillAbilityDefinition | TalentAbilityDefinition;
 export interface StatusDefinition { readonly id: string; readonly rules: readonly AbilityRule[]; readonly defaultDuration: StatusDuration; readonly blocksAbilityTags?: readonly string[]; }
 export interface AbilityStatus { readonly statusDefinitionId: string; readonly owner: AbilityActor; readonly sourceInstanceId: string; readonly stacks: number; readonly duration: StatusDuration; readonly parameters: Readonly<Record<string, string | number | boolean>>; readonly createdAtSequence: number; }

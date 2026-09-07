@@ -1,1 +1,50 @@
-{"id":"night-queen","name":"暗夜女王","description":"若手牌有Q且有另一张同花色牌，未达21点时立即补一张衍生牌至21点。","usage":"玩家回合可用；满足Q与同花色伙伴条件时消费技能并补至21点。","triggerNotice":"获得一张衍生牌，手牌补至21点。","profileLore":"她在夜色中辨认出一枚熟悉的花色，随后让牌面安静地抵达它应有的终点。","sourceKind":"player-skill","primaryDomain":"blackjack","activation":{"type":"action","windows":["owner-turn"],"consume":"card","availability":[{"type":"hand-rank-has-suit-partner","target":"owner","rank":"Q"},{"type":"hand-total","target":"owner","operator":"lt","value":21}]},"rules":[{"id":"complete-to-twenty-one","trigger":"on-ability-played","conditions":[{"type":"hand-rank-has-suit-partner","target":"owner","rank":"Q"},{"type":"hand-total","target":"owner","operator":"lt","value":21}],"effects":[{"type":"add-derived-card-for-exact-total","target":"owner","total":21}]}],"tags":["active-skill-card","blackjack","hand-value"],"drop":{"enabled":true,"baseWeight":1},"stackable":false,"unlock":{"opponentId":"w","label":"首次击败 W"}}
+{
+  "id": "night-queen",
+  "name": "暗夜女王",
+  "description": "若手牌有Q且有另一张同花色牌，未达21点时立即补一张衍生牌至21点。",
+  "usage": "玩家回合可用；满足Q与同花色伙伴条件时消费技能并补至21点。",
+  "triggerNotice": "获得一张衍生牌，手牌补至21点。",
+  "profileLore": "她在夜色中辨认出一枚熟悉的花色，随后让牌面安静地抵达它应有的终点。",
+  "sourceKind": "player-skill",
+  "primaryDomain": "blackjack",
+  "skillTags": ["gambler"],
+  "activation": {
+    "type": "action",
+    "windows": ["owner-turn"],
+    "consume": "card",
+    "availability": [
+      { "type": "hand-rank-has-suit-partner", "target": "owner", "rank": "Q" },
+      { "type": "hand-total", "target": "owner", "operator": "lt", "value": 21 }
+    ]
+  },
+  "rules": [
+    {
+      "id": "complete-to-twenty-one",
+      "trigger": "on-ability-played",
+      "conditions": [
+        {
+          "type": "hand-rank-has-suit-partner",
+          "target": "owner",
+          "rank": "Q"
+        },
+        {
+          "type": "hand-total",
+          "target": "owner",
+          "operator": "lt",
+          "value": 21
+        }
+      ],
+      "effects": [
+        {
+          "type": "add-derived-card-for-exact-total",
+          "target": "owner",
+          "total": 21
+        }
+      ]
+    }
+  ],
+  "tags": ["active-skill-card", "blackjack", "hand-value"],
+  "drop": { "enabled": true, "baseWeight": 1 },
+  "stackable": false,
+  "unlock": { "opponentId": "w", "label": "首次击败 W" }
+}

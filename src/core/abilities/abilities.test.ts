@@ -73,11 +73,16 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "unknown-effect", target: "owner" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "add-skill-draws", target: "player", amount: 1 }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, executable: "doSomething()" }).success).toBe(false);
-    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", primaryDomain: "rule-control", drop: { enabled: true, baseWeight: 1 }, stackable: false, activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", primaryDomain: "rule-control", skillTags: ["cheater"], drop: { enabled: true, baseWeight: 1 }, stackable: false, activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "card" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, ttl: undefined }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, ttl: { type: "triggers", amount: 0 } }).success).toBe(false);
-    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "talent", ttl: { type: "rounds", amount: 1 } }).success).toBe(false);
+    const talent = { ...base, sourceKind: "talent", ttl: undefined, unlock: { type: "defeat-count", count: 1, label: "击败 1 名角色" } };
+    expect(AbilityDefinitionSchema.safeParse(talent).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...talent, unlock: undefined }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...talent, unlock: { ...talent.unlock, count: 0 } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...talent, unlock: { ...talent.unlock, extra: true } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...talent, ttl: { type: "rounds", amount: 1 } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "none" }, ttl: { type: "triggers", amount: 1 } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "after-stand" }] }).success).toBe(true);
     const statusVariableRule = {
@@ -193,6 +198,7 @@ describe("generic resolution and lifecycle", () => {
     const definition = {
       id: "trigger-ttl-fixture", name: "trigger ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "roulette",
       activation: { type: "passive" }, ttl: { type: "triggers", amount: 2 }, tags: ["test-fixture"],
+      skillTags: ["gunslinger"],
       drop: { enabled: true, baseWeight: 1 }, stackable: false,
       rules: [{ id: "load", trigger: "before-bullet-load", conditions: [{ type: "round-penalty-target-is", target: "owner" }], effects: [{ type: "add-to-pending-load", target: "owner", amount: 1 }] }]
     } as const;
@@ -231,6 +237,7 @@ describe("generic resolution and lifecycle", () => {
     const definition = {
       id: "round-ttl-fixture", name: "round ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "rule-control",
       activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"],
+      skillTags: ["gunslinger"],
       drop: { enabled: true, baseWeight: 1 }, stackable: false, rules: []
     } as const;
     const registry = createAbilityRegistry([definition]);
@@ -283,7 +290,7 @@ describe("generic resolution and lifecycle", () => {
   it("preflights direct effects without consuming a card and resolves valid actions atomically", () => {
     const invalid = {
       id: "invalid-action-context", name: "invalid", description: "fixture", sourceKind: "player-skill", primaryDomain: "rule-control", drop: { enabled: true, baseWeight: 1 }, stackable: false,
-      activation: { type: "action", windows: ["owner-turn"], consume: "card" }, tags: ["test-fixture"],
+      activation: { type: "action", windows: ["owner-turn"], consume: "card" }, tags: ["test-fixture"], skillTags: ["cheater"],
       rules: [{ id: "requires-draw", trigger: "on-ability-played", effects: [{ type: "replace-pending-draw", target: "owner", policy: { type: "exact-resulting-total", total: 21, fallback: "create-derived-card" } }] }]
     } as const;
     const registry = createAbilityRegistry([invalid]);
