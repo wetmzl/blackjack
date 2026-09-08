@@ -7,6 +7,16 @@ export interface HapticsNavigator {
 const CONFIRM_PATTERN = 18;
 const DRY_FIRE_PATTERN = [22, 35, 28];
 const GUNSHOT_PATTERN = [70, 30, 120];
+const INTERACTION_PATTERN = 8;
+
+/** Gives an enabled UI button the lightest available best-effort click feedback. */
+export function presentInteractionHaptic(
+  enabled: boolean,
+  target: HapticsNavigator = navigator
+): void {
+  if (!enabled || typeof target.vibrate !== "function") return;
+  target.vibrate(INTERACTION_PATTERN);
+}
 
 /** Best-effort Android feedback; unsupported browsers simply do nothing. */
 export function presentMatchHaptics(

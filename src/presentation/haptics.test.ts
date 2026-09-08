@@ -1,9 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMatch } from "../core/match/reducer";
 import type { MatchState } from "../core/match/types";
-import { presentMatchHaptics } from "./haptics";
+import { presentInteractionHaptic, presentMatchHaptics } from "./haptics";
 
 describe("match haptics", () => {
+  it("uses a minimal pulse for successful button interactions", () => {
+    const vibrate = vi.fn(() => true);
+    presentInteractionHaptic(true, { vibrate });
+    expect(vibrate).toHaveBeenCalledWith(8);
+  });
+
+  it("keeps interaction feedback silent when reduced effects disable haptics", () => {
+    const vibrate = vi.fn(() => true);
+    presentInteractionHaptic(false, { vibrate });
+    expect(vibrate).not.toHaveBeenCalled();
+  });
+
   it("uses distinct confirmation, dry-fire, and gunshot patterns", () => {
     const base = createMatch("haptics");
     const vibrate = vi.fn(() => true);

@@ -25,7 +25,7 @@ import { requestPersistentStorage } from "./persistence/storage";
 import { SaveValidationError, type CharacterDefeatRecord, type LongTermSave } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
-import { presentMatchHaptics } from "./presentation/haptics";
+import { presentInteractionHaptic, presentMatchHaptics } from "./presentation/haptics";
 import { roundResultText, triggerResultText } from "./presentation/round-notice";
 import { cardDisplayMarkup, describeCard, describeCards, suitPresentation } from "./presentation/cards";
 import { gameAudio } from "./audio/game-audio";
@@ -68,6 +68,7 @@ const ABILITY_NOTICE_LEAVE_MS = 280;
 const MAX_ABILITY_NOTICES = 5;
 let fullscreenChangeAttached = false;
 let abilityNoticePositionAttached = false;
+let interactionHapticsAttached = false;
 type LobbyLayer = "menu" | "characters";
 let lobbyLayer: LobbyLayer = "menu";
 let guestSelectionIds: string[] = [];
@@ -639,6 +640,16 @@ function presentDelta(before: MatchState, after: MatchState): void {
 }
 function wireActions(container: ParentNode, handler: (action: Action) => void): void { container.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((element) => element.addEventListener("click", () => handler(JSON.parse(element.dataset.action ?? "{}") as Action))); }
 function requestDispatch(action: Action): void { dispatch(action); }
+function attachInteractionHaptics(): void {
+  if (interactionHapticsAttached) return;
+  document.addEventListener("click", (event) => {
+    const button = event.composedPath().find((entry): entry is HTMLButtonElement => entry instanceof HTMLButtonElement);
+    if (!button || button.disabled || button.getAttribute("aria-disabled") === "true") return;
+    presentInteractionHaptic(!document.body.classList.contains("reduced-motion"));
+  }, { capture: true });
+  interactionHapticsAttached = true;
+}
+attachInteractionHaptics();
 
 const RESOURCE_PACK_STATUS_KEY = "blackjack-resource-pack-status";
 

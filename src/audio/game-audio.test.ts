@@ -27,6 +27,11 @@ afterEach(() => {
 });
 
 describe("staged game audio loading", () => {
+  it("keeps skill cues independently routed while they temporarily reuse Stand", () => {
+    expect(SOUND_SOURCES.skillDraw).toBe(SOUND_SOURCES.stand);
+    expect(SOUND_SOURCES.skillUse).toBe(SOUND_SOURCES.stand);
+  });
+
   it("loads lobby music first, then preloads table music in the initial stage", () => {
     vi.useFakeTimers();
     const requestFetch = vi.fn();

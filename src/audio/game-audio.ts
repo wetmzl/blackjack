@@ -8,6 +8,9 @@ export const SOUND_SOURCES = {
   compare: "/assets/audio/sfx/compare.ogg",
   result: "/assets/audio/sfx/result.ogg",
   stand: "/assets/audio/sfx/stand.ogg",
+  /** Dedicated routing keys; replace these assets when the final skill SFX are available. */
+  skillDraw: "/assets/audio/sfx/stand.ogg",
+  skillUse: "/assets/audio/sfx/stand.ogg",
   heartbeat: "/assets/audio/sfx/heartbeat.ogg",
   dryFire: "/assets/audio/sfx/revolver-dry-fire.ogg",
   /** Dedicated routing key; replace this asset when the final misfire SFX is available. */
@@ -25,6 +28,8 @@ const SOUND_VOLUME: Readonly<Record<SoundCue, number>> = {
   compare: 0.64,
   result: 0.74,
   stand: 0.76,
+  skillDraw: 0.76,
+  skillUse: 0.76,
   heartbeat: 0.34,
   dryFire: 0.72,
   misfire: 0.72,

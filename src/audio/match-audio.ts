@@ -43,6 +43,8 @@ export function presentMatchAudio(audio: MatchAudioPort, before: MatchState, aft
 
   const roundStarted = events.some((event) => event.type === "ROUND_STARTED");
   const resultAcknowledged = events.some((event) => event.type === "ROUND_RESULT_ACKNOWLEDGED");
+  const skillDrawOpened = events.some((event) => event.type === "SKILL_DRAW_OPENED");
+  const playerAbilityPlayed = events.some((event) => event.type === "ABILITY_PLAYED" && event.owner === "player");
   const playerHit = events.some((event) => event.type === "PLAYER_HIT");
   const opponentHit = events.some((event) => event.type === "OPPONENT_HIT");
   const hit = playerHit || opponentHit;
@@ -50,6 +52,8 @@ export function presentMatchAudio(audio: MatchAudioPort, before: MatchState, aft
     || (events.some((event) => event.type === "OPPONENT_STOOD") && !opponentHit);
 
   if (resultAcknowledged) audio.play("stand");
+  if (skillDrawOpened) audio.play("skillDraw");
+  if (playerAbilityPlayed) audio.play("skillUse");
   if (roundStarted) audio.play("shuffle", resultAcknowledged ? CONFIRMED_PUSH_SHUFFLE_DELAY_MS : 0);
   if (hit) audio.play("cardFlip");
   if (manualStand) audio.play("stand");

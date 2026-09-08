@@ -1185,6 +1185,37 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 7");
 });
 
+test("可用按钮提供极轻震动并服从减少动态效果设置", async ({ page }) => {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __hapticPatterns: Array<number | number[]> };
+    target.__hapticPatterns = [];
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      value: (pattern: number | number[]) => {
+        target.__hapticPatterns.push(pattern);
+        return true;
+      }
+    });
+  });
+  await page.goto("/");
+
+  await page.locator("button.lobby-settings-button").click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns)).toEqual([8]);
+
+  await page.evaluate(() => {
+    const button = document.createElement("button");
+    button.disabled = true;
+    document.body.append(button);
+    button.click();
+    button.remove();
+  });
+  expect(await page.evaluate(() => (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns)).toEqual([8]);
+
+  await page.locator("#settings input[data-setting='reducedMotion']").check();
+  await page.locator("#settings [data-close]").click();
+  expect(await page.evaluate(() => (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns)).toEqual([8]);
+});
+
 test("设置可下载离线资源包并显示真实进度", async ({ page }) => {
   const assets = [
     { url: "/assets/test-pack/portrait.bin", bytes: 8 },

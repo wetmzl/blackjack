@@ -57,6 +57,27 @@ describe("match audio presentation mapping", () => {
     expect(audio.calls).toEqual(["play:stand:0", "play:compare:160", "play:stand:0", "heartbeat:start"]);
   });
 
+  it("routes drawing and using a player skill through replaceable cues", () => {
+    const before = createMatch("audio-skills");
+    const after = withEvents(before, "turns",
+      { type: "SKILL_DRAW_OPENED", offerId: "offer-1", candidateDefinitionIds: ["critical-judgment"] },
+      { type: "ABILITY_PLAYED", instanceId: "skill-1", definitionId: "critical-judgment", owner: "player" }
+    );
+    const audio = new RecordingAudio();
+    presentMatchAudio(audio, before, after);
+    expect(audio.calls).toEqual(["play:skillDraw:0", "play:skillUse:0"]);
+  });
+
+  it("does not play the player skill cue for an opponent ability", () => {
+    const before = createMatch("audio-opponent-skill");
+    const after = withEvents(before, "turns",
+      { type: "ABILITY_PLAYED", instanceId: "skill-1", definitionId: "opponent-skill", owner: "opponent" }
+    );
+    const audio = new RecordingAudio();
+    presentMatchAudio(audio, before, after);
+    expect(audio.calls).toEqual([]);
+  });
+
   it("starts player suspense only after accepting the penalty, then stops it for a dry chamber", () => {
     const base = createMatch("audio-trigger");
     const playerPenalty: RoundOutcome = { ...COMPARISON, winner: "opponent", penaltyTarget: "player"};
