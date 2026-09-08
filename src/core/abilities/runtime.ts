@@ -5,7 +5,7 @@ import type { AbilityRegistry } from "./registry";
 import { getAbilityDefinition } from "./registry";
 
 export function createAbilityRuntime(rng: RngSnapshot, catalogVersion: string = ABILITY_CATALOG_VERSION): AbilityRuntimeState {
-  return { instances: [], statuses: [], counters: {}, sequence: 0, catalogVersion, rng };
+  return { instances: [], statuses: [], counters: {}, sequence: 0, catalogVersion, rng, lastPlayedPlayerSkillDefinitionId: null };
 }
 
 export function addAbilityInstance(runtime: AbilityRuntimeState, instance: AbilityInstance): AbilityRuntimeState {

@@ -65,11 +65,11 @@ describe("createMatch and legal actions", () => {
       shoe: { cards: [card("7", "clubs"), card("2", "diamonds")], cursor: 0, shuffleIndex: 1 },
       abilities: {
         ...prepared.abilities,
-        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", source: "shoe" }, createdAtSequence: instance.createdAtSequence }]
       }
     };
     const next = gameReducer(state, { type: "AI_HIT" });
-    expect(next.opponent.hand.cards.at(-1)).toEqual({ rank: "4", suit: "hearts", origin: "derived" });
+    expect(next.opponent.hand.cards.at(-1)).toMatchObject({ attributes: { rank: "4", suit: "hearts", source: "derived" }, tags: ["derived", "generated-by:ho-olheyak-inheritance-terminal"] });
     expect(handValue(next.opponent.hand)).toBe(20);
     expect(next.opponent.stood).toBe(true);
     expect(next.shoe.cursor).toBe(1);
@@ -87,7 +87,7 @@ describe("createMatch and legal actions", () => {
       roulette: { player: createGun(), opponent: createGun() },
       abilities: {
         ...base.abilities,
-        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "K", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "K", suit: "hearts", source: "shoe" }, createdAtSequence: instance.createdAtSequence }]
       }
     };
     const next = resolveRound(state, { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1 });
@@ -110,7 +110,7 @@ describe("createMatch and legal actions", () => {
       shoe: { cards: [card("5", "clubs")], cursor: 0, shuffleIndex: 1 },
       abilities: {
         ...prepared.abilities,
-        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", source: "shoe" }, createdAtSequence: instance.createdAtSequence }]
       }
     };
     const next = gameReducer(state, { type: "AI_HIT" });
@@ -133,7 +133,7 @@ describe("createMatch and legal actions", () => {
     const round: RoundState = { ...ended.round, phase: "round-reveal", outcome: { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 } };
     const next = gameReducer({ ...ended, round }, { type: "ACK_ROUND_RESULT" });
     const memory = next.abilities.statuses.find((status) => status.statusDefinitionId === "ho-olheyak-memory-card");
-    expect(memory).toMatchObject({ owner: "opponent", parameters: { rank: "Q", suit: "diamonds", origin: "shoe" } });
+    expect(memory).toMatchObject({ owner: "opponent", parameters: { rank: "Q", suit: "diamonds", source: "shoe" } });
     expect(abilityTriggerNotice(next.history, "霍尔海雅")).toEqual([]);
   });
 
@@ -149,11 +149,11 @@ describe("createMatch and legal actions", () => {
       shoe: { cards: [card("7", "clubs")], cursor: 0, shuffleIndex: 1 },
       abilities: {
         ...prepared.abilities,
-        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: instance.createdAtSequence }]
+        statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent", sourceInstanceId: instance.instanceId, stacks: 1, duration: "match", parameters: { rank: "4", suit: "hearts", source: "shoe" }, createdAtSequence: instance.createdAtSequence }]
       }
     };
     const next = gameReducer(state, { type: "AI_HIT" });
-    expect(next.opponent.hand.cards.at(-1)).toEqual({ rank: "4", suit: "hearts", origin: "derived" });
+    expect(next.opponent.hand.cards.at(-1)).toMatchObject({ attributes: { rank: "4", suit: "hearts", source: "derived" }, tags: ["derived", "generated-by:ho-olheyak-inheritance-terminal"] });
     expect(next.opponent.busted).toBe(true);
     expect(next.round.outcome?.reason).toBe("bust");
     expect(next.shoe.cursor).toBe(1);
@@ -210,7 +210,7 @@ describe("createMatch and legal actions", () => {
     };
     const next = gameReducer(state, { type: "AI_HIT" });
     expect(next.opponent.hand.cards).toHaveLength(4);
-    expect(next.opponent.hand.cards.at(-1)?.origin).toBe("derived");
+    expect(next.opponent.hand.cards.at(-1)?.attributes.source).toBe("derived");
     expect(handValue(next.opponent.hand)).toBe(21);
     expect(next.opponent.stood).toBe(false);
     expect(next.shoe.cursor).toBe(1);
@@ -222,11 +222,11 @@ describe("createMatch and legal actions", () => {
     let found: MatchState | undefined;
     for (let index = 0; index < 10_000 && !found; index += 1) {
       const candidate = createMatch(`night-queen-initial-${index}`, { opponentAiSkills: [{ definitionId: "w-night-queen", enabled: true, parameters: {} }] });
-      if (candidate.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen") && candidate.opponent.hand.cards.at(-1)?.origin === "derived" && candidate.round.phase === "turns") found = candidate;
+      if (candidate.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen") && candidate.opponent.hand.cards.at(-1)?.attributes.source === "derived" && candidate.round.phase === "turns") found = candidate;
     }
     expect(found).toBeDefined();
     expect(found!.opponent.stood).toBe(false);
-    expect(found!.opponent.hand.cards.at(-1)?.origin).toBe("derived");
+    expect(found!.opponent.hand.cards.at(-1)?.attributes.source).toBe("derived");
     expect(found!.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen")).toHaveLength(1);
     expect(found!.history.some((event) => event.type === "BLACKJACK")).toBe(false);
     expect(found!.round.currentActor).toBe("opponent");
@@ -238,7 +238,7 @@ describe("createMatch and legal actions", () => {
       const candidate = createMatch(`night-queen-next-round-${index}`, { opponentAiSkills: [{ definitionId: "w-night-queen", enabled: true, parameters: {} }] });
       const pushed = resolveRound(withHands(candidate, [card("10"), card("7")], [card("10"), card("7")]), { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0});
       const started = gameReducer(pushed, { type: "ACK_ROUND_RESULT" });
-      if (started.round.index === 1 && started.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen" && event.ruleId === "complete-to-twenty-one") && started.opponent.hand.cards.at(-1)?.origin === "derived") nextRound = started;
+      if (started.round.index === 1 && started.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen" && event.ruleId === "complete-to-twenty-one") && started.opponent.hand.cards.at(-1)?.attributes.source === "derived") nextRound = started;
     }
     expect(nextRound).toBeDefined();
     expect(nextRound!.round.index).toBeGreaterThan(0);
@@ -251,11 +251,11 @@ describe("createMatch and legal actions", () => {
     for (let index = 0; index < 10_000 && !blackjack; index += 1) {
       const candidate = createMatch(`night-queen-blackjack-${index}`, { opponentAiSkills: [{ definitionId: "w-night-queen", enabled: true, parameters: {} }] });
       const cards = candidate.opponent.hand.cards;
-      if (cards.length === 2 && cards.some((entry) => entry.rank === "Q") && cards.some((entry) => entry.rank === "A") && candidate.history.some((event) => event.type === "BLACKJACK" && event.actor === "opponent")) blackjack = candidate;
+      if (cards.length === 2 && cards.some((entry) => entry.attributes.rank === "Q") && cards.some((entry) => entry.attributes.rank === "A") && candidate.history.some((event) => event.type === "BLACKJACK" && event.actor === "opponent")) blackjack = candidate;
     }
     expect(blackjack).toBeDefined();
     expect(blackjack!.history.filter((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "w-night-queen")).toHaveLength(0);
-    expect(blackjack!.opponent.hand.cards.some((entry) => entry.origin === "derived")).toBe(false);
+    expect(blackjack!.opponent.hand.cards.some((entry) => entry.attributes.source === "derived")).toBe(false);
   });
 
   it("keeps the opponent as starter after a survived round", () => {
@@ -623,7 +623,7 @@ describe("skills", () => {
     const state = withSkillCard(withHands(base, [card("K"), card("8"), card("A")], [card("10"), card("7")]), "blueberry-and-dark-chocolate", "blueberry-ace-card");
     const shoe = { cards: [card("2", "clubs"), card("3", "diamonds")], cursor: 0, shuffleIndex: 1 };
     const next = gameReducer({ ...state, shoe }, { type: "PLAY_ABILITY", instanceId: "blueberry-ace-card" });
-    expect(next.player.hand.cards.slice(-2).every((entry) => entry.origin === "derived")).toBe(true);
+    expect(next.player.hand.cards.slice(-2).every((entry) => entry.attributes.source === "derived")).toBe(true);
     expect(next.player.hand.cards.slice(-2).reduce((sum, entry) => sum + fixedCardValue(entry), 0)).toBe(11);
     expect(next.shoe).toEqual(shoe);
     expect(next.history).toContainEqual(expect.objectContaining({ type: "BUST", actor: "player" }));
@@ -743,7 +743,7 @@ describe("skills", () => {
     const next = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-night-queen" });
     expect(next.player.hand.cards).toHaveLength(3);
     expect(handValue(next.player.hand)).toBe(21);
-    expect(next.player.hand.cards.at(-1)?.origin).toBe("derived");
+    expect(next.player.hand.cards.at(-1)?.attributes.source).toBe("derived");
     expect(next.shoe.cursor).toBe(0);
     expect(next.history).not.toContainEqual(expect.objectContaining({ type: "PLAYER_HIT" }));
     expect(next.history).not.toContainEqual(expect.objectContaining({ type: "PLAYER_STOOD" }));
@@ -752,19 +752,19 @@ describe("skills", () => {
   });
 
   it("dissipates derived cards when they leave a hand or the round ends", () => {
-    const derived = createDerivedCard("hearts", "5");
+    const derived = createDerivedCard("hearts", "5", "derived-lifecycle-fixture");
     const base = withHands(createMatch("derived-lifecycle"), [card("10"), derived], [card("10"), card("7")]);
     const switcheroo = withSkillCard({ ...base, shoe: { cards: [card("2", "clubs"), card("3", "diamonds")], cursor: 0, shuffleIndex: 1 } }, "switcheroo", "derived-switch");
     const replaced = gameReducer(switcheroo, { type: "PLAY_ABILITY", instanceId: "derived-switch" });
-    expect(replaced.player.hand.cards.some((entry) => entry.origin === "derived")).toBe(false);
-    expect(replaced.shoe.cards.every((entry) => entry.origin === "shoe")).toBe(true);
+    expect(replaced.player.hand.cards.some((entry) => entry.attributes.source === "derived")).toBe(false);
+    expect(replaced.shoe.cards.every((entry) => entry.attributes.source === "shoe")).toBe(true);
     expect(replaced.shoe.cursor).toBe(1);
 
     const endBase = withHands(createMatch("derived-round-end"), [card("10"), derived], [card("10"), card("7")]);
     const atRoundEnd = { ...endBase, round: { ...endBase.round, phase: "round-end" as const, currentActor: null } };
     const nextRound = gameReducer(atRoundEnd, { type: "CONTINUE_ROUND" });
-    expect([...nextRound.player.hand.cards, ...nextRound.opponent.hand.cards].every((entry) => entry.origin === "shoe")).toBe(true);
-    expect(nextRound.shoe.cards.every((entry) => entry.origin === "shoe")).toBe(true);
+    expect([...nextRound.player.hand.cards, ...nextRound.opponent.hand.cards].every((entry) => entry.attributes.source === "shoe")).toBe(true);
+    expect(nextRound.shoe.cards.every((entry) => entry.attributes.source === "shoe")).toBe(true);
   });
 
   it("does not consume a second Night Queen after the first completes the hand", () => {
@@ -853,7 +853,7 @@ describe("skills", () => {
     const state = { ...base, playerSkills: { ...base.playerSkills, unlockedDefinitionIds: ["blueberry-and-dark-chocolate"], cards: [skill] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skill, createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 }, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } };
     const next = gameReducer(state, { type: "PLAY_ABILITY", instanceId: skill.instanceId });
     expect(next.player.hand.cards).toHaveLength(3);
-    expect(next.player.hand.cards.slice(-2).every((entry) => entry.origin === "derived")).toBe(true);
+    expect(next.player.hand.cards.slice(-2).every((entry) => entry.attributes.source === "derived")).toBe(true);
     expect(handValue(next.player.hand)).toBe(18);
     expect(next.shoe.cursor).toBe(0);
     expect(next.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "blueberry-and-dark-chocolate" }));
@@ -1177,7 +1177,7 @@ describe("legal action safety property", () => {
         expect(next.roulette.opponent.bullets).toBeGreaterThanOrEqual(0);
         expect(next.roulette.player.bullets).toBeLessThanOrEqual(next.roulette.player.capacity);
         expect(next.roulette.opponent.bullets).toBeLessThanOrEqual(next.roulette.opponent.capacity);
-        expect(next.shoe.cards.every((card) => card.origin === "shoe")).toBe(true);
+        expect(next.shoe.cards.every((card) => card.attributes.source === "shoe")).toBe(true);
         state = next;
         executed += 1;
       }

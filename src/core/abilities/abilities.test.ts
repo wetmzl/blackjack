@@ -48,8 +48,8 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers three disjoint ability domains as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(24);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(8);
+    expect(ABILITY_DEFINITIONS).toHaveLength(31);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(15);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(15);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
@@ -66,6 +66,7 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案中的文学化技能描写。" }).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案", profileLoreExtra: true }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "Q" }] }] }).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-card-has-tag", target: "owner", card: "last-card", tag: "marked" }], effects: [{ type: "add-hand-card-tag", target: "owner", card: "last-card", tag: "marked" }] }] }).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "Q", extra: true }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "joker" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], trigger: "unknown-trigger" }] }).success).toBe(false);
@@ -138,26 +139,27 @@ describe("generic resolution and lifecycle", () => {
     const result = drawExactResultingTotal(shoe, hand, createRng("derived-exact"), 21);
     expect(result).toBeDefined();
     expect(result?.derived).toBe(true);
-    expect(result?.card.origin).toBe("derived");
+    expect(result?.card.attributes.source).toBe("derived");
     expect(result?.shoe).toBe(shoe);
     expect(result?.shoe.cursor).toBe(0);
 
     const ability = mechanic("hand-change-observer", "player");
     const conditionWorld = { ...world(), hands: { ...world().hands, player: createHand([createCard("spades", "10"), result!.card]) } };
-    const context = { world: conditionWorld, ability, event: { trigger: "after-hand-changed" as const, sourceEventId: "derived-origin", eventActor: "player" as const } };
-    expect(evaluateCondition({ type: "hand-card-origin-is", target: "owner", card: "last-card", origin: "derived" }, context)).toBe(true);
-    expect(evaluateCondition({ type: "hand-card-origin-is", target: "owner", card: "last-card", origin: "shoe" }, context)).toBe(false);
+    const context = { world: conditionWorld, ability, event: { trigger: "after-hand-changed" as const, sourceEventId: "derived-source", eventActor: "player" as const } };
+    expect(evaluateCondition({ type: "hand-card-source-is", target: "owner", card: "last-card", source: "derived" }, context)).toBe(true);
+    expect(evaluateCondition({ type: "hand-card-source-is", target: "owner", card: "last-card", source: "shoe" }, context)).toBe(false);
+    expect(evaluateCondition({ type: "hand-card-has-tag", target: "owner", card: "last-card", tag: "derived" }, context)).toBe(true);
   });
 
   it("dissipates a derived card replaced from hand instead of returning it to the shoe", () => {
-    const derived = createDerivedCard("hearts", "5");
+    const derived = createDerivedCard("hearts", "5", "derived-replacement-fixture");
     const hand = createHand([createCard("spades", "10"), derived]);
     const shoe = { cards: [createCard("clubs", "2"), createCard("diamonds", "3")], cursor: 0, shuffleIndex: 1 };
     const result = replaceLastHandCard(shoe, hand, createRng("replace-derived"), "at-most", 21);
     expect(result).toBeDefined();
     expect(result?.shoe.cursor).toBe(1);
-    expect(result?.hand.cards.some((card) => card.origin === "derived")).toBe(false);
-    expect(result?.shoe.cards.every((card) => card.origin === "shoe")).toBe(true);
+    expect(result?.hand.cards.some((card) => card.attributes.source === "derived")).toBe(false);
+    expect(result?.shoe.cards.every((card) => card.attributes.source === "shoe")).toBe(true);
     expect(result?.shoe.cards).not.toContainEqual(derived);
   });
 
@@ -318,20 +320,26 @@ describe("generic resolution and lifecycle", () => {
     const input = { world: { ...world([card]), hands: { ...world().hands, player: createHand([createCard("hearts", "Q"), createCard("hearts", "6")]) } }, runtime, instanceId: card.instanceId, owner: "player" as const, window: "owner-turn" as const };
     const result = playAbility(input);
     expect(result.world.hands.player.cards).toHaveLength(3);
-    expect(result.world.hands.player.cards.at(-1)?.origin).toBe("derived");
-    expect(result.world.hands.player.cards.reduce((total, entry) => total + (entry.rank === "A" ? 11 : entry.rank === "K" || entry.rank === "Q" || entry.rank === "J" ? 10 : Number(entry.rank)), 0)).toBe(21);
+    expect(result.world.hands.player.cards.at(-1)?.attributes.source).toBe("derived");
+    expect(result.world.hands.player.cards.reduce((total, entry) => total + (entry.attributes.rank === "A" ? 11 : entry.attributes.rank === "K" || entry.attributes.rank === "Q" || entry.attributes.rank === "J" ? 10 : Number(entry.attributes.rank)), 0)).toBe(21);
   });
 
-  it("reveals only the rival private-card suit without changing world or RNG", () => {
+  it("reveals every current rival card suit without changing world or RNG", () => {
     const card: SkillCardInstance = { kind: "player-skill", definitionId: "scent-of-a-woman", owner: "player", instanceId: "scent-test" };
     const instance: AbilityInstance = { ...card, createdAtSequence: 1, parameters: {} };
     const initial = world([card]);
-    const inputWorld = { ...initial, hands: { player: createHand([createCard("spades", "10")]), opponent: createHand([createCard("clubs", "9"), createCard("hearts", "7")]) }, shoe: { cards: [createCard("diamonds", "A")], cursor: 0, shuffleIndex: 1 } };
+    const inputWorld = { ...initial, hands: { player: createHand([createCard("spades", "10")]), opponent: createHand([createCard("clubs", "9"), createCard("hearts", "7"), createCard("diamonds", "4")]) }, shoe: { cards: [createCard("diamonds", "A")], cursor: 0, shuffleIndex: 1 } };
     const runtime = { ...createAbilityRuntime(createRng("scent").snapshot()), instances: [instance] };
     const result = playAbility({ world: inputWorld, runtime, instanceId: card.instanceId, owner: "player", window: "owner-turn" });
-    const revealed = result.events.find((event) => event.type === "CARD_SUIT_REVEALED");
-    expect(revealed).toEqual({ type: "CARD_SUIT_REVEALED", viewer: "player", target: "opponent", cardIndex: 1, suit: "hearts" });
-    expect(revealed && "rank" in revealed).toBe(false);
+    const revealed = result.events.filter((event) => event.type === "CARD_SUIT_REVEALED");
+    expect(revealed).toEqual(inputWorld.hands.opponent.cards.map((handCard) => ({
+      type: "CARD_SUIT_REVEALED",
+      viewer: "player",
+      target: "opponent",
+      cardId: handCard.id,
+      suit: handCard.attributes.suit
+    })));
+    expect(revealed.every((event) => !("rank" in event))).toBe(true);
     expect(result.world.hands).toEqual(inputWorld.hands);
     expect(result.world.shoe).toEqual(inputWorld.shoe);
     expect(result.runtime.rng).toEqual(runtime.rng);

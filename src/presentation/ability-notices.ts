@@ -1,4 +1,4 @@
-import { getAbilityDefinition } from "../core/abilities/registry";
+import { getAbilityDefinition, getStatusDefinition, STATUS_DEFINITIONS } from "../core/abilities/registry";
 import type { PendingTriggerPreview } from "../core/match/reducer";
 import type { MatchState, GameEvent } from "../core/match/types";
 import type { AbilityRule, Effect } from "../core/abilities/types";
@@ -41,8 +41,14 @@ function effectResultNotice(
     return `建议${after.playerSkills.advice === "hit" ? " Hit 要牌" : " Stand 停牌"}`;
   }
   if (effect.type === "reveal-hand-card-suit") {
-    const revealed = events.find((candidate): candidate is Extract<GameEvent, { type: "CARD_SUIT_REVEALED" }> => candidate.type === "CARD_SUIT_REVEALED" && candidate.viewer === event.owner);
-    if (revealed) return `对手暗牌花色为${suitLabel(revealed.suit)}`;
+    const target = event.owner === "player" ? "opponent" : "player";
+    const revealed = events.filter((candidate): candidate is Extract<GameEvent, { type: "CARD_SUIT_REVEALED" }> => candidate.type === "CARD_SUIT_REVEALED" && candidate.viewer === event.owner && candidate.target === target);
+    if (revealed.length > 0) {
+      const labels = [...new Map(revealed.map((candidate) => [candidate.cardId, suitLabel(candidate.suit)])).values()];
+      return effect.card === "all-current-cards"
+        ? `对手当前所有手牌花色为${labels.join("、")}`
+        : `对手暗牌花色为${labels[0]}`;
+    }
   }
   if (effect.type === "cancel-pending-trigger") return "本次免于扣扳机";
   if (effect.type === "add-to-pending-bust-limit" && after) {
@@ -69,6 +75,23 @@ function ruleNotice(
   after?: MatchState
 ): string {
   if (events.some((candidate) => candidate.type === "PENDING_EVENT_CANCELLED" && candidate.sourceInstanceId === event.instanceId)) return "本次免于扣扳机";
+  const results = events.filter((candidate): candidate is Extract<GameEvent, { type: "ABILITY_RESULT" }> => candidate.type === "ABILITY_RESULT" && candidate.instanceId === event.instanceId).map((candidate) => candidate.result);
+  const derived = results.find((candidate): candidate is Extract<typeof candidate, { type: "derived-card-added" }> => candidate.type === "derived-card-added");
+  const replaced = results.find((candidate): candidate is Extract<typeof candidate, { type: "derived-card-replaced" }> => candidate.type === "derived-card-replaced");
+  const statusResult = results.find((candidate): candidate is Extract<typeof candidate, { type: "status-stacks-updated" }> => candidate.type === "status-stacks-updated");
+  if (derived && statusResult && statusResult.delta > 0) return `获得一张${suitLabel(derived.suit)}${derived.rank}衍生牌，多余的${statusResult.delta}点转化为点数优势。`;
+  if (derived) return `获得一张${derived.rank}点衍生牌。`;
+  if (replaced) return `最后一张手牌${replaced.oldRank}被替换为${replaced.rank}。`;
+  const granted = results.find((candidate): candidate is Extract<typeof candidate, { type: "skill-card-granted" }> => candidate.type === "skill-card-granted");
+  if (granted) return `获得一张「${getAbilityDefinition(granted.definitionId)?.name ?? granted.definitionId}」。`;
+  if (results.some((candidate) => candidate.type === "draw-pile-rotated")) return "牌堆顶的一张牌已被移至牌堆底。";
+  if (statusResult) {
+    const status = getStatusDefinition(statusResult.statusDefinitionId);
+    const hasBustRule = status?.rules.some((candidate) => candidate.effects.some((effect) => effect.type === "add-to-pending-bust-limit"));
+    const hasComparisonRule = status?.rules.some((candidate) => candidate.effects.some((effect) => effect.type === "add-to-pending-comparison-score"));
+    if (hasBustRule) return `公共爆牌上限提高至${after?.[statusResult.actor]?.bustLimit ?? 21 + statusResult.stacks}点。`;
+    if (hasComparisonRule) return `获得${statusResult.delta}点点数优势。`;
+  }
   const dynamic = rule?.effects
     .map((effect) => effectResultNotice(effect, event, events, after))
     .find((notice): notice is string => Boolean(notice));
@@ -84,7 +107,8 @@ export function abilityTriggerNotice(events: readonly GameEvent[], opponentName:
     if (event.type !== "ABILITY_TRIGGERED") continue;
     const definition = getAbilityDefinition(event.definitionId);
     if (!definition || (definition.sourceKind !== "player-skill" && definition.sourceKind !== "ai-skill")) continue;
-    const rule = definition.rules.find((candidate) => candidate.id === event.ruleId);
+    const rule = definition.rules.find((candidate) => candidate.id === event.ruleId)
+      ?? STATUS_DEFINITIONS.flatMap((status) => status.rules).find((candidate) => candidate.id === event.ruleId);
     if (rule?.notify === false) continue;
     // Pending trigger modifiers are announced when the heartbeat window opens.
     if (resolvedTrigger && modifiesPendingTriggerMisfire(rule)) continue;
@@ -105,7 +129,8 @@ export function pendingTriggerAbilityNotices(preview: PendingTriggerPreview, opp
     if (event.type !== "ABILITY_TRIGGERED") continue;
     const definition = getAbilityDefinition(event.definitionId);
     if (!definition || (definition.sourceKind !== "player-skill" && definition.sourceKind !== "ai-skill")) continue;
-    const rule = definition.rules.find((candidate) => candidate.id === event.ruleId);
+    const rule = definition.rules.find((candidate) => candidate.id === event.ruleId)
+      ?? STATUS_DEFINITIONS.flatMap((status) => status.rules).find((candidate) => candidate.id === event.ruleId);
     if (rule?.notify === false || !modifiesPendingTriggerMisfire(rule)) continue;
     notices.push({
       owner: event.owner,

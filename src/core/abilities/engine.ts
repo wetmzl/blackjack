@@ -104,7 +104,10 @@ export function playAbility(input: PlayAbilityInput): AbilityResolution {
   const world = definition.activation.consume === "card" ? { ...input.world, cards: input.world.cards.filter((entry) => entry.instanceId !== input.instanceId) } : input.world;
   const result = resolveAbilityEvent({ ...input, world, runtime, directInstanceId: ability.instanceId, event: { trigger: "on-ability-played", sourceEventId: `ability:${input.instanceId}`, eventActor: input.owner } });
   if (result.triggered.length === 0) throw new AbilityResolutionError("Ability has no triggered direct rules");
-  return { ...result, events: [{ type: "ABILITY_PLAYED", instanceId: ability.instanceId, definitionId: ability.definitionId, owner: ability.owner }, ...result.events] };
+  const updatedRuntime = ability.kind === "player-skill"
+    ? { ...result.runtime, lastPlayedPlayerSkillDefinitionId: ability.definitionId }
+    : result.runtime;
+  return { ...result, runtime: updatedRuntime, events: [{ type: "ABILITY_PLAYED", instanceId: ability.instanceId, definitionId: ability.definitionId, owner: ability.owner }, ...result.events] };
 }
 
 export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResolution {
@@ -121,14 +124,18 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
   let pendingBust = input.pendingBust;
   let pendingTrigger = input.pendingTrigger;
   let pendingComparison = input.pendingComparison;
+  const event = input.event.initialHandCardCounts ? input.event : {
+    ...input.event,
+    initialHandCardCounts: { player: input.world.hands.player.cards.length, opponent: input.world.hands.opponent.cards.length }
+  };
   let events: readonly AbilityDomainEvent[] = [];
   const triggered: string[] = [];
-  for (const entry of collect(runtime, input.event.trigger, input.directInstanceId, input.registry)) {
+  for (const entry of collect(runtime, event.trigger, input.directInstanceId, input.registry)) {
     const liveInstance = runtime.instances.find((instance) => instance.instanceId === entry.instance.instanceId);
     if (!liveInstance || isAbilityInstanceExpired(liveInstance)) continue;
-    const context = { world, ability: liveInstance, event: { ...input.event, pendingDraw, pendingBust } };
+    const context = { world, ability: liveInstance, event: { ...event, pendingDraw, pendingBust } };
     if (!allConditionsPass(entry.rule.conditions, context)) continue;
-    if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId)) continue;
+    if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, event.sourceEventId)) continue;
     try {
       const abilityRng = SeededRng.fromSnapshot(runtime.rng);
       const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, publishAdvice: input.publishAdvice }, { draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger, comparison: pendingComparison });
@@ -139,7 +146,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
       pendingTrigger = result.pendingTrigger;
       pendingComparison = result.pendingComparison;
       runtime = { ...result.runtime, rng: abilityRng.snapshot() };
-      runtime = consumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, input.event.sourceEventId);
+      runtime = consumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, event.sourceEventId);
       const ttl = consumeAbilityTriggerTtl(runtime, world.cards, entry.instance.instanceId, input.registry);
       runtime = ttl.runtime;
       world = { ...world, cards: ttl.cards, statuses: ttl.runtime.statuses };

@@ -8,11 +8,12 @@ import ireneData from "../../content/characters/data/irene.json";
 import platinumData from "../../content/characters/data/platinum.json";
 import lapplandData from "../../content/characters/data/lappland-the-decadenza.json";
 import hoOlheyakData from "../../content/characters/data/ho-olheyak.json";
+import { createCard } from "../blackjack/card";
 
 const world: AbilityWorld = {
   hands: {
-    player: { cards: [{ suit: "hearts", rank: "A", origin: "shoe" }] },
-    opponent: { cards: [{ suit: "spades", rank: "5", origin: "shoe" }, { suit: "diamonds", rank: "6", origin: "shoe" }] }
+    player: { cards: [createCard("hearts", "A", "info-player-a")] },
+    opponent: { cards: [createCard("spades", "5", "info-opponent-5"), createCard("diamonds", "6", "info-opponent-6")] }
   },
   guns: { player: { capacity: 6, bullets: 1 }, opponent: { capacity: 6, bullets: 3 } },
   shoe: { cards: [], cursor: 0, shuffleIndex: 0 }, cards: [], skillDraws: 0, statuses: []
@@ -56,9 +57,9 @@ describe("character information bar", () => {
     const value = hoOlheyakData.infoBar!.value as AbilityInfoValue;
     const remembered = {
       ...world,
-      statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent" as const, sourceInstanceId: "ho-olheyak", stacks: 1, duration: "match" as const, parameters: { rank: "4", suit: "hearts", origin: "shoe" }, createdAtSequence: 1 }]
+      statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent" as const, sourceInstanceId: "ho-olheyak", stacks: 1, duration: "match" as const, parameters: { rank: "4", suit: "hearts", source: "shoe" }, createdAtSequence: 1 }]
     };
-    expect(resolveAbilityInfoValue(value, remembered, "opponent", { sourceActive: true })).toEqual({ rank: "4", suit: "hearts", origin: "derived" });
+    expect(resolveAbilityInfoValue(value, remembered, "opponent", { sourceActive: true })).toMatchObject({ attributes: { rank: "4", suit: "hearts", source: "derived" }, tags: ["derived", "generated-by:ho-olheyak"] });
     expect(resolveAbilityInfoValue(value, world, "opponent", { sourceActive: true })).toBeNull();
   });
 

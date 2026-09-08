@@ -1,4 +1,5 @@
 import type { Hand } from "../blackjack/types";
+import { cardHasTag, cardRank, cardSource, cardSuit } from "../blackjack/card";
 import { canSplitLastCard, findCardCandidates, handCardCount, handTotal } from "./card-zone-adapter";
 import { gunBullets, gunIsFull } from "./roulette-adapter";
 import type { AbilityInstance, AbilityEventContext, AbilityWorld, ActorSelector, Compare, Condition, NumberValue, ScalarValue } from "./types";
@@ -13,18 +14,21 @@ export function resolveActor(selector: ActorSelector, context: ConditionContext)
 }
 
 export function resolveScalar(value: ScalarValue, context: ConditionContext): number {
-  if (typeof value === "number") return value;
+  if (typeof value === "number") { if (!Number.isFinite(value)) throw new Error("Scalar value is not finite"); return value; }
   const numeric = value as NumberValue;
-  if (numeric.type === "constant") return numeric.value;
+  if (numeric.type === "constant") { if (!Number.isFinite(numeric.value)) throw new Error("Scalar value is not finite"); return numeric.value; }
   if (numeric.type === "parameter") {
     const parameter = context.ability.parameters[numeric.key];
     if (typeof parameter !== "number") throw new Error(`Ability parameter is not numeric: ${numeric.key}`);
+    if (!Number.isFinite(parameter)) throw new Error("Scalar value is not finite");
     return parameter;
   }
-  if (numeric.type === "add" || numeric.type === "subtract" || numeric.type === "multiply") {
+  if (numeric.type === "add" || numeric.type === "subtract" || numeric.type === "multiply" || numeric.type === "power") {
     const left = resolveScalar(numeric.left, context);
     const right = resolveScalar(numeric.right, context);
-    return numeric.type === "add" ? left + right : numeric.type === "subtract" ? left - right : left * right;
+    const result = numeric.type === "add" ? left + right : numeric.type === "subtract" ? left - right : numeric.type === "multiply" ? left * right : left ** right;
+    if (!Number.isFinite(result)) throw new Error("Scalar expression result is not finite");
+    return result;
   }
   if (!("target" in numeric)) throw new Error("Invalid scalar expression");
   const actor = resolveActor(numeric.target, context);
@@ -33,6 +37,7 @@ export function resolveScalar(value: ScalarValue, context: ConditionContext): nu
   if (numeric.type === "hand-total") return handTotal(context.world.hands[actor]);
   if (numeric.type === "round-final-score") return context.event.roundOutcome?.comparisonScores?.[actor] ?? handTotal(context.world.hands[actor]);
   if (numeric.type === "hand-card-count") return handCardCount(context.world.hands[actor]);
+  if (numeric.type === "event-hand-card-count") return context.event.initialHandCardCounts?.[actor] ?? handCardCount(context.world.hands[actor]);
   if (numeric.type === "status-stacks") return context.world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === numeric.statusDefinitionId)?.stacks ?? 0;
   return context.event.roundHitCounts?.[actor] ?? 0;
 }
@@ -62,12 +67,18 @@ export function evaluateCondition(condition: Condition, context: ConditionContex
     case "actor-is": return context.event.eventActor === resolveActor(condition.actor, context);
     case "owner-has-card": return context.world.cards.some((card) => card.owner === context.ability.owner && card.definitionId === condition.abilityId);
     case "hand-card-count": { const hand = handFor(condition.target, context); return Boolean(hand && compare(handCardCount(hand), condition.operator, resolveScalar(condition.value, context))); }
+    case "event-hand-card-count": { const actor = resolveActor(condition.target, context); return Boolean(actor && compare(context.event.initialHandCardCounts?.[actor] ?? handCardCount(context.world.hands[actor]), condition.operator, resolveScalar(condition.value, context))); }
     case "hand-total": { const hand = handFor(condition.target, context); return Boolean(hand && compare(handTotal(hand), condition.operator, resolveScalar(condition.value, context))); }
     case "round-hit-count": { const actor = resolveActor(condition.target, context); return Boolean(actor && compare(context.event.roundHitCounts?.[actor] ?? 0, condition.operator, resolveScalar(condition.value, context))); }
-    case "hand-all-same-suit": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && new Set(hand.cards.map((card) => card.suit)).size === 1); }
-    case "hand-all-color": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && hand.cards.every((card) => (card.suit === "hearts" || card.suit === "diamonds") === (condition.color === "red"))); }
-    case "hand-rank-has-suit-partner": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.some((card, index) => card.rank === condition.rank && hand.cards.some((partner, partnerIndex) => partnerIndex !== index && partner.suit === card.suit))); }
-    case "hand-card-origin-is": { const hand = handFor(condition.target, context); return hand?.cards.at(-1)?.origin === condition.origin; }
+    case "hand-all-same-suit": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && new Set(hand.cards.map(cardSuit)).size === 1); }
+    case "hand-all-color": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && hand.cards.every((card) => (cardSuit(card) === "hearts" || cardSuit(card) === "diamonds") === (condition.color === "red"))); }
+    case "hand-rank-has-suit-partner": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.some((card, index) => cardRank(card) === condition.rank && hand.cards.some((partner, partnerIndex) => partnerIndex !== index && cardSuit(partner) === cardSuit(card)))); }
+    case "hand-card-source-is": { const hand = handFor(condition.target, context); return hand?.cards.at(-1) ? cardSource(hand.cards.at(-1)!) === condition.source : false; }
+    case "hand-card-has-tag": {
+      const hand = handFor(condition.target, context);
+      const card = condition.card === "last-card" ? hand?.cards.at(-1) : hand?.cards[1];
+      return Boolean(card && cardHasTag(card, condition.tag));
+    }
     case "card-candidate-exists": { const hand = handFor(condition.target, context); return Boolean(hand && hand.cards.length > 0 && candidateExists(hand, context, condition.candidate)); }
     case "draw-pile-card-exists": return context.world.shoe.cursor < context.world.shoe.cards.length;
     case "hand-last-card-splittable": { const hand = handFor(condition.target, context); return Boolean(hand && canSplitLastCard(hand)); }

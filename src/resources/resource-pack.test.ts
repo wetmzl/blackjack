@@ -21,6 +21,7 @@ describe("resource pack updates", () => {
     expect(RESOURCE_ASSET_RUNTIME_HANDLER).toBe("NetworkFirst");
     expect(RESOURCE_ASSET_FETCH_OPTIONS).toEqual({ cache: "no-cache" });
     expect(RESOURCE_ASSET_URL_PATTERN.test("/assets/characters/w-relaxed.png")).toBe(true);
+    expect(RESOURCE_ASSET_URL_PATTERN.test("/assets/skills/archetype-cheater-selected.png")).toBe(true);
   });
 
   it("replaces a cached response when a same-name asset changes", async () => {

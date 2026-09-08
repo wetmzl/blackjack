@@ -1,4 +1,4 @@
-import { createStandardDeck } from "./card";
+import { assertUniqueCardIds, createStandardDeck } from "./card";
 import type { PhysicalCard, ShoeState } from "./types";
 import { SeededRng } from "../rng/seeded";
 
@@ -11,7 +11,8 @@ export function shuffle<T>(items: readonly T[], rng: SeededRng): T[] {
   return result;
 }
 
-export function createShoe(rng: SeededRng, deck: readonly PhysicalCard[] = createStandardDeck()): ShoeState {
+export function createShoe(rng: SeededRng, deck: readonly PhysicalCard[] = createStandardDeck(rng.seed.replace(/[^a-zA-Z0-9_-]/g, "-"))): ShoeState {
+  assertUniqueCardIds(deck);
   return { cards: shuffle(deck, rng), cursor: 0, shuffleIndex: 1 };
 }
 

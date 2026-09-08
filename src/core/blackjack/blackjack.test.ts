@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardValue, createCard, createDerivedCard, createStandardDeck, isDerivedCard, isPhysicalCard } from "./card";
+import { addCardTag, cardHasTag, cardValue, createCard, createDerivedCard, createDerivedCardId, createStandardDeck, isDerivedCard, isPhysicalCard, removeCardTag } from "./card";
 import { createHand, handValue, handValueAtLimit, isBlackjack, isBust, isTwentyOne } from "./hand";
 import { createShoe, dealInitialHands, drawCard, shuffle, shoeRemaining } from "./shoe";
 import { getRoundStarter } from "./round";
@@ -38,11 +38,11 @@ describe("blackjack hand rules", () => {
   });
 
   it("scores derived cards normally but never treats them as natural Blackjack", () => {
-    const derivedAce = createDerivedCard("spades", "A");
+    const derivedAce = createDerivedCard("spades", "A", "derived-ace-fixture");
     const hand = createHand([derivedAce, createCard("hearts", "K")]);
     expect(handValue(hand)).toBe(21);
     expect(hand.cards).toHaveLength(2);
-    expect(new Set(hand.cards.map((card) => card.suit))).toEqual(new Set(["spades", "hearts"]));
+    expect(new Set(hand.cards.map((card) => card.attributes.suit))).toEqual(new Set(["spades", "hearts"]));
     expect(isBlackjack(hand)).toBe(false);
     expect(isDerivedCard(derivedAce)).toBe(true);
     expect(isPhysicalCard(createCard("clubs", "2"))).toBe(true);
@@ -85,8 +85,30 @@ describe("shoe and deterministic dealing", () => {
   it("creates a complete 52-card shoe", () => {
     const deck = createStandardDeck();
     expect(deck).toHaveLength(52);
-    expect(new Set(deck.map((card) => `${card.rank}-${card.suit}`)).size).toBe(52);
+    expect(new Set(deck.map((card) => `${card.attributes.rank}-${card.attributes.suit}`)).size).toBe(52);
     expect(deck.every(isPhysicalCard)).toBe(true);
+    expect(new Set(deck.map((card) => card.id)).size).toBe(52);
+    expect(deck.every((card) => /^card-shoe-[0-9a-z]{7}$/.test(card.id) && !card.id.includes(card.attributes.suit))).toBe(true);
+  });
+
+  it("keeps physical identity through shuffling and dealing", () => {
+    const shoe = createShoe(createRng("stable-card-identity"));
+    const firstId = shoe.cards[0]!.id;
+    const dealt = dealInitialHands(shoe);
+    expect(dealt.player[0].id).toBe(firstId);
+    expect(dealt.shoe.cards[0]!.id).toBe(firstId);
+  });
+
+  it("generates replayable unique derived identities and duplicate-free tags", () => {
+    const firstRng = createRng("derived-identities");
+    const secondRng = createRng("derived-identities");
+    const ids = [createDerivedCardId(firstRng), createDerivedCardId(firstRng)];
+    expect(new Set(ids).size).toBe(2);
+    expect(ids).toEqual([createDerivedCardId(secondRng), createDerivedCardId(secondRng)]);
+    const derived = createDerivedCard("clubs", "7", ids[0]!, "fixture");
+    const tagged = addCardTag(addCardTag(derived, "marked"), "marked");
+    expect(tagged.tags).toEqual(["derived", "generated-by:fixture", "marked"]);
+    expect(cardHasTag(removeCardTag(tagged, "marked"), "marked")).toBe(false);
   });
 
   it("shuffles deterministically without changing the cards", () => {
@@ -94,8 +116,8 @@ describe("shoe and deterministic dealing", () => {
     const shuffledA = shuffle(deck, createRng("shuffle"));
     const shuffledB = shuffle(deck, createRng("shuffle"));
     expect(shuffledA).toEqual(shuffledB);
-    expect([...shuffledA].sort((a, b) => `${a.suit}${a.rank}`.localeCompare(`${b.suit}${b.rank}`))).toEqual(
-      [...deck].sort((a, b) => `${a.suit}${a.rank}`.localeCompare(`${b.suit}${b.rank}`))
+    expect([...shuffledA].sort((a, b) => `${a.attributes.suit}${a.attributes.rank}`.localeCompare(`${b.attributes.suit}${b.attributes.rank}`))).toEqual(
+      [...deck].sort((a, b) => `${a.attributes.suit}${a.attributes.rank}`.localeCompare(`${b.attributes.suit}${b.attributes.rank}`))
     );
   });
 
@@ -113,7 +135,7 @@ describe("shoe and deterministic dealing", () => {
   it("draws immutably and rejects an empty shoe", () => {
     const shoe = { cards: [createCard("clubs", "A")], cursor: 0, shuffleIndex: 1 };
     const result = drawCard(shoe);
-    expect(result.card.rank).toBe("A");
+    expect(result.card.attributes.rank).toBe("A");
     expect(result.shoe.cursor).toBe(1);
     expect(shoe.cursor).toBe(0);
     expect(() => drawCard(result.shoe)).toThrow("empty shoe");

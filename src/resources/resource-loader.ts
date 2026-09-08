@@ -6,7 +6,7 @@ import {
   TABLE_BACKGROUND_URL
 } from "./cache-policy";
 
-export type ResourceLoadPriority = "visible" | "display" | "background";
+export type ResourceLoadPriority = "visible" | "display" | "background" | "deferred";
 
 export interface CharacterResourcePlan {
   /** Resources required by the first rendered table frame. */
@@ -38,7 +38,8 @@ interface QueueItem {
 const PRIORITY: Readonly<Record<ResourceLoadPriority, number>> = {
   visible: 0,
   display: 1,
-  background: 2
+  background: 2,
+  deferred: 3
 };
 
 function uniqueUrls(urls: Iterable<string>): string[] {
@@ -102,6 +103,7 @@ export class ResourceLoader {
   private readonly loaded = new Set<string>();
   private active = 0;
   private activeBackground = 0;
+  private activeDeferred = 0;
   private sequence = 0;
 
   constructor(dependencies: ResourceLoaderDependencies = {}) {
@@ -134,16 +136,20 @@ export class ResourceLoader {
   private drain(): void {
     while (this.active < this.concurrency && this.queued.length > 0) {
       this.queued.sort((left, right) => left.priority - right.priority || left.sequence - right.sequence);
-      const nextIndex = this.queued.findIndex((candidate) => (
-        candidate.priority < PRIORITY.background
-        || this.activeBackground < Math.max(1, this.concurrency - 1)
-      ));
+      const backgroundLimit = Math.max(1, this.concurrency - 1);
+      const nextIndex = this.queued.findIndex((candidate) => {
+        if (candidate.priority < PRIORITY.background) return true;
+        if (this.activeBackground >= backgroundLimit) return false;
+        return candidate.priority < PRIORITY.deferred || this.activeDeferred < 1;
+      });
       if (nextIndex < 0) return;
       const [item] = this.queued.splice(nextIndex, 1);
       if (!item) return;
       this.active += 1;
-      const isBackground = item.priority === PRIORITY.background;
+      const isBackground = item.priority >= PRIORITY.background;
+      const isDeferred = item.priority === PRIORITY.deferred;
       if (isBackground) this.activeBackground += 1;
+      if (isDeferred) this.activeDeferred += 1;
       void this.load(item.url).then((loaded) => {
         if (loaded) this.loaded.add(item.url);
         this.pending.delete(item.url);
@@ -151,6 +157,7 @@ export class ResourceLoader {
       }).finally(() => {
         this.active -= 1;
         if (isBackground) this.activeBackground -= 1;
+        if (isDeferred) this.activeDeferred -= 1;
         this.drain();
       });
     }

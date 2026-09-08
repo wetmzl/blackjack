@@ -30,6 +30,10 @@ src/
 
 `src/core/` 不得依赖 DOM、`window`、`document`、Dexie、音频或计时器，应可在测试运行器中独立执行。浏览器能力只能从外围模块进入。
 
+实体牌统一采用 Card Entity：`id` 是实体在牌堆、手牌和事件之间移动时保持不变的身份；`attributes` 保存唯一键的 `source`、`rank`、`suit`；`tags` 是无重复值的开放标签集合。普通牌与衍生牌共享这一结构，衍生牌以 `source: derived` 和 `derived` / `generated-by:*` 标签表达来源，其 ID 由可保存的能力 RNG 确定性生成。能力可用通用标签条件及增删标签效果处理具体牌，不在规则层创建另一套牌类型。
+
+牌面表现位于 `src/presentation/cards.ts`。领域实体先投影为互相独立的 `surface`、`rank`、`suit` 与四角 `markers` 描述，再由唯一 renderer 输出牌面；明牌、暗牌、已知花色暗牌、衍生牌和技能标记牌不各自维护 renderer。`CARD_SUIT_REVEALED` 通过稳定 `cardId` 绑定被识破的实体，换牌后不会把已知信息错误附着到相同下标的新牌。
+
 ## 状态与动作流
 
 领域层遵循单向状态转换：
@@ -101,6 +105,8 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 
 `replace-pending-draw` 的 `create-derived-card` fallback 只在实体牌堆没有合适候选时创建衍生牌。衍生牌不修改实体牌堆、不进入弃牌堆，离开手牌或本轮结束后不作为实体牌保存回牌堆。
 
+通用能力牌面原语还支持有限的 `power` 标量、静态或 scalar rank、完整牌面映射、能力 RNG 均匀花色，以及添加/替换衍生牌；`rotate-draw-pile-top-to-bottom` 只轮转牌堆 cursor 后的剩余区。`grant-player-skill-card` 从运行时记忆复制上一张成功使用的 Player Skill（首次回退当前技能），并原子创建卡牌与能力实例。上述结果统一记录为 `ABILITY_RESULT`，通知层据此读取实际牌面、技能名、状态增量与公共爆牌上限，不在 reducer 或解释器按定义 ID 分支。
+
 能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。能力事件还提供爆牌检查、扳机前待处理修改、TTL 到期事实，以及主动能力成功后的观察广播；标量表达式和衍生牌效果均由能力 RNG 确定性解析。修改子弹判定的规则必须在 `before-trigger-pull` 提交，最终 `TRIGGER_PULLED` 明确记录命中、能力哑火或自然空膛；结果提示与音效可据此区分，角色对白则统一进入既有未击发存活状态池。新增能力流程见 [新增能力工作流](adding-an-ability.md)。
 
 ## 持久化
@@ -113,13 +119,13 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 - 运行时档：format、运行时 schema version、角色与技能引用、牌、轮次、左轮和事件结构；
 - 运行时能力实例、状态来源、参数、目录版本和卡牌实例一致性。
 
-当前长期 Schema 版本为 9，运行时 Schema 版本为 5。长期档只保存至多两个 `selectedSkillTags`，天赋 ID 不再写入 profile，而是从 `defeats` 记录按 Talent 的 `unlock` 条件推导；运行时 MatchState 保留天赋与流派快照。教程完成状态使用开放字符串集合 `tutorialProgress.completedIds`，旧档缺失该字段时补为空集合；教程目录新增、删除或未知 ID 都不影响存档有效性，因此仅新增教程不得提升长期 Schema 版本。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
+当前长期 Schema 版本为 9，运行时 Schema 版本为 7。版本 7 将所有牌升级为带稳定 ID、属性字典和标签集合的 Card Entity，并让牌面识破事件引用 `cardId`；旧运行时档直接失效，不提供迁移。运行时能力记忆字段 `lastPlayedPlayerSkillDefinitionId` 只记录最近一次成功使用的主动 Player Skill。长期档只保存至多两个 `selectedSkillTags`，天赋 ID 不再写入 profile，而是从 `defeats` 记录按 Talent 的 `unlock` 条件推导；运行时 MatchState 保留天赋与流派快照。教程完成状态使用开放字符串集合 `tutorialProgress.completedIds`，旧档缺失该字段时补为空集合；教程目录新增、删除或未知 ID 都不影响存档有效性，因此仅新增教程不得提升长期 Schema 版本。不兼容或损坏的运行时档只需要玩家确认舍弃，不会牵连长期档；长期档仍视为不可恢复，界面会明确要求玩家手动删除并再次确认，不自动迁移或覆盖。JSON 导入只接受长期档并明确报错；默认导出也只有长期档，优先使用 File System Access API，缺失时退回 Blob 下载。
 
 教程目录与纯进度函数位于 `src/tutorials/`。应用编排层仅在真实领域状态变化或恢复后仍可观察到机制事实时派发 cue；右上角非模态弹窗负责分页、附加图片资源与完成交互。教程不写入运行时档、不进入 reducer、不影响 AI observation 或随机流。新增教程流程见 [新增教程](adding-a-tutorial.md)。
 
 ## PWA 与资源缓存
 
-Vite PWA 配置生成 manifest 和 Service Worker。核心应用 shell 由 Workbox 预缓存，图片与音频使用运行时 NetworkFirst：在线时先请求服务器并更新缓存，离线时回退到缓存中的资源，确保同名文件内容更新后不会永久显示旧版本。自动资源加载由 `src/resources/resource-loader.ts` 分层调度：大厅只缓存当前已解锁角色的 `previewImage` 与大厅背景；音频首轮加载优先请求大厅 BGM，短暂延后后预载对局 BGM，短音效仍推迟到进入对局时获取。大厅与牌桌切换时，两条流媒体 BGM 做 800ms 交叉淡化。进入或恢复对局时，当前画面所需的角色图、牌桌背景和共享左轮使用最高优先级，剩余牌桌/结算立绘次优先，角色定义中递归发现的收藏图等资源进入后台队列。后台任务最多占用并发槽位中的 `n - 1` 个，保证对局可见资源随时能够插队。大型可选媒体仍可通过构建生成的 `/resource-pack.json` 及 `src/resources/` 下载器并发写入同一 Cache Storage。
+Vite PWA 配置生成 manifest 和 Service Worker。核心应用 shell 由 Workbox 预缓存，图片与音频使用运行时 NetworkFirst：在线时先请求服务器并更新缓存，离线时回退到缓存中的资源，确保同名文件内容更新后不会永久显示旧版本。自动资源加载由 `src/resources/resource-loader.ts` 分层调度：大厅只缓存当前已解锁角色的 `previewImage` 与大厅背景；音频首轮加载优先请求大厅 BGM，短暂延后后预载对局 BGM，短音效仍推迟到进入对局时获取。大厅与牌桌切换时，两条流媒体 BGM 做 800ms 交叉淡化。进入或恢复对局时，当前画面所需的角色图、牌桌背景和共享左轮使用最高优先级，剩余牌桌/结算立绘次优先，角色定义中递归发现的收藏图等资源进入后台队列。后台任务最多占用并发槽位中的 `n - 1` 个，保证对局可见资源随时能够插队。技能流派的普通与选中立绘共八张不进入应用 shell 预缓存；大厅渲染后会以更低的 `deferred` 优先级逐张主动下载并写入运行时缓存，牌桌资源可随时越过尚未开始的流派立绘。大型可选媒体仍可通过构建生成的 `/resource-pack.json` 及 `src/resources/` 下载器并发写入同一 Cache Storage。
 
 ## 验证边界
 

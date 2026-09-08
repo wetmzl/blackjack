@@ -1,5 +1,6 @@
 import "./styles.css";
 import { handValue } from "./core/blackjack/hand";
+import { cardRank, cardSuit } from "./core/blackjack/card";
 import type { Card } from "./core/blackjack/types";
 import type { MatchHistoryRecord } from "./core/match/history";
 import { buildObservation } from "./core/ai/observation";
@@ -26,10 +27,12 @@ import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
 import { presentMatchHaptics } from "./presentation/haptics";
 import { roundResultText, triggerResultText } from "./presentation/round-notice";
+import { cardDisplayMarkup, describeCard, describeCards, suitPresentation } from "./presentation/cards";
 import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
 import { downloadResourcePack, ResourcePackDownloadError, type ResourcePackProgress } from "./resources/resource-pack";
 import { characterResourcePlan, lobbyResourceUrls, resourceLoader } from "./resources/resource-loader";
+import { SKILL_ARCHETYPE_ART, SKILL_ARCHETYPE_ART_URLS } from "./resources/skill-archetype-art";
 import { completeTutorial, firstTutorialForCue, type TutorialCue, type TutorialDefinition, type TutorialResource } from "./tutorials/tutorials";
 
 const appRoot = document.querySelector<HTMLDivElement>("#app");
@@ -54,7 +57,11 @@ let lastAction: Action | null = null;
 let lastDomainEvent: GameEvent["type"] | null = null;
 let lastDialogueKey: string | null = null;
 let skillDrawerOpen = false;
-let activeTutorial: { readonly definition: TutorialDefinition; readonly pageIndex: number } | null = null;
+let activeTutorial: { readonly definition: TutorialDefinition; readonly pageIndex: number; readonly autoSkipCancelled: boolean } | null = null;
+let tutorialAutoSkipTimer: number | undefined;
+let tutorialDismissAnimation: Animation | null = null;
+const TUTORIAL_AUTO_SKIP_MS = 10_000;
+const TUTORIAL_DISMISS_MS = 420;
 const abilityNoticeTimers = new Map<HTMLElement, { readonly expire: number; readonly remove: number }>();
 const ABILITY_NOTICE_TTL_MS = 2500;
 const ABILITY_NOTICE_LEAVE_MS = 280;
@@ -83,7 +90,45 @@ function tutorialResourceMarkup(resource: TutorialResource): string {
   if (resource.type !== "image") return "";
   return `<figure class="tutorial-resource"><img src="${escapeHtml(resource.src)}" alt="${escapeHtml(resource.alt)}">${resource.caption ? `<figcaption>${escapeHtml(resource.caption)}</figcaption>` : ""}</figure>`;
 }
-function clearTutorialSurface(): void { document.querySelector("#tutorial-popover")?.remove(); }
+function clearTutorialAutoSkip(): void {
+  window.clearTimeout(tutorialAutoSkipTimer);
+  tutorialAutoSkipTimer = undefined;
+  tutorialDismissAnimation?.cancel();
+  tutorialDismissAnimation = null;
+}
+function clearTutorialSurface(): void {
+  clearTutorialAutoSkip();
+  document.querySelector("#tutorial-popover")?.remove();
+}
+function discardActiveTutorial(): void {
+  activeTutorial = null;
+  clearTutorialSurface();
+}
+function cancelTutorialAutoSkip(surface: HTMLElement): void {
+  if (!activeTutorial || activeTutorial.autoSkipCancelled) return;
+  activeTutorial = { ...activeTutorial, autoSkipCancelled: true };
+  clearTutorialAutoSkip();
+  surface.classList.remove("is-auto-dismissing");
+  surface.classList.add("is-auto-skip-cancelled");
+}
+function startTutorialAutoSkip(surface: HTMLElement): void {
+  if (!activeTutorial || activeTutorial.autoSkipCancelled) return;
+  tutorialAutoSkipTimer = window.setTimeout(() => {
+    tutorialAutoSkipTimer = undefined;
+    if (!activeTutorial || activeTutorial.autoSkipCancelled || !surface.isConnected) return;
+    surface.classList.add("is-auto-dismissing");
+    const animation = surface.animate([
+      { opacity: 1, transform: "translateY(0) scale(1)" },
+      { opacity: 0, transform: "translateY(-6px) scale(.985)" }
+    ], { duration: save.settings.reducedMotion ? 1 : TUTORIAL_DISMISS_MS, easing: "ease", fill: "forwards" });
+    tutorialDismissAnimation = animation;
+    void animation.finished.then(() => {
+      if (tutorialDismissAnimation !== animation || !surface.isConnected || activeTutorial?.autoSkipCancelled) return;
+      tutorialDismissAnimation = null;
+      finishActiveTutorial();
+    }).catch(() => undefined);
+  }, TUTORIAL_AUTO_SKIP_MS);
+}
 function finishActiveTutorial(): void {
   if (!activeTutorial) return;
   const progress = completeTutorial(save.tutorialProgress, activeTutorial.definition.id);
@@ -99,32 +144,37 @@ function finishActiveTutorial(): void {
 function renderTutorialSurface(): void {
   clearTutorialSurface();
   if (!activeTutorial) return;
-  const { definition, pageIndex } = activeTutorial;
+  const { definition, pageIndex, autoSkipCancelled } = activeTutorial;
   const page = definition.pages[pageIndex];
   if (!page) return;
   const surface = document.createElement("aside");
   surface.id = "tutorial-popover";
-  surface.className = "tutorial-popover";
+  surface.className = `tutorial-popover${autoSkipCancelled ? " is-auto-skip-cancelled" : ""}`;
   surface.dataset.tutorialId = definition.id;
   surface.setAttribute("role", "dialog");
   surface.setAttribute("aria-modal", "false");
   surface.setAttribute("aria-labelledby", "tutorial-title");
   const lastPage = pageIndex === definition.pages.length - 1;
   const resources = page.resources?.map(tutorialResourceMarkup).join("") ?? "";
-  surface.innerHTML = `<div class="tutorial-heading"><span>机制介绍：page ${pageIndex + 1}/${definition.pages.length}</span><h2 id="tutorial-title">${escapeHtml(definition.title)}</h2></div><p>${escapeHtml(page.body)}</p>${resources ? `<div class="tutorial-resources">${resources}</div>` : ""}<div class="tutorial-actions"><button type="button" class="tutorial-skip" data-tutorial-skip>跳过</button><button type="button" class="tutorial-next" data-tutorial-next>${lastPage ? "好的" : "下一步"}</button></div>`;
+  surface.innerHTML = `<div class="tutorial-heading"><span>机制介绍：page ${pageIndex + 1}/${definition.pages.length}</span><h2 id="tutorial-title">${escapeHtml(definition.title)}</h2></div><p>${escapeHtml(page.body)}</p>${resources ? `<div class="tutorial-resources">${resources}</div>` : ""}<div class="tutorial-actions"><button type="button" class="tutorial-skip" data-tutorial-skip>跳过</button><button type="button" class="tutorial-next" data-tutorial-next>${lastPage ? "好的" : "下一步"}</button></div><span class="tutorial-auto-progress" aria-hidden="true"></span>`;
   document.body.append(surface);
+  surface.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.closest("[data-tutorial-skip]")) cancelTutorialAutoSkip(surface);
+  }, { capture: true });
   surface.querySelector<HTMLButtonElement>("[data-tutorial-skip]")?.addEventListener("click", finishActiveTutorial);
   surface.querySelector<HTMLButtonElement>("[data-tutorial-next]")?.addEventListener("click", () => {
     if (lastPage) { finishActiveTutorial(); return; }
-    activeTutorial = { definition, pageIndex: pageIndex + 1 };
+    activeTutorial = { definition, pageIndex: pageIndex + 1, autoSkipCancelled: activeTutorial?.autoSkipCancelled ?? autoSkipCancelled };
     renderTutorialSurface();
   });
+  startTutorialAutoSkip(surface);
 }
 function offerTutorial(cue: TutorialCue): void {
   if (activeTutorial) return;
   const definition = firstTutorialForCue(cue, save.tutorialProgress, save.skipTutorial);
   if (!definition) return;
-  activeTutorial = { definition, pageIndex: 0 };
+  activeTutorial = { definition, pageIndex: 0, autoSkipCancelled: false };
   renderTutorialSurface();
 }
 function uiError(error: unknown, fallback: string): string {
@@ -132,37 +182,19 @@ function uiError(error: unknown, fallback: string): string {
   if (/save|JSON|schema|match state|cursor|future/i.test(message)) return "存档无效：请检查文件格式与版本。";
   return fallback;
 }
-function cardLabel(card: Card): string { return `${card.rank}${card.suit === "hearts" ? "♥" : card.suit === "diamonds" ? "♦" : card.suit === "clubs" ? "♣" : "♠"}`; }
-function suitPresentation(suit: Card["suit"]): { readonly symbol: string; readonly label: string; readonly red: boolean } {
-  if (suit === "hearts") return { symbol: "♥", label: "红桃", red: true };
-  if (suit === "diamonds") return { symbol: "♦", label: "方块", red: true };
-  if (suit === "clubs") return { symbol: "♣", label: "梅花", red: false };
-  return { symbol: "♠", label: "黑桃", red: false };
-}
-function cardMarkup(card: Card | null, hidden = false, revealedSuit?: Card["suit"]): string {
-  if (hidden || !card) {
-    if (hidden && revealedSuit) {
-      const symbol = revealedSuit === "hearts" ? "♥" : revealedSuit === "diamonds" ? "♦" : revealedSuit === "clubs" ? "♣" : "♠";
-      const label = revealedSuit === "hearts" ? "红桃" : revealedSuit === "diamonds" ? "方块" : revealedSuit === "clubs" ? "梅花" : "黑桃";
-      return `<span class="card card-back revealed-suit ${revealedSuit === "hearts" || revealedSuit === "diamonds" ? "red" : "black"}"${card ? ` data-card-origin="${card.origin}"` : ""} aria-label="暗牌，已识破花色${label}"><i>${symbol}</i></span>`;
-    }
-    return `<span class="card card-back"${card ? ` data-card-origin="${card.origin}"` : ""} aria-label="暗牌"><i>✦</i></span>`;
-  }
-  const red = card.suit === "hearts" || card.suit === "diamonds";
-  return `<span class="card ${red ? "red" : ""}" data-card-origin="${card.origin}" aria-label="${cardLabel(card)}"><b>${escapeHtml(card.rank)}</b><em>${card.suit === "hearts" ? "♥" : card.suit === "diamonds" ? "♦" : card.suit === "clubs" ? "♣" : "♠"}</em></span>`;
-}
+function cardLabel(card: Card): string { return `${cardRank(card)}${suitPresentation(cardSuit(card)).symbol}`; }
 function infoBarValueText(value: ResolvedInfoBarValue, format: "number" | "percent" = "number"): string {
   if (value === null) return "暂无";
   if (typeof value === "number") return format === "percent" ? `${Math.round(value * 100)}%` : String(value);
   if (typeof value === "string") return suitPresentation(value).label;
-  return `${suitPresentation(value.suit).symbol} ${value.rank}`;
+  return `${suitPresentation(cardSuit(value)).symbol} ${cardRank(value)}`;
 }
 function infoBarValueMarkup(value: ResolvedInfoBarValue, format: "number" | "percent" = "number"): string {
   if (value === null) return `<span class="ai-info-empty">—</span>`;
   if (typeof value === "number") return `<strong class="ai-info-number">${escapeHtml(infoBarValueText(value, format))}</strong>`;
-  const suit = suitPresentation(typeof value === "string" ? value : value.suit);
+  const suit = suitPresentation(typeof value === "string" ? value : cardSuit(value));
   if (typeof value === "string") return `<span class="ai-info-suit ${suit.red ? "red" : "black"}" aria-label="${suit.label}"><span aria-hidden="true">${suit.symbol}</span><small>${suit.label}</small></span>`;
-  return `<span class="ai-info-card ${suit.red ? "red" : "black"}" data-card-origin="${value.origin}" aria-label="${escapeHtml(infoBarValueText(value))}"><em>${suit.symbol}</em><b>${escapeHtml(value.rank)}</b></span>`;
+  return cardDisplayMarkup(describeCard(value, { surface: "front", showRank: true, showSuit: true, variant: "compact" }));
 }
 function resolveCharacterInfoBarValue(character: CharacterDefinition, state: MatchState): ResolvedInfoBarValue {
   if (!character.infoBar) return null;
@@ -178,11 +210,12 @@ function characterInfoBarMarkup(character: CharacterDefinition, value: ResolvedI
   const accessibleValue = infoBarValueText(value, format);
   return `<section class="ai-info-bar" aria-label="${escapeHtml(character.infoBar.label)}：${escapeHtml(accessibleValue)}"><span class="ai-info-label">${escapeHtml(character.infoBar.label)}</span><output class="ai-info-value" aria-label="当前值：${escapeHtml(accessibleValue)}">${infoBarValueMarkup(value, format)}</output><button class="ai-info-button" type="button" data-ai-info aria-label="查看${escapeHtml(character.infoBar.label)}说明">i</button></section>`;
 }
-function revealedOpponentSuit(state: MatchState): Card["suit"] | undefined {
+function revealedOpponentCardIds(state: MatchState): ReadonlySet<string> {
   let start = -1;
   state.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") start = index; });
-  const event = [...state.history.slice(start + 1)].reverse().find((entry) => entry.type === "CARD_SUIT_REVEALED" && entry.viewer === "player" && entry.target === "opponent" && entry.cardIndex === 1);
-  return event?.type === "CARD_SUIT_REVEALED" ? event.suit : undefined;
+  return new Set(state.history.slice(start + 1)
+    .filter((entry) => entry.type === "CARD_SUIT_REVEALED" && entry.viewer === "player" && entry.target === "opponent")
+    .map((entry) => entry.type === "CARD_SUIT_REVEALED" ? entry.cardId : ""));
 }
 function gunStatusMarkup(label: string, bullets: number, capacity: number): string {
   const chambers = Array.from({ length: capacity }, (_, index) => `<i class="${index < bullets ? "loaded" : ""}" aria-hidden="true"></i>`).join("");
@@ -314,7 +347,7 @@ const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
   PARTICIPANT_KILLED: "参与者倒下", SKILL_GAINED: "获得技能", MATCH_FINISHED: "对局结束",
   SKILL_DRAWS_ADDED: "获得抽卡次数", SKILL_DRAW_OPENED: "生成技能候选", SKILL_DRAW_RESOLVED: "完成技能抽取",
   MATCH_ESCAPED: "策展人离席", MATCH_RESULT_ACKNOWLEDGED: "已确认最终结果", AI_DECISION: "对手完成决策",
-  CARD_SUIT_REVEALED: "识破暗牌花色"
+  CARD_SUIT_REVEALED: "识破暗牌花色", ABILITY_RESULT: "能力结果"
 };
 function decisionLabel(action: "hit" | "stand" | undefined): string { return action === "hit" ? "Hit 要牌" : action === "stand" ? "Stand 停牌" : "—"; }
 function displayedHandValueMarkup(baseScore: number | "?", modifier: number): string {
@@ -332,12 +365,6 @@ function historyDate(timestamp: string): string { return new Intl.DateTimeFormat
 let skillManagementTab: "skills" | "talents" = "skills";
 let skillSaveRequest = 0;
 let skillManagementSelectedTags: SkillTag[] | null = null;
-const SKILL_TAG_ART: Readonly<Record<SkillTag, string>> = {
-  gambler: "/assets/skills/archetype-gambler.png",
-  cheater: "/assets/skills/archetype-cheater.png",
-  "intelligence-officer": "/assets/skills/archetype-intelligence-officer.png",
-  gunslinger: "/assets/skills/archetype-gunslinger.png"
-};
 const TALENT_PLACEHOLDER_MILESTONES = Object.freeze([3, 5, 7, 10]);
 
 function skillCatalogCardMarkup(skill: (typeof PLAYER_SKILL_DEFINITIONS)[number], unlocked: ReadonlySet<string>): string {
@@ -405,7 +432,8 @@ function renderSkillList(statusMessage = ""): string {
   const tagCards = SKILL_TAGS.map((tag) => {
     const metadata = SKILL_TAG_METADATA[tag];
     const pressed = selected.has(tag);
-    return `<div class="skill-tag-frame"><button type="button" class="skill-tag-card ${pressed ? "is-selected" : ""}" data-skill-tag="${tag}" aria-label="${pressed ? `取消选择${metadata.label}流派` : `选择${metadata.label}流派`}" aria-pressed="${pressed ? "true" : "false"}"><img src="${SKILL_TAG_ART[tag]}" alt="" aria-hidden="true" decoding="async"><span class="skill-tag-card-shade" aria-hidden="true"></span><span class="skill-tag-card-copy"><span class="skill-tag-symbol" aria-hidden="true">${metadata.symbol}</span><strong>${metadata.label}</strong><small>${pressed ? "已选择" : "选择流派"}</small></span><span class="skill-tag-check" aria-hidden="true">✓</span></button><button type="button" class="skill-tag-info-button" data-skill-tag-info="${tag}" aria-controls="skill-tag-info-dialog" aria-haspopup="dialog" aria-label="查看${metadata.label}流派说明"><span aria-hidden="true">i</span></button></div>`;
+    const art = SKILL_ARCHETYPE_ART[tag];
+    return `<div class="skill-tag-frame"><button type="button" class="skill-tag-card ${pressed ? "is-selected" : ""}" data-skill-tag="${tag}" aria-label="${pressed ? `取消选择${metadata.label}流派` : `选择${metadata.label}流派`}" aria-pressed="${pressed ? "true" : "false"}"><img src="${pressed ? art.selected : art.default}" alt="" aria-hidden="true" decoding="async"><span class="skill-tag-card-shade" aria-hidden="true"></span><span class="skill-tag-card-copy"><span class="skill-tag-symbol" aria-hidden="true">${metadata.symbol}</span><strong>${metadata.label}</strong><small>${pressed ? "已选择" : "选择流派"}</small></span><span class="skill-tag-check" aria-hidden="true">✓</span></button><button type="button" class="skill-tag-info-button" data-skill-tag-info="${tag}" aria-controls="skill-tag-info-dialog" aria-haspopup="dialog" aria-label="查看${metadata.label}流派说明"><span aria-hidden="true">i</span></button></div>`;
   }).join("");
   return `<div class="skill-management-tabs" role="tablist" aria-label="技能与天赋"><button type="button" role="tab" id="skill-tab" aria-controls="skill-panel" aria-selected="${skillManagementTab === "skills"}" class="skill-management-tab ${skillManagementTab === "skills" ? "is-active" : ""}" data-skill-tab="skills">技能</button><button type="button" role="tab" id="talent-tab" aria-controls="talent-panel" aria-selected="${skillManagementTab === "talents"}" class="skill-management-tab ${skillManagementTab === "talents" ? "is-active" : ""}" data-skill-tab="talents">天赋</button></div>${skillManagementTab === "skills" ? `<section id="skill-panel" role="tabpanel" aria-labelledby="skill-tab" class="skill-management-panel"><div class="skill-tag-heading"><h3>对应流派技能出现概率 ×4</h3><output aria-live="polite">已选 ${selectedCount}/2</output></div><div class="skill-tag-grid">${tagCards}</div><p id="skill-management-status" class="status-line" role="status" aria-live="polite">${escapeHtml(statusMessage)}</p><div class="skill-panel-footer"><p>局内候选来自全部已解锁技能；天赋不进入技能牌库。</p><button type="button" class="secondary-button skill-catalog-button" data-open-skill-catalog aria-controls="skill-catalog">技能大全</button></div></section>` : `<section id="talent-panel" role="tabpanel" aria-labelledby="talent-tab" class="skill-management-panel talent-panel">${talentRoadMarkup()}</section>`}`;
 }
@@ -779,8 +807,7 @@ function wireDefeatedGuestLoader(): void {
 }
 
 function renderLobby(layer: LobbyLayer = "menu"): void {
-  activeTutorial = null;
-  clearTutorialSurface();
+  discardActiveTutorial();
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer);
   gameAudio.stopHeartbeat();
   gameAudio.setBgmScene("lobby");
@@ -792,6 +819,7 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   void resourceLoader.enqueue(lobbyResourceUrls(
     CHARACTER_CATALOG.filter((character) => isCharacterUnlocked(character, save.defeats))
   ), "background");
+  void resourceLoader.enqueue(SKILL_ARCHETYPE_ART_URLS, "deferred");
   defeatedGuestObserver?.disconnect();
   defeatedGuestObserver = null;
   if (layer === "characters") {
@@ -857,6 +885,7 @@ function trophyCardMarkup(record: CharacterDefeatRecord): string {
 }
 
 function renderTrophyRoom(): void {
+  discardActiveTutorial();
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer); autosave = null;
   gameAudio.setBgmScene("lobby");
   const records = [...save.defeats].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
@@ -1184,9 +1213,10 @@ function renderMatch(state: MatchState): void {
     : reveal ? handValue(state.opponent.hand) : observation.opponent.value ?? "?";
   const playerScoreModifier = comparisonPreview.scores.player - comparisonPreview.baseScores.player;
   const opponentScoreModifier = comparisonPreview.scores.opponent - comparisonPreview.baseScores.opponent;
-  const opponentSuit = revealedOpponentSuit(state);
-  const opponentCards = reveal ? state.opponent.hand.cards.map((card) => cardMarkup(card)).join("") : observation.opponent.cards.map((card, index) => cardMarkup(card ?? state.opponent.hand.cards[index] ?? null, index > 0, index === 1 ? opponentSuit : undefined)).join("");
-  const playerCards = state.player.hand.cards.map((card) => cardMarkup(card)).join("");
+  const revealedOpponentCards = revealedOpponentCardIds(state);
+  const opponentFaceUpIds = new Set(state.opponent.hand.cards.filter((_card, index) => observation.opponent.cards[index] !== null).map((card) => card.id));
+  const opponentCards = describeCards(state.opponent.hand.cards, { revealAll: reveal, faceUpCardIds: opponentFaceUpIds, suitVisibleCardIds: revealedOpponentCards }).map(cardDisplayMarkup).join("");
+  const playerCards = describeCards(state.player.hand.cards, { revealAll: true }).map(cardDisplayMarkup).join("");
   const skills = state.playerSkills.cards.map((card, index) => {
     const skill = getPlayerSkillDefinition(card.definitionId);
     if (!skill) return "";
@@ -1301,6 +1331,7 @@ function devHud(state: MatchState): string {
 function renderSummary(state: MatchState): void {
   const winner = state.outcome?.winner;
   const escaped = state.outcome?.reason === "escaped";
+  discardActiveTutorial();
   clearAiSchedule(); window.clearInterval(dialogueTimer); window.clearTimeout(dialogueShakeTimer); gameAudio.stopHeartbeat(); clearAbilityNoticeQueue(); detachFullscreenListener(); lastDialogueKey = null;
   const playerWon = winner === "player";
   const image = playerWon ? currentCharacter.assets.defeatedSummary : escaped ? currentCharacter.assets.conflicted : currentCharacter.assets.relaxed;
@@ -1351,6 +1382,7 @@ async function completeMatch(destination: "trophy" | "rewind" | "lobby"): Promis
   else renderLobby();
 }
 function renderError(error: unknown): void {
+  discardActiveTutorial();
   clearAiSchedule();
   clearAbilityNoticeQueue();
   detachFullscreenListener();

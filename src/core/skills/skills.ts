@@ -3,8 +3,8 @@ import type { SeededRng, RngSnapshot } from "../rng/seeded";
 import type { CharacterDefeatRecord } from "../progression/defeats";
 import { INITIAL_PLAYER_SKILL_IDS, PLAYER_SKILL_DEFINITIONS } from "./definitions";
 import type { PlayerSkillDefinition, SkillDrawOffer, SkillTag } from "./types";
+export { PLAYER_SKILL_INVENTORY_CAPACITY } from "./constants";
 
-export const PLAYER_SKILL_INVENTORY_CAPACITY = 10;
 export const SKILL_DRAW_CANDIDATE_COUNT = 3;
 
 export function playerSkillHasTag(skill: PlayerSkillDefinition, tag: SkillTag): boolean {

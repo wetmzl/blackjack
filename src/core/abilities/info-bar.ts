@@ -1,9 +1,9 @@
 import { handCardCount, handTotal } from "./card-zone-adapter";
 import { gunBullets } from "./roulette-adapter";
 import type { AbilityInfoActor, AbilityInfoScalar, AbilityInfoValue, AbilityWorld } from "./types";
-import type { Card, Suit } from "../blackjack/types";
+import type { Card, Rank, Suit } from "../blackjack/types";
 import { RANKS, SUITS } from "../blackjack/types";
-import { createDerivedCard } from "../blackjack/card";
+import { cardSuit, createDerivedCard } from "../blackjack/card";
 
 export type ResolvedInfoBarValue = number | Card | Suit | null;
 export interface AbilityInfoResolutionContext {
@@ -53,13 +53,13 @@ export function resolveAbilityInfoValue(value: AbilityInfoValue, world: AbilityW
     const status = world.statuses.find((entry) => entry.owner === owner && entry.statusDefinitionId === value.statusDefinitionId && entry.stacks > 0);
     const rank = status?.parameters.rank;
     const suit = status?.parameters.suit;
-    if (typeof rank !== "string" || typeof suit !== "string" || !RANKS.includes(rank as Card["rank"]) || !SUITS.includes(suit as Suit)) return null;
-    const card = createDerivedCard(suit as Suit, rank as Card["rank"]);
-    return value.type === "card" ? card : card.suit;
+    if (typeof rank !== "string" || typeof suit !== "string" || !RANKS.includes(rank as Rank) || !SUITS.includes(suit as Suit)) return null;
+    const card = createDerivedCard(suit as Suit, rank as Rank, `card-info-${status!.sourceInstanceId}-${value.statusDefinitionId}`, status!.sourceInstanceId);
+    return value.type === "card" ? card : cardSuit(card);
   }
   if (!("source" in value)) {
     const card = selectedCard(value, world, owner);
-    return card === null ? null : value.type === "card" ? card : card.suit;
+    return card === null ? null : value.type === "card" ? card : cardSuit(card);
   }
   return null;
 }

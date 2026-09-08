@@ -127,7 +127,7 @@
    - `number`：可读取 `gun-bullets`、`hand-total`、`hand-card-count`、`round-hit-count`、`status-stacks`，并用 `add`、`subtract`、`multiply`、`min`、`max` 组合；也可直接使用数字或 `constant`。
    - `suit` / `card`：从 `last-card` 或 `first-private-card` 读取花色或整张牌。
    - `owner` 始终指该与会者，`rival` 始终指策展人。`round-hit-count` 从当前轮最新 `ROUND_STARTED` 之后计数。
-   - 跨轮记忆牌使用 `{ "type": "card", "source": "status-card", "statusDefinitionId": "..." }`；该状态应由能力原语保存完整 rank、suit 与 origin。信息栏渲染为花色在前的牌面（例如“♥ 4”），状态尚未建立时显示暂无。
+   - 跨轮记忆牌使用 `{ "type": "card", "source": "status-card", "statusDefinitionId": "..." }`；该状态应由能力原语保存完整 rank、suit、source 与原始 cardId。信息栏复用统一牌面 renderer（例如“♥ 4”），状态尚未建立时显示暂无。
 5. 数值默认原样显示；概率使用顶层 `"format": "percent"`，底座值保持 0–1，例如 `0.66` 显示为 `66%`。
 6. 运行 `npm test`、`npm run build`，并为新类型或新交互补充聚焦测试。若配置会公开与会者暗牌，必须确认这确实是该机制有意授予策展人的信息，不能无意绕过牌面信息边界。
 7. 若现有投影原语不够，先同步扩展 `core/abilities/types.ts`、`core/abilities/info-bar.ts`、角色 Zod Schema、`character.schema.json` 和聚焦测试，再让角色 JSON 使用新原语；不要把新算法直接写进 UI。

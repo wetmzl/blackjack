@@ -1,11 +1,12 @@
 import type { SeededRng } from "../rng/seeded";
 import { addToPendingLoad, multiplyPendingLoad } from "./roulette-adapter";
 import { createDerivedCardForExactTotal, drawExactResultingTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
-import { createDerivedCard } from "../blackjack/card";
+import { addCardTag, cardRank, cardSource, cardSuit, createDerivedCard, createDerivedCardId, removeCardTag } from "../blackjack/card";
 import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
-import { getStatusDefinition, type AbilityRegistry } from "./registry";
+import { getAbilityDefinition, getStatusDefinition, instantiateAbility, type AbilityRegistry } from "./registry";
 import { resolveActor, resolveScalar, type ConditionContext } from "./conditions";
-import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, Effect, PendingComparison, PendingDraw, PendingLoad, PendingTrigger } from "./types";
+import { PLAYER_SKILL_INVENTORY_CAPACITY } from "../skills/constants";
+import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, DerivedCardRankExpression, DerivedCardSuitExpression, Effect, PendingComparison, PendingDraw, PendingLoad, PendingTrigger } from "./types";
 
 export interface EffectContext extends ConditionContext {
   readonly ruleId?: string;
@@ -18,6 +19,30 @@ export interface EffectContext extends ConditionContext {
 function withHands(world: AbilityWorld, actor: "player" | "opponent", hand: AbilityWorld["hands"]["player"]): AbilityWorld { return { ...world, hands: { ...world.hands, [actor]: hand } }; }
 function statusFor(world: AbilityWorld, actor: "player" | "opponent", id: string) { return world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === id); }
 
+function resolveDerivedRank(expression: DerivedCardRankExpression, actor: "player" | "opponent", context: EffectContext): Rank {
+  let rank: string | undefined;
+  if (expression.type === "static") rank = expression.rank;
+  else if (expression.type === "scalar") {
+    const value = resolveScalar(expression.value, context);
+    if (!Number.isInteger(value) || value < 1 || value > 13) throw new Error(`Scalar card rank is invalid: ${value}`);
+    rank = value === 1 ? "A" : value === 11 ? "J" : value === 12 ? "Q" : value === 13 ? "K" : String(value);
+  } else {
+    const card = expression.card === "last-card" ? context.world.hands[actor].cards.at(-1) : context.world.hands[actor].cards[1];
+    if (!card) throw new Error("Card rank source is unavailable");
+    rank = expression.map[cardRank(card)];
+  }
+  if (!rank || !RANKS.includes(rank as Rank)) throw new Error(`Derived card rank is invalid: ${rank ?? "undefined"}`);
+  return rank as Rank;
+}
+
+function resolveDerivedSuit(expression: DerivedCardSuitExpression, context: EffectContext): Suit {
+  return expression.type === "static" ? expression.suit : SUITS[context.rng.nextInt(SUITS.length)]!;
+}
+
+function resultEvent(context: EffectContext, result: Extract<AbilityDomainEvent, { type: "ABILITY_RESULT" }>['result']): AbilityDomainEvent {
+  return { type: "ABILITY_RESULT", instanceId: context.ability.instanceId, definitionId: context.ability.definitionId, owner: context.ability.owner, result };
+}
+
 export function applyEffect(effect: Effect, context: EffectContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
   let world = context.world;
   let draw = pending.draw;
@@ -27,8 +52,10 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
   let comparison = pending.comparison;
   let runtime = context.runtime;
   const events: AbilityDomainEvent[] = [];
-  const actor = resolveActor(effect.target, context);
-  if (!actor) throw new Error(`Cannot resolve actor selector: ${effect.target}`);
+  // Most effects are actor-relative. The draw-pile rotation primitive is
+  // intentionally match-global and has no target selector.
+  const actor = "target" in effect ? resolveActor(effect.target, context) : "player";
+  if (!actor) throw new Error(`Cannot resolve actor selector: ${(effect as { readonly target?: unknown }).target ?? "unknown"}`);
   const changed = (effectType: string): void => { events.push({ type: "PENDING_EVENT_MODIFIED", eventId: draw?.id ?? load?.id ?? bust?.id ?? trigger?.id ?? context.event.sourceEventId, effectType, sourceInstanceId: context.ability.instanceId }); };
   switch (effect.type) {
     case "add-skill-draws": {
@@ -60,12 +87,15 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
     case "reveal-hand-card-suit": {
       const targetHand = world.hands[actor];
       const viewer = resolveActor(effect.viewer, context);
-      if (!viewer || targetHand.cards.length <= 1) throw new Error("Private card is unavailable");
-      events.push({ type: "CARD_SUIT_REVEALED", viewer, target: actor, cardIndex: 1, suit: targetHand.cards[1]!.suit });
+      const cards = effect.card === "all-current-cards" ? targetHand.cards : targetHand.cards.slice(1, 2);
+      if (!viewer || cards.length === 0) throw new Error(effect.card === "all-current-cards" ? "Hand is unavailable" : "Private card is unavailable");
+      for (const card of cards) {
+        events.push({ type: "CARD_SUIT_REVEALED", viewer, target: actor, cardId: card.id, suit: cardSuit(card) });
+      }
       break;
     }
     case "split-last-card-into-derived": {
-      const result = splitLastCardIntoDerived(world.hands[actor], context.rng);
+      const result = splitLastCardIntoDerived(world.hands[actor], context.rng, context.ability.definitionId);
       if (!result) throw new Error("Last card cannot be split");
       world = withHands(world, actor, result.hand);
       break;
@@ -78,6 +108,7 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       world = { ...world, statuses: [...world.statuses.filter((entry) => entry !== existing), status] };
       runtime = { ...runtime, statuses: world.statuses, sequence: runtime.sequence + 1 };
       events.push({ type: "STATUS_ADDED", statusDefinitionId: effect.statusDefinitionId, owner: actor, sourceInstanceId: context.ability.instanceId });
+      events.push(resultEvent(context, { type: "status-stacks-updated", actor, statusDefinitionId: effect.statusDefinitionId, stacks: status.stacks, delta: 1 }));
       break;
     }
     case "set-status-stacks": {
@@ -105,6 +136,7 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       world = { ...world, statuses: [...world.statuses.filter((entry) => entry !== existing), status] };
       runtime = { ...runtime, statuses: world.statuses, sequence: existing ? runtime.sequence : runtime.sequence + 1 };
       events.push({ type: "STATUS_ADDED", statusDefinitionId: effect.statusDefinitionId, owner: actor, sourceInstanceId: context.ability.instanceId });
+      events.push(resultEvent(context, { type: "status-stacks-updated", actor, statusDefinitionId: effect.statusDefinitionId, stacks, delta: stacks - (existing?.stacks ?? 0) }));
       break;
     }
     case "remove-status": {
@@ -121,7 +153,7 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       if (!draw) throw new Error("replace-pending-draw outside draw event");
       if (draw.actor !== actor) throw new Error("Pending draw actor does not match effect target");
       const hand = world.hands[actor];
-      const result = drawExactResultingTotal(world.shoe, hand, context.rng, resolveScalar(effect.policy.total, context));
+      const result = drawExactResultingTotal(world.shoe, hand, context.rng, resolveScalar(effect.policy.total, context), context.ability.definitionId);
       if (!result) {
         events.push({ type: "ABILITY_RESOLUTION_FAILED", instanceId: context.ability.instanceId, definitionId: context.ability.definitionId, ruleId: context.ruleId ?? "unknown-rule", reason: "No compatible card can produce the requested total" });
         break;
@@ -144,7 +176,7 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
         sourceInstanceId: existing?.sourceInstanceId ?? context.ability.instanceId,
         stacks: 1,
         duration: definition.defaultDuration,
-        parameters: { rank: card.rank, suit: card.suit, origin: card.origin },
+        parameters: { rank: cardRank(card), suit: cardSuit(card), source: cardSource(card), cardId: card.id },
         createdAtSequence: existing?.createdAtSequence ?? runtime.sequence + 1
       } as const;
       world = { ...world, statuses: [...world.statuses.filter((entry) => entry !== existing), status] };
@@ -160,7 +192,7 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       const suit = memory?.parameters.suit;
       const hand = world.hands[actor];
       if (!memory || typeof rank !== "string" || typeof suit !== "string" || !RANKS.includes(rank as Rank) || !SUITS.includes(suit as Suit) || hand.cards.length === 0) throw new Error("Memory card is unavailable");
-      const replacement = createDerivedCard(suit as Suit, rank as Rank);
+      const replacement = createDerivedCard(suit as Suit, rank as Rank, createDerivedCardId(context.rng), context.ability.definitionId);
       world = withHands(world, actor, { cards: [...hand.cards.slice(0, -1), replacement] });
       bust = { ...bust, standAfterReplacement: true };
       changed(effect.type);
@@ -168,9 +200,60 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
     }
     case "add-derived-card-for-exact-total": {
       const hand = world.hands[actor];
-      const card = createDerivedCardForExactTotal(hand, context.rng, resolveScalar(effect.total, context));
+      const card = createDerivedCardForExactTotal(hand, context.rng, resolveScalar(effect.total, context), context.ability.definitionId);
       if (!card) throw new Error("No derived card can produce the requested total");
       world = withHands(world, actor, { cards: [...hand.cards, card] });
+      break;
+    }
+    case "add-derived-card": {
+      const rank = resolveDerivedRank(effect.rank, actor, context);
+      const suit = resolveDerivedSuit(effect.suit, context);
+      const card = createDerivedCard(suit, rank, createDerivedCardId(context.rng), context.ability.definitionId);
+      world = withHands(world, actor, { cards: [...world.hands[actor].cards, card] });
+      events.push(resultEvent(context, { type: "derived-card-added", actor, rank, suit }));
+      break;
+    }
+    case "replace-hand-card-with-derived": {
+      const hand = world.hands[actor];
+      const old = hand.cards.at(-1);
+      if (!old) throw new Error("Cannot replace a card in an empty hand");
+      const rank = resolveDerivedRank(effect.rank, actor, context);
+      const suit = resolveDerivedSuit(effect.suit, context);
+      world = withHands(world, actor, { cards: [...hand.cards.slice(0, -1), createDerivedCard(suit, rank, createDerivedCardId(context.rng), context.ability.definitionId)] });
+      events.push(resultEvent(context, { type: "derived-card-replaced", actor, oldRank: cardRank(old), rank, suit }));
+      break;
+    }
+    case "add-hand-card-tag":
+    case "remove-hand-card-tag": {
+      const hand = world.hands[actor];
+      const index = effect.card === "last-card" ? hand.cards.length - 1 : 1;
+      const card = hand.cards[index];
+      if (!card) throw new Error("Card tag target is unavailable");
+      const updated = effect.type === "add-hand-card-tag" ? addCardTag(card, effect.tag) : removeCardTag(card, effect.tag);
+      if (updated !== card) world = withHands(world, actor, { cards: hand.cards.map((entry, cardIndex) => cardIndex === index ? updated : entry) });
+      break;
+    }
+    case "rotate-draw-pile-top-to-bottom": {
+      if (world.shoe.cursor >= world.shoe.cards.length) throw new Error("Cannot rotate an empty draw pile");
+      const remaining = world.shoe.cards.slice(world.shoe.cursor);
+      const rotated = remaining.length <= 1 ? remaining : [...remaining.slice(1), remaining[0]!];
+      world = { ...world, shoe: { ...world.shoe, cards: [...world.shoe.cards.slice(0, world.shoe.cursor), ...rotated] } };
+      events.push(resultEvent(context, { type: "draw-pile-rotated" }));
+      break;
+    }
+    case "grant-player-skill-card": {
+      if (actor !== "player") throw new Error("Only the player can receive a Player Skill card");
+      if (world.cards.length >= PLAYER_SKILL_INVENTORY_CAPACITY) throw new Error("Player Skill inventory is full");
+      const selectedId = context.runtime.lastPlayedPlayerSkillDefinitionId ?? context.ability.definitionId;
+      const selected = context.registry?.definitionsById[selectedId] ?? getAbilityDefinition(selectedId);
+      if (!selected || selected.sourceKind !== "player-skill" || selected.activation.type !== "action") throw new Error(`Cannot grant non-active Player Skill definition: ${selectedId}`);
+      const sequence = context.runtime.sequence + 1;
+      const instanceId = `ability-player-card-${sequence}`;
+      const instance = instantiateAbility({ definitionId: selected.id, enabled: true, parameters: {} }, "player", instanceId, sequence, context.registry, "player-skill");
+      runtime = { ...runtime, instances: [...runtime.instances, instance], sequence };
+      world = { ...world, cards: [...world.cards, { kind: "player-skill", definitionId: selected.id, owner: "player", instanceId }] };
+      events.push(resultEvent(context, { type: "skill-card-granted", definitionId: selected.id }));
+      events.push({ type: "SKILL_GAINED", skillId: selected.id });
       break;
     }
     case "add-to-pending-bust-limit": {

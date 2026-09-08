@@ -1,9 +1,9 @@
 {
   "id": "scent-of-a-woman",
   "name": "闻香识女人",
-  "description": "窥见对手第一张暗牌的花色。",
-  "usage": "玩家回合可用；揭示对手第一张暗牌的花色。",
-  "triggerNotice": "揭示对手第一张暗牌的花色。",
+  "description": "窥见对手当前所有手牌的花色。",
+  "usage": "玩家回合可用；揭示对手当前所有手牌的花色。",
+  "triggerNotice": "揭示对手当前所有手牌的花色。",
   "profileLore": "她们一个接一个地来，又一个接一个地没能离开。多年以后，香水、火药与血腥味混在一起，成了这里最稳定的气味。",
   "sourceKind": "player-skill",
   "primaryDomain": "information",
@@ -21,7 +21,7 @@
         {
           "type": "reveal-hand-card-suit",
           "target": "rival",
-          "card": "first-private-card",
+          "card": "all-current-cards",
           "viewer": "owner"
         }
       ]

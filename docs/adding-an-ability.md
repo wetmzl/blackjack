@@ -20,7 +20,7 @@ mutate the physical shoe or enter a discard pile; do not use this fallback as a
 general substitute for selecting real cards.
 
 For cross-round card memory, use a match-duration status whose parameters store
-the complete `rank`/`suit`/`origin` tuple. `remember-last-card` separates the
+the complete `rank`/`suit`/`source` tuple and original `cardId`. `remember-last-card` separates the
 status `target` from its `cardTarget`; `replace-bust-hand-card-with-memory-card`
 is evaluated during `before-bust-check` against the already modified pending
 bust limit, creates a derived replacement, and may request `standAfterReplacement`.
@@ -92,6 +92,12 @@ also contains activation conditions or other context. Talent events and
 bookkeeping-only rules may declare `"notify": false`; they still emit domain
 events but do not occupy the toast stack.
 
+`reveal-hand-card-suit` keeps revealed information bound to card entities by
+emitting one `CARD_SUIT_REVEALED` event per selected `cardId`. Use
+`first-private-card` for the first hidden card or `all-current-cards` for the
+cards present in the target hand at resolution time. Cards drawn later are not
+implicitly revealed, and the projection expires at the round boundary.
+
 Talent definitions must declare an explicit data-driven `unlock`, currently
 `{ "type": "defeat-count", "count": N, "label": "..." }`; unlocked Talent IDs
 are derived from CharacterDefeatRecord facts and are not duplicated in the
@@ -121,13 +127,16 @@ Character JSON `aiSkills` binds an existing AI Skill definition with
 `{ definitionId, enabled, parameters }`. Bindings are checked against the definition's declared
 parameter table; unknown, missing, or out-of-range values fail during loading.
 
-Cards have an explicit `origin`: `shoe` for physical cards and `derived` for
-temporary cards. A derived card scores and counts normally, but never qualifies
+Cards are entities with a stable `id`, a single-value `attributes` dictionary
+(`source`, `rank`, `suit`), and a unique string `tags` collection. `source` is
+`shoe` for physical cards and `derived` for temporary cards. A derived card
+also carries `derived` and `generated-by:<ability-id>` tags. It scores and counts normally, but never qualifies
 for natural Blackjack or a physical-card condition. It must never be inserted
 into `ShoeState.cards`; replacement removes it permanently, and starting the
-next round drops it with the old hand. Hidden rendering may expose only the
-origin marker. A suit can be shown only when the current round contains a
-recorded `CARD_SUIT_REVEALED` event for the current viewer and card; that event
+next round drops it with the old hand. Use `hand-card-has-tag`,
+`add-hand-card-tag`, and `remove-hand-card-tag` for open-ended card metadata.
+A suit can be shown only when the current round contains a recorded
+`CARD_SUIT_REVEALED` event for the current viewer and `cardId`; that event
 never includes rank, and hidden rendering must never disclose rank.
 
 Test-only mechanisms live beside production content but remain unbound in
@@ -167,3 +176,16 @@ state, events, counters, TTL, or RNG.
 `set-status-stacks` replaces a match-status stack count with a nonnegative,
 integer scalar result (zero removes the status), allowing a data-driven
 mechanic to carry one public numeric threshold between rounds.
+
+The scalar `power` expression is deterministic and must resolve to a finite
+number before an effect commits. Derived-card effects use a closed card-face
+expression: `static` rank/suit, scalar-to-rank (1=A, 11=J, 12=Q, 13=K), or a
+complete 13-rank JSON map from a selected hand card; `uniform-ability-rng`
+chooses the suit only from the saved ability RNG. Use `add-derived-card` and
+`replace-hand-card-with-derived` for temporary cards, and
+`rotate-draw-pile-top-to-bottom` for the unshown remaining shoe segment. The
+`grant-player-skill-card` effect copies the previous successfully played Player
+Skill, falling back to the current definition, and atomically creates both its
+inventory card and runtime instance. These effects publish the generic
+`ABILITY_RESULT` GameEvent so presentation can use actual ranks, replacements,
+granted names, and stack deltas without definition-ID branches.

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createCard } from "../core/blackjack/card";
 import { createMatch } from "../core/match/reducer";
-import type { Card } from "../core/blackjack/types";
+import type { Card, Rank, Suit } from "../core/blackjack/types";
 import type { GameEvent, MatchState, RoundOutcome, RoundPhase } from "../core/match/types";
 import { DIALOGUE_EVENT_CODES } from "./types";
 import { resolveDialogueState } from "./state";
 
-const card = (rank: Card["rank"], suit: Card["suit"] = "spades") => createCard(suit, rank);
+const card = (rank: Rank, suit: Suit = "spades") => createCard(suit, rank);
 
 function findMatch(predicate: (state: MatchState) => boolean): MatchState {
   for (let index = 0; index < 10_000; index += 1) {

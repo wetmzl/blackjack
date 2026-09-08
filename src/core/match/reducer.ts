@@ -147,7 +147,11 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
   try {
     const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, directInstanceId, ...abilityServices(state) });
     let next = commitAbilityWorld(state, result.world);
-    const cards = result.world.cards.filter((card) => !state.playerSkills.cards.some((old) => old.instanceId === card.instanceId));
+    // Effects that grant Player Skill cards create their runtime instance in
+    // the same transaction. Only legacy/newly-created card projections that
+    // are not already represented by the resolver need instantiation here.
+    const cards = result.world.cards.filter((card) => !state.playerSkills.cards.some((old) => old.instanceId === card.instanceId)
+      && !result.runtime.instances.some((instance) => instance.instanceId === card.instanceId));
     const firstSequence = Math.max(state.abilities.sequence, result.runtime.sequence);
     const instances: AbilityInstance[] = cards.map((card, index) => ({ ...card, createdAtSequence: firstSequence + index + 1, parameters: {} }));
     next = { ...next, abilities: { ...next.abilities, ...result.runtime, instances: [...result.runtime.instances, ...instances], sequence: Math.max(result.runtime.sequence, firstSequence + instances.length) } };

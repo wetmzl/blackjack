@@ -11,16 +11,21 @@ import characterCatalog from "../content/characters/catalog.json" with { type: "
 export const LONG_TERM_SAVE_FORMAT = "house-of-chances-save" as const;
 export const RUNTIME_SAVE_FORMAT = "house-of-chances-runtime" as const;
 export const CURRENT_LONG_TERM_SCHEMA_VERSION = 9 as const;
-export const CURRENT_RUNTIME_SCHEMA_VERSION = 5 as const;
+export const CURRENT_RUNTIME_SCHEMA_VERSION = 7 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
   suit: z.enum(["spades", "hearts", "diamonds", "clubs"]),
   rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"])
 };
-const PhysicalCardSchema = z.object({ ...CardFaceSchema, origin: z.literal("shoe") }).strict();
-const DerivedCardSchema = z.object({ ...CardFaceSchema, origin: z.literal("derived") }).strict();
-const CardSchema = z.discriminatedUnion("origin", [PhysicalCardSchema, DerivedCardSchema]);
+const CardTagsSchema = z.array(z.string().min(1)).superRefine((tags, ctx) => {
+  if (new Set(tags).size !== tags.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate card tag" });
+});
+const PhysicalCardSchema = z.object({ id: z.string().min(1), attributes: z.object({ ...CardFaceSchema, source: z.literal("shoe") }).strict(), tags: CardTagsSchema }).strict()
+  .refine((card) => !card.tags.includes("derived"), { path: ["tags"], message: "physical card cannot carry the derived tag" });
+const DerivedCardSchema = z.object({ id: z.string().min(1), attributes: z.object({ ...CardFaceSchema, source: z.literal("derived") }).strict(), tags: CardTagsSchema }).strict()
+  .refine((card) => card.tags.includes("derived"), { path: ["tags"], message: "derived card must carry the derived tag" });
+const CardSchema = z.union([PhysicalCardSchema, DerivedCardSchema]);
 const HandSchema = z.object({ cards: z.array(CardSchema) }).strict();
 const RngSnapshotSchema = z.object({ seed: z.string(), state: z.number().int().min(0).max(0xffffffff) }).strict();
 const CHARACTER_IDS = new Set(characterCatalog.characters.map((character) => character.id));
@@ -62,8 +67,12 @@ const AbilityInstanceSchema = z.object({
   ttl: z.object({ type: z.enum(["rounds", "triggers"]), remaining: z.number().int().min(0) }).strict().optional()
 }).strict();
 const AbilityStatusSchema = z.object({ statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), sourceInstanceId: z.string().min(1), stacks: z.number().int().positive(), duration: z.enum(["turn", "round", "match", "until-owner-action", "until-consumed"]), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])), createdAtSequence: z.number().int().min(0) }).strict();
-const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema), statuses: z.array(AbilityStatusSchema), counters: z.record(z.number().int().min(0)), sequence: z.number().int().min(0), catalogVersion: z.string().min(1), rng: RngSnapshotSchema }).strict().superRefine((runtime, ctx) => {
+const AbilityRuntimeSchema = z.object({ instances: z.array(AbilityInstanceSchema), statuses: z.array(AbilityStatusSchema), counters: z.record(z.number().int().min(0)), sequence: z.number().int().min(0), catalogVersion: z.string().min(1), rng: RngSnapshotSchema, lastPlayedPlayerSkillDefinitionId: z.string().min(1).nullable() }).strict().superRefine((runtime, ctx) => {
   if (runtime.catalogVersion !== ABILITY_CATALOG_VERSION) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["catalogVersion"], message: "unsupported ability catalog version" });
+  if (runtime.lastPlayedPlayerSkillDefinitionId !== null) {
+    const definition = getAbilityDefinition(runtime.lastPlayedPlayerSkillDefinitionId);
+    if (!definition || definition.sourceKind !== "player-skill" || definition.activation.type !== "action") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["lastPlayedPlayerSkillDefinitionId"], message: "last played Player Skill memory is invalid" });
+  }
   const instanceIds = new Set<string>();
   runtime.instances.forEach((instance, index) => {
     if (instanceIds.has(instance.instanceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["instances", index, "instanceId"], message: "duplicate ability instance id" });
@@ -96,7 +105,14 @@ const GameEventSchema = z.union([
   z.object({ type: z.literal("STATUS_REMOVED"), statusDefinitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), reason: z.enum(["consumed", "expired", "dispelled"]) }).strict(),
   z.object({ type: z.literal("PENDING_EVENT_MODIFIED"), eventId: z.string().min(1), effectType: z.string().min(1), sourceInstanceId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("PENDING_EVENT_CANCELLED"), eventId: z.string().min(1), sourceInstanceId: z.string().min(1) }).strict(),
-  z.object({ type: z.literal("CARD_SUIT_REVEALED"), viewer: z.enum(["player", "opponent"]), target: z.enum(["player", "opponent"]), cardIndex: z.number().int().min(0), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
+  z.object({ type: z.literal("CARD_SUIT_REVEALED"), viewer: z.enum(["player", "opponent"]), target: z.enum(["player", "opponent"]), cardId: z.string().min(1), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
+  z.object({ type: z.literal("ABILITY_RESULT"), instanceId: z.string().min(1), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), result: z.union([
+    z.object({ type: z.literal("derived-card-added"), actor: z.enum(["player", "opponent"]), rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
+    z.object({ type: z.literal("derived-card-replaced"), actor: z.enum(["player", "opponent"]), oldRank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]), rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
+    z.object({ type: z.literal("status-stacks-updated"), actor: z.enum(["player", "opponent"]), statusDefinitionId: z.string().min(1), stacks: z.number().int().min(0), delta: z.number().int() }).strict(),
+    z.object({ type: z.literal("skill-card-granted"), definitionId: z.string().min(1) }).strict(),
+    z.object({ type: z.literal("draw-pile-rotated") }).strict()
+  ]) }).strict(),
   z.object({ type: z.literal("ROUND_STARTED"), roundIndex: z.number().int().min(0) }).strict(),
   z.object({ type: z.literal("CARD_DEALT"), actor: z.enum(["player", "opponent"]), card: CardSchema, private: z.boolean() }).strict(),
   z.object({ type: z.literal("INITIAL_BLACKJACK_CHECK"), player: z.boolean(), opponent: z.boolean() }).strict(),
@@ -167,6 +183,17 @@ export const MatchStateSchema = z.object({
   rng: z.object({ deck: RngSnapshotSchema, roulette: RngSnapshotSchema, ai: RngSnapshotSchema, loot: RngSnapshotSchema, dialogue: RngSnapshotSchema }).strict(),
   aiProfile: AiProfileSchema, aiNoise: AiNoiseSchema, lastAiDecision: AiDecisionSchema.nullable()
 }).strict().superRefine((match, ctx) => {
+  const shoeIds = new Set<string>();
+  match.shoe.cards.forEach((card, index) => {
+    if (shoeIds.has(card.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["shoe", "cards", index, "id"], message: "duplicate physical card id" });
+    shoeIds.add(card.id);
+  });
+  const handIds = new Set<string>();
+  (["player", "opponent"] as const).forEach((actor) => match[actor].hand.cards.forEach((card, index) => {
+    if (handIds.has(card.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [actor, "hand", "cards", index, "id"], message: "card id exists in multiple hand slots" });
+    handIds.add(card.id);
+    if (card.attributes.source === "derived" && shoeIds.has(card.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [actor, "hand", "cards", index, "id"], message: "derived card cannot enter the physical shoe" });
+  }));
   const instances = new Map(match.abilities.instances.map((instance) => [instance.instanceId, instance]));
   match.playerSkills.cards.forEach((card, index) => {
     const instance = instances.get(card.instanceId);

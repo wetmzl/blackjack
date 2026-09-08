@@ -44,10 +44,14 @@ describe("ability trigger notices", () => {
     expect(abilityTriggerNotice([event], "德克萨斯", afterWithAdvice("stand"))[0]?.text).toBe("策展人发动「猎手直觉」：建议 Stand 停牌");
   });
 
-  it("uses the actual revealed suit from the same batch", () => {
+  it("uses every actual revealed suit from the same batch", () => {
     const ability: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "skill", definitionId: "scent-of-a-woman", ruleId: "reveal-rival-suit", owner: "player" };
-    const revealed: GameEvent = { type: "CARD_SUIT_REVEALED", viewer: "player", target: "opponent", cardIndex: 1, suit: "spades" };
-    expect(abilityTriggerNotice([ability, revealed], "德克萨斯")[0]?.text).toBe("策展人发动「闻香识女人」：对手暗牌花色为黑桃");
+    const revealed: GameEvent[] = [
+      { type: "CARD_SUIT_REVEALED", viewer: "player", target: "opponent", cardId: "public-club", suit: "clubs" },
+      { type: "CARD_SUIT_REVEALED", viewer: "player", target: "opponent", cardId: "private-spade", suit: "spades" },
+      { type: "CARD_SUIT_REVEALED", viewer: "player", target: "opponent", cardId: "private-heart", suit: "hearts" }
+    ];
+    expect(abilityTriggerNotice([ability, ...revealed], "德克萨斯")[0]?.text).toBe("策展人发动「闻香识女人」：对手当前所有手牌花色为梅花、黑桃、红桃");
   });
 
   it("uses the cancellation result when a status rule has no source definition rule", () => {
@@ -70,6 +74,30 @@ describe("ability trigger notices", () => {
     expect(abilityTriggerNotice([reached], "拉普兰德")[0]?.text).toContain("策展人达到狂欢指标");
     expect(abilityTriggerNotice([missed], "拉普兰德")[0]?.text).toContain("策展人未达到狂欢指标");
     expect(abilityTriggerNotice([updated], "拉普兰德")[0]?.text).toContain("狂欢指标已替换");
+  });
+
+  it("uses generic concrete results for the new Player Skills", () => {
+    const compound: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "compound", definitionId: "compound-interest", ruleId: "add-hand-count-card", owner: "player" };
+    const card: GameEvent = { type: "ABILITY_RESULT", instanceId: "compound", definitionId: "compound-interest", owner: "player", result: { type: "derived-card-added", actor: "player", rank: "3", suit: "hearts" } };
+    expect(abilityTriggerNotice([compound, card], "W")[0]?.text).toContain("获得一张3点衍生牌");
+
+    const sissa: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "sissa", definitionId: "sissas-table", ruleId: "add-overflow-advantage", owner: "player" };
+    const sissaCard: GameEvent = { type: "ABILITY_RESULT", instanceId: "sissa", definitionId: "sissas-table", owner: "player", result: { type: "derived-card-added", actor: "player", rank: "K", suit: "spades" } };
+    const overflow: GameEvent = { type: "ABILITY_RESULT", instanceId: "sissa", definitionId: "sissas-table", owner: "player", result: { type: "status-stacks-updated", actor: "player", statusDefinitionId: "player-point-advantage", stacks: 6, delta: 6 } };
+    expect(abilityTriggerNotice([sissa, overflow, sissaCard], "W")[0]?.text).toContain("黑桃K衍生牌，多余的6点转化为点数优势");
+
+    const mimic: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "mimic", definitionId: "mimic-eggplant", ruleId: "grant-last-player-skill", owner: "player" };
+    const granted: GameEvent = { type: "ABILITY_RESULT", instanceId: "mimic", definitionId: "mimic-eggplant", owner: "player", result: { type: "skill-card-granted", definitionId: "a-single-coin" } };
+    expect(abilityTriggerNotice([mimic, granted], "W")[0]?.text).toContain("获得一张「一枚硬币」");
+
+    const carnival: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "carnival", definitionId: "carnival", ruleId: "raise-shared-bust-limit", owner: "player" };
+    const carnivalResult: GameEvent = { type: "ABILITY_RESULT", instanceId: "carnival", definitionId: "carnival", owner: "player", result: { type: "status-stacks-updated", actor: "player", statusDefinitionId: "carnival-bust-bonus", stacks: 1, delta: 1 } };
+    expect(abilityTriggerNotice([carnival, carnivalResult], "W", { player: { bustLimit: 24 } } as MatchState)[0]?.text).toContain("公共爆牌上限提高至24点");
+  });
+
+  it("suppresses internal shared-status rule toasts", () => {
+    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "carnival", definitionId: "carnival", ruleId: "apply-carnival-bust-bonus", owner: "player" };
+    expect(abilityTriggerNotice([event], "W")).toEqual([]);
   });
 
   it("routes depleted skills to the independent notice stack", () => {

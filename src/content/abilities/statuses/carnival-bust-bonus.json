@@ -1,0 +1,18 @@
+{
+  "id": "carnival-bust-bonus",
+  "defaultDuration": "match",
+  "rules": [
+    {
+      "id": "apply-carnival-bust-bonus",
+      "trigger": "before-bust-check",
+      "notify": false,
+      "effects": [
+        {
+          "type": "add-to-pending-bust-limit",
+          "target": "event-actor",
+          "amount": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "carnival-bust-bonus" }
+        }
+      ]
+    }
+  ]
+}

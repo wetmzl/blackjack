@@ -1,12 +1,12 @@
 import { addCard, createHand, handValue } from "../blackjack/hand";
-import { cardValue, createCard, createDerivedCard, isDerivedCard } from "../blackjack/card";
+import { cardRank, cardValue, createCard, createDerivedCard, createDerivedCardId, isDerivedCard } from "../blackjack/card";
 import { RANKS, SUITS, type Card, type Hand, type PhysicalCard, type ShoeState } from "../blackjack/types";
 import type { SeededRng } from "../rng/seeded";
 
 export interface CardCandidateResult { readonly card: PhysicalCard; readonly index: number; }
 export function handCardCount(hand: Hand): number { return hand.cards.length; }
 export function handTotal(hand: Hand): number { return handValue(hand); }
-export function fixedCardValue(card: Card): number { return cardValue(card.rank); }
+export function fixedCardValue(card: Card): number { return cardValue(cardRank(card)); }
 
 export function swapLastHandCardWithDrawPileTop(shoe: ShoeState, hand: Hand): { readonly hand: Hand; readonly shoe: ShoeState } | undefined {
   if (hand.cards.length === 0 || shoe.cursor >= shoe.cards.length) return undefined;
@@ -24,13 +24,16 @@ export function canSplitLastCard(hand: Hand): boolean {
   const value = hand.cards.at(-1) ? fixedCardValue(hand.cards.at(-1)!) : 0;
   return SPLIT_RANKS.some((left, index) => SPLIT_RANKS.some((right, rightIndex) => rightIndex >= index && left.value + right.value === value));
 }
-export function splitLastCardIntoDerived(hand: Hand, rng: SeededRng): { readonly hand: Hand; readonly cards: readonly Card[] } | undefined {
+export function splitLastCardIntoDerived(hand: Hand, rng: SeededRng, generatedBy?: string): { readonly hand: Hand; readonly cards: readonly Card[] } | undefined {
   const outgoing = hand.cards.at(-1);
   if (!outgoing) return undefined;
   const pairs = SPLIT_RANKS.flatMap((left, index) => SPLIT_RANKS.slice(index).filter((right) => left.value + right.value === fixedCardValue(outgoing)).map((right) => [left.rank, right.rank] as const));
   if (pairs.length === 0) return undefined;
   const [left, right] = pairs[rng.nextInt(pairs.length)]!;
-  const cards = [createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, left), createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, right)];
+  const cards = [
+    createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, left, createDerivedCardId(rng), generatedBy),
+    createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, right, createDerivedCardId(rng), generatedBy)
+  ];
   return { hand: createHand([...hand.cards.slice(0, -1), ...cards]), cards };
 }
 
@@ -73,14 +76,14 @@ export interface ExactDrawResult { readonly card: Card; readonly shoe: ShoeState
 
 /** Creates a temporary card that makes the hand's total exactly `total`.
  * This deliberately never consults or mutates the physical shoe. */
-export function createDerivedCardForExactTotal(hand: Hand, rng: SeededRng, total: number): Card | undefined {
+export function createDerivedCardForExactTotal(hand: Hand, rng: SeededRng, total: number, generatedBy?: string): Card | undefined {
   const ranks = RANKS.filter((rank) => handValue(addCard(hand, createCard("spades", rank))) === total);
   if (ranks.length === 0) return undefined;
-  return createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, ranks[rng.nextInt(ranks.length)]!);
+  return createDerivedCard(SUITS[rng.nextInt(SUITS.length)]!, ranks[rng.nextInt(ranks.length)]!, createDerivedCardId(rng), generatedBy);
 }
 
 /** Resolve a guaranteed total without ever asking the RNG for an empty range. */
-export function drawExactResultingTotal(shoe: ShoeState, hand: Hand, rng: SeededRng, total: number): ExactDrawResult | undefined {
+export function drawExactResultingTotal(shoe: ShoeState, hand: Hand, rng: SeededRng, total: number, generatedBy?: string): ExactDrawResult | undefined {
   const candidates = findDrawCandidates(shoe, hand, "exactly", total);
   if (candidates.length > 0) {
     const selected = candidates[rng.nextInt(candidates.length)]!;
@@ -92,5 +95,5 @@ export function drawExactResultingTotal(shoe: ShoeState, hand: Hand, rng: Seeded
   if (ranks.length === 0) return undefined;
   const rank = ranks[rng.nextInt(ranks.length)]!;
   const suit = SUITS[rng.nextInt(SUITS.length)]!;
-  return { card: createDerivedCard(suit, rank), shoe, derived: true };
+  return { card: createDerivedCard(suit, rank, createDerivedCardId(rng), generatedBy), shoe, derived: true };
 }

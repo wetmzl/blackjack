@@ -45,7 +45,14 @@ describe("separate ability domains", () => {
       "rhodes-heartthrob": ["gunslinger"],
       "scent-of-a-woman": ["intelligence-officer"],
       switcheroo: ["cheater"],
-      "sword-and-handcannon": ["gunslinger"]
+      "sword-and-handcannon": ["gunslinger"],
+      "compound-interest": ["gambler"],
+      "counterclockwise-clock": ["gambler"],
+      "sissas-table": ["gambler"],
+      "a-single-coin": ["gambler"],
+      "mimic-eggplant": ["cheater"],
+      carnival: ["cheater"],
+      "before-the-shuffle": ["cheater"]
     });
     const base = getAbilityDefinition("switcheroo")!;
     expect(AbilityDefinitionSchema.safeParse({ ...base, skillTags: undefined }).success).toBe(false);
@@ -57,7 +64,7 @@ describe("separate ability domains", () => {
     expect([...PLAYER_SKILL_ABILITY_DEFINITIONS, ...AI_SKILL_ABILITY_DEFINITIONS].every((definition) =>
       definition.primaryDomain && definition.tags.length > 0 && new Set(definition.tags).size === definition.tags.length
     )).toBe(true);
-    expect(INITIAL_PLAYER_SKILL_IDS).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman"]);
+    expect(INITIAL_PLAYER_SKILL_IDS).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
   });
 });
 

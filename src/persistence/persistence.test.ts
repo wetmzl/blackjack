@@ -79,6 +79,16 @@ describe("runtime save schema and validation", () => {
     expect(imported).not.toHaveProperty("history");
   });
 
+  it("round-trips the last successfully played Player Skill memory", () => {
+    const match = createMatch("memory-roundtrip");
+    const withMemory = { ...match, abilities: { ...match.abilities, lastPlayedPlayerSkillDefinitionId: "a-single-coin" } };
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(withMemory, NOW))) as unknown);
+    expect(imported.activeMatch.abilities.lastPlayedPlayerSkillDefinitionId).toBe("a-single-coin");
+    const invalid = structuredClone(createRuntimeSave(withMemory, NOW)) as unknown as Record<string, unknown>;
+    (((invalid.activeMatch as Record<string, unknown>).abilities as Record<string, unknown>).lastPlayedPlayerSkillDefinitionId) = "early-preparation";
+    expect(() => validateRuntimeSave(invalid)).toThrow(/last played Player Skill memory is invalid/);
+  });
+
   it("persists the selected Skill Tag snapshot and rejects duplicates", () => {
     const match = createMatch("selected-skill-tag-save", { selectedSkillTags: ["gambler", "cheater"] });
     const runtime = JSON.parse(JSON.stringify(createRuntimeSave(match, NOW))) as Record<string, unknown>;
@@ -91,7 +101,8 @@ describe("runtime save schema and validation", () => {
 
   it("round-trips the suit-only private-card reveal event", () => {
     const match = createMatch("suit-event-roundtrip");
-    const withReveal = { ...match, history: [...match.history, { type: "CARD_SUIT_REVEALED" as const, viewer: "player" as const, target: "opponent" as const, cardIndex: 1, suit: "hearts" as const }] };
+    const privateCard = match.opponent.hand.cards[1]!;
+    const withReveal = { ...match, history: [...match.history, { type: "CARD_SUIT_REVEALED" as const, viewer: "player" as const, target: "opponent" as const, cardId: privateCard.id, suit: "hearts" as const }] };
     const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(withReveal, NOW))) as unknown);
     expect(imported.activeMatch.history.at(-1)).toEqual(withReveal.history.at(-1));
   });
@@ -125,7 +136,7 @@ describe("runtime save schema and validation", () => {
     const match = invalidCard.activeMatch as Record<string, unknown>;
     const player = match.player as Record<string, unknown>;
     const hand = player.hand as Record<string, unknown>;
-    (hand.cards as Array<Record<string, unknown>>)[0]!.rank = "JOKER";
+    (((hand.cards as Array<Record<string, unknown>>)[0]!.attributes) as Record<string, unknown>).rank = "JOKER";
     expect(() => validateRuntimeSave(invalidCard)).toThrow(/activeMatch/);
 
     const invalidRng = structuredClone(createRuntimeSave(createMatch("invalid-rng"), NOW)) as unknown as Record<string, unknown>;
@@ -139,6 +150,21 @@ describe("runtime save schema and validation", () => {
 
     try { validateRuntimeSave(invalidShoe); }
     catch (error) { expect(error).toMatchObject({ kind: "runtime" }); }
+  });
+
+  it("rejects duplicate card identities and tags", () => {
+    const duplicateId = JSON.parse(JSON.stringify(createRuntimeSave(createMatch("duplicate-card-id"), NOW))) as Record<string, unknown>;
+    const match = duplicateId.activeMatch as Record<string, unknown>;
+    const playerCards = (((match.player as Record<string, unknown>).hand as Record<string, unknown>).cards) as Array<Record<string, unknown>>;
+    const opponentCards = (((match.opponent as Record<string, unknown>).hand as Record<string, unknown>).cards) as Array<Record<string, unknown>>;
+    opponentCards[0]!.id = playerCards[0]!.id;
+    expect(() => validateRuntimeSave(duplicateId)).toThrow(/multiple hand slots/i);
+
+    const duplicateTag = JSON.parse(JSON.stringify(createRuntimeSave(createMatch("duplicate-card-tag"), NOW))) as Record<string, unknown>;
+    const tagMatch = duplicateTag.activeMatch as Record<string, unknown>;
+    const tagCards = ((((tagMatch.player as Record<string, unknown>).hand as Record<string, unknown>).cards) as Array<Record<string, unknown>>);
+    tagCards[0]!.tags = ["marked", "marked"];
+    expect(() => validateRuntimeSave(duplicateTag)).toThrow(/duplicate card tag/i);
   });
 
   it("rejects missing ability definitions, catalog mismatches, and unknown characters", () => {
@@ -236,14 +262,14 @@ describe("runtime save schema and validation", () => {
 
   it("persists derived cards in hands but rejects them inside the physical shoe", () => {
     const base = createMatch("derived-save");
-    const player = { ...base.player, hand: addCard(base.player.hand, createDerivedCard("hearts", "5")) };
+    const player = { ...base.player, hand: addCard(base.player.hand, createDerivedCard("hearts", "5", "derived-save-fixture")) };
     const match = { ...base, player, round: { ...base.round, player } };
     const runtime = createRuntimeSave(match, NOW);
-    expect(validateRuntimeSave(JSON.parse(JSON.stringify(runtime)) as unknown).activeMatch.player.hand.cards.at(-1)?.origin).toBe("derived");
+    expect(validateRuntimeSave(JSON.parse(JSON.stringify(runtime)) as unknown).activeMatch.player.hand.cards.at(-1)?.attributes.source).toBe("derived");
 
-    const invalid = structuredClone(runtime) as unknown as Record<string, unknown>;
+    const invalid = JSON.parse(JSON.stringify(runtime)) as Record<string, unknown>;
     const shoe = ((invalid.activeMatch as Record<string, unknown>).shoe as Record<string, unknown>);
-    ((shoe.cards as Array<Record<string, unknown>>)[0]!).origin = "derived";
+    ((((shoe.cards as Array<Record<string, unknown>>)[0]!).attributes) as Record<string, unknown>).source = "derived";
     expect(() => validateRuntimeSave(invalid)).toThrow(/activeMatch.*shoe.*cards/i);
   });
 });
@@ -254,7 +280,7 @@ describe("boot and repositories", () => {
     expect(reset.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
-    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman"]);
+    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
     expect(reset.profile.selectedSkillTags).toEqual([]);
     expect(reset.history).toEqual([]);
     expect(reset.defeats).toEqual([]);

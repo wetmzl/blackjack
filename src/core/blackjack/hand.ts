@@ -1,4 +1,4 @@
-import { cardValue } from "./card";
+import { cardRank, cardValue } from "./card";
 import { isPhysicalCard } from "./card";
 import type { Card, Hand } from "./types";
 
@@ -15,8 +15,8 @@ export function handValueAtLimit(hand: Hand, bustLimit: number): number {
   let total = 0;
   let aces = 0;
   for (const card of hand.cards) {
-    total += cardValue(card.rank);
-    if (card.rank === "A") aces += 1;
+    total += cardValue(cardRank(card));
+    if (cardRank(card) === "A") aces += 1;
   }
   while (total > bustLimit && aces > 0) {
     total -= 10;

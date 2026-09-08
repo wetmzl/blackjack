@@ -32,7 +32,7 @@ describe("new character mechanics", () => {
     const before = { cards: physical, cursor: 0, shuffleIndex: 1 };
     const result = resolve("w-night-queen", "opponent", { trigger: "after-hand-changed", sourceEventId: "draw", eventActor: "opponent" }, {}, { ...world(hand(createCard("spades", "2"), createCard("spades", "2"), createCard("spades", "2"), createCard("spades", "2")), hand(createCard("hearts", "Q"), createCard("hearts", "2"))) , shoe: before });
     expect(handValue(result.world.hands.opponent)).toBe(21);
-    expect(result.world.hands.opponent.cards.at(-1)?.origin).toBe("derived");
+    expect(result.world.hands.opponent.cards.at(-1)?.attributes.source).toBe("derived");
     expect(result.world.shoe).toBe(before);
   });
 
@@ -61,7 +61,7 @@ describe("new character mechanics", () => {
       const target = first.world.hands[owner];
       expect(first.triggered).toHaveLength(1);
       expect(handValue(target)).toBe(21);
-      expect(target.cards.at(-1)?.origin).toBe("derived");
+      expect(target.cards.at(-1)?.attributes.source).toBe("derived");
       expect(first.runtime.rng).toEqual(second.runtime.rng);
       expect(target.cards.at(-1)).toEqual(second.world.hands[owner].cards.at(-1));
     }

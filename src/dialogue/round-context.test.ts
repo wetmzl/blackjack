@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createCard } from "../core/blackjack/card";
 import { createMatch } from "../core/match/reducer";
-import type { Card } from "../core/blackjack/types";
+import type { Card, Rank, Suit } from "../core/blackjack/types";
 import type { GameEvent, MatchState, RoundOutcome } from "../core/match/types";
 import { roundOverrideDialogueEvent } from "./round-context";
 
-const card = (rank: Card["rank"], suit: Card["suit"] = "spades") => createCard(suit, rank);
+const card = (rank: Rank, suit: Suit = "spades") => createCard(suit, rank);
 
 function contextualState(playerCards: Card[], opponentCards: Card[], outcome: RoundOutcome): MatchState {
-  const base = createMatch(`dialogue-${playerCards.map((entry) => entry.rank).join("")}-${opponentCards.map((entry) => entry.rank).join("")}`);
+  const base = createMatch(`dialogue-${playerCards.map((entry) => entry.attributes.rank).join("")}-${opponentCards.map((entry) => entry.attributes.rank).join("")}`);
   const history: GameEvent[] = [
     { type: "ROUND_STARTED", roundIndex: 0 },
     ...playerCards.map((entry): GameEvent => ({ type: "CARD_DEALT", actor: "player", card: entry, private: true })),

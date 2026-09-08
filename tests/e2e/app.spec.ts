@@ -206,7 +206,7 @@ function hoOlheyakInfoBarMatch(suit: "hearts" | "spades" = "hearts"): MatchState
           sourceInstanceId: source.instanceId,
           stacks: 1,
           duration: "match",
-          parameters: { rank: "4", suit, origin: "shoe" },
+          parameters: { rank: "4", suit, source: "shoe" },
           createdAtSequence: dealt.abilities.sequence
         }]
       }
@@ -596,7 +596,11 @@ test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌",
   const rememberedCard = infoBar.locator(".ai-info-card");
   await expect(rememberedCard.locator("em")).toHaveText("♥");
   await expect(rememberedCard.locator("b")).toHaveText("4");
-  expect(await rememberedCard.locator(":scope > *").evaluateAll((nodes) => nodes.map((node) => node.tagName))).toEqual(["EM", "B"]);
+  const faceOrder = await rememberedCard.evaluate((card) => ({
+    suit: card.querySelector("em")!.getBoundingClientRect().x,
+    rank: card.querySelector("b")!.getBoundingClientRect().x
+  }));
+  expect(faceOrder.suit).toBeLessThan(faceOrder.rank);
   const appearance = await rememberedCard.evaluate((element) => {
     const style = getComputedStyle(element);
     const suit = getComputedStyle(element.querySelector("em")!);
@@ -673,6 +677,51 @@ test("早有准备提供一次主动抽卡且单击候选立即确认", async ({
   await expect(page.locator("#skill-gain-announcement")).toHaveCount(0);
   const abilityNotices = page.locator("#ability-notices");
   if (await abilityNotices.count()) expect(await abilityNotices.textContent()).not.toContain("获得技能牌");
+});
+
+test("教程底部细条走满十秒后自动渐隐并完成教程", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-08-30T00:00:00.000Z") });
+  await page.goto("/");
+  await installRuntimeSave(page, earlyPreparationDrawMatch());
+
+  const tutorial = page.locator("#tutorial-popover");
+  const progress = tutorial.locator(".tutorial-auto-progress");
+  await expect(tutorial).toBeVisible();
+  await expect(progress).toHaveCount(1);
+  const progressStyle = await progress.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { height: style.height, border: style.borderStyle, background: style.backgroundImage, duration: style.animationDuration };
+  });
+  expect(progressStyle.height).toBe("2px");
+  expect(progressStyle.border).toBe("none");
+  expect(progressStyle.background).toContain("linear-gradient");
+  expect(progressStyle.duration).toBe("10s");
+
+  await page.clock.runFor(10_050);
+  await expect(tutorial).toHaveClass(/is-auto-dismissing/);
+  await page.clock.runFor(500);
+  await expect(tutorial).toHaveCount(0);
+});
+
+test("点击教程非跳过区域可打断自动渐隐并停止自动跳过", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-08-30T00:00:00.000Z") });
+  await page.goto("/");
+  await installRuntimeSave(page, earlyPreparationDrawMatch());
+
+  const tutorial = page.locator("#tutorial-popover");
+  const progress = tutorial.locator(".tutorial-auto-progress");
+  await expect(tutorial).toBeVisible();
+  await page.clock.runFor(10_050);
+  await expect(tutorial).toHaveClass(/is-auto-dismissing/);
+  await tutorial.locator("p").dispatchEvent("click");
+  await expect(tutorial).not.toHaveClass(/is-auto-dismissing/);
+  await expect(tutorial).toHaveClass(/is-auto-skip-cancelled/);
+  await expect(progress).toHaveCSS("animation-play-state", "paused");
+  await page.clock.runFor(20_000);
+  await expect(tutorial).toBeVisible();
+
+  await tutorial.getByRole("button", { name: "跳过" }).click();
+  await expect(tutorial).toHaveCount(0);
 });
 
 test("技能通知按最新在上堆叠并独立过期", async ({ page }) => {
@@ -1001,7 +1050,7 @@ test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => 
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
   const source = findTurnsMatch("derived-card-visibility");
-  const opponent = { ...source.opponent, hand: { cards: [source.opponent.hand.cards[0]!, createDerivedCard("hearts", "K")] } };
+  const opponent = { ...source.opponent, hand: { cards: [source.opponent.hand.cards[0]!, createDerivedCard("hearts", "K", "e2e-hidden-derived", "e2e-fixture")] } };
   const activeMatch = { ...source, opponent, round: { ...source.round, opponent } };
   await page.goto("/");
   await openLobbySettings(page);
@@ -1009,8 +1058,8 @@ test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => 
   await installRuntimeSave(page, activeMatch);
   const hidden = page.locator(".opponent-zone .cards .card").nth(1);
   await expect(hidden).toHaveClass(/card-back/);
-  await expect(hidden).toHaveAttribute("data-card-origin", "derived");
-  await expect(hidden).toHaveAttribute("aria-label", "暗牌");
+  await expect(hidden).toHaveAttribute("data-card-source", "derived");
+  await expect(hidden).toHaveAttribute("aria-label", "牌背，衍生牌");
   await expect(hidden).not.toContainText("K");
   await expect(hidden).not.toContainText("♥");
 });
@@ -1103,14 +1152,14 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   const catalog = page.locator("#skill-catalog");
   await expect(catalog).toBeVisible();
   await expect(catalog.locator(".skill-catalog-group")).toHaveCount(4);
-  await expect(catalog.locator(".loadout-skill")).toHaveCount(7);
+  await expect(catalog.locator(".loadout-skill")).toHaveCount(14);
   await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(0);
-  await expect(catalog.locator('[data-primary-skill-tag="gambler"] .loadout-skill')).toHaveCount(2);
-  await expect(catalog.locator('[data-primary-skill-tag="cheater"] .loadout-skill')).toHaveCount(1);
+  await expect(catalog.locator('[data-primary-skill-tag="gambler"] .loadout-skill')).toHaveCount(6);
+  await expect(catalog.locator('[data-primary-skill-tag="cheater"] .loadout-skill')).toHaveCount(4);
   await expect(catalog.locator('[data-primary-skill-tag="intelligence-officer"] .loadout-skill')).toHaveCount(2);
   await expect(catalog.locator('[data-primary-skill-tag="gunslinger"] .loadout-skill')).toHaveCount(2);
   for (const group of await catalog.locator(".skill-catalog-group").all()) await group.locator(":scope > summary").click();
-  await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(7);
+  await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(14);
   await expect(catalog).not.toContainText("罗德岛万人迷");
   await expect(catalog.locator(".profile-ability[open]")).toHaveCount(0);
   await catalog.locator(".profile-ability").first().locator("summary").click();
@@ -1168,8 +1217,10 @@ test("技能流派最多选择两个并持久化，天赋按击败进度解锁",
   await expect(skills.locator(".skill-tag-card img")).toHaveCount(4);
   await expect(skills.locator("[data-skill-tag-info]")).toHaveCount(4);
   expect(await skills.locator(".skill-tag-grid").evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(/\s+/).filter(Boolean).length)).toBe(2);
+  await expect(skills.locator(".skill-tag-card img").nth(0)).toHaveAttribute("src", "/assets/skills/archetype-gambler.png");
   await tags.nth(0).click();
   await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await expect(skills.locator(".skill-tag-card img").nth(0)).toHaveAttribute("src", "/assets/skills/archetype-gambler-selected.png");
   await skills.getByRole("button", { name: "查看老千流派说明" }).click();
   const tagInfo = page.locator("#skill-tag-info-dialog");
   await expect(tagInfo).toBeVisible();
@@ -1184,6 +1235,7 @@ test("技能流派最多选择两个并持久化，天赋按击败进度解锁",
   await tags.nth(2).click();
   await expect(skills.locator("#skill-management-status")).toContainText("最多选择两个流派");
   await tags.nth(0).click();
+  await expect(skills.locator(".skill-tag-card img").nth(0)).toHaveAttribute("src", "/assets/skills/archetype-gambler.png");
   await tags.nth(2).click();
   await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "false");
   await expect(tags.nth(2)).toHaveAttribute("aria-pressed", "true");
@@ -1193,6 +1245,8 @@ test("技能流派最多选择两个并持久化，天赋按击败进度解锁",
   await page.getByRole("button", { name: "技能与天赋" }).click();
   await expect(skills.locator("[data-skill-tag]").nth(1)).toHaveAttribute("aria-pressed", "true");
   await expect(skills.locator("[data-skill-tag]").nth(2)).toHaveAttribute("aria-pressed", "true");
+  await expect(skills.locator(".skill-tag-card img").nth(1)).toHaveAttribute("src", "/assets/skills/archetype-cheater-selected.png");
+  await expect(skills.locator(".skill-tag-card img").nth(2)).toHaveAttribute("src", "/assets/skills/archetype-intelligence-officer-selected.png");
   await skills.getByRole("tab", { name: "天赋" }).click();
   await expect(skills.locator(".talent-checkpoint")).toHaveCount(5);
   await expect(skills.locator(".talent-placeholder")).toHaveCount(4);
@@ -1526,11 +1580,11 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 });
 
-test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => {
+test("闻香识女人只在本轮显示对手当前所有暗牌花色", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const source = findTurnsMatch("scent-ui");
   const player = { ...source.player, hand: createHand([createCard("spades", "10"), createCard("clubs", "6")]) };
-  const opponent = { ...source.opponent, hand: createHand([createCard("clubs", "10"), createCard("hearts", "6")]), stood: true, busted: false };
+  const opponent = { ...source.opponent, hand: createHand([createCard("clubs", "10"), createCard("spades", "2"), createCard("diamonds", "4")]), stood: true, busted: false };
   const scentCard = { kind: "player-skill" as const, definitionId: "scent-of-a-woman", owner: "player" as const, instanceId: "scent-ui-card" };
   const sequence = source.abilities.sequence + 1;
   const activeMatch: MatchState = {
@@ -1548,16 +1602,63 @@ test("闻香识女人只在本轮显示对手暗牌花色", async ({ page }) => 
   const scentButton = page.locator(".skill-sidebar button.skill-card").filter({ hasText: "闻香识女人" });
   await expect(scentButton).toBeVisible();
   await scentButton.click();
-  const hidden = page.locator(".opponent-zone .card-back").first();
-  await expect(hidden).toHaveAttribute("aria-label", /花色红桃/);
-  await expect(hidden).not.toContainText("6");
-  await expect(page.locator("#ability-notices .ability-notice-player")).toContainText("策展人发动「闻香识女人」：对手暗牌花色为红桃");
+  const hidden = page.locator(".opponent-zone .card-back");
+  await expect(hidden).toHaveCount(2);
+  await expect(hidden.nth(0)).toHaveAttribute("aria-label", /花色黑桃/);
+  await expect(hidden.nth(1)).toHaveAttribute("aria-label", /花色方块/);
+  await expect(hidden.locator(".card-suit")).toHaveCount(2);
+  await expect(hidden.locator(".card-rank")).toHaveCount(0);
+  await expect(hidden.locator(".card-back-emblem")).toHaveCount(0);
+  await expect(hidden.nth(0).locator(".card-suit")).toHaveCSS("color", "rgb(21, 26, 30)");
+  await expect(hidden.nth(0).locator(".card-suit")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const cardAppearance = await page.locator(".opponent-zone").evaluate((zone) => {
+    const front = zone.querySelector<HTMLElement>(".card-front");
+    const back = zone.querySelector<HTMLElement>(".card-back");
+    const frontSuit = front?.querySelector<HTMLElement>(".card-suit");
+    const backSuit = back?.querySelector<HTMLElement>(".card-suit");
+    if (!front || !back || !frontSuit || !backSuit) throw new Error("Card suit fixture is incomplete");
+    const frontStyle = getComputedStyle(frontSuit);
+    const backStyle = getComputedStyle(backSuit);
+    return {
+      frontRight: frontStyle.right,
+      backRight: backStyle.right,
+      frontBottom: frontStyle.bottom,
+      backBottom: backStyle.bottom,
+      strokeColor: backStyle.webkitTextStrokeColor,
+      strokeWidth: backStyle.webkitTextStrokeWidth
+    };
+  });
+  expect(cardAppearance.frontRight).toBe("6px");
+  expect(cardAppearance.backRight).toBe(cardAppearance.frontRight);
+  expect(cardAppearance.frontBottom).toBe("6px");
+  expect(cardAppearance.backBottom).toBe(cardAppearance.frontBottom);
+  expect(cardAppearance.strokeColor).toBe("rgb(201, 155, 67)");
+  expect(Number.parseFloat(cardAppearance.strokeWidth)).toBeGreaterThan(0);
+  const rankOnlyAppearance = await hidden.nth(0).evaluate((card) => {
+    const probe = card.cloneNode(true) as HTMLElement;
+    probe.classList.remove("card-suit-visible");
+    probe.classList.add("card-rank-visible");
+    probe.querySelector(".card-suit")?.remove();
+    const rank = document.createElement("b");
+    rank.className = "card-rank";
+    rank.textContent = "K";
+    probe.querySelector(".card-surface")?.append(rank);
+    probe.style.position = "fixed";
+    probe.style.left = "-100px";
+    document.body.append(probe);
+    const style = getComputedStyle(rank);
+    const appearance = { color: style.color, strokeColor: style.webkitTextStrokeColor };
+    probe.remove();
+    return appearance;
+  });
+  expect(rankOnlyAppearance).toEqual({ color: "rgb(255, 255, 255)", strokeColor: "rgb(201, 155, 67)" });
+  await expect(page.locator("#ability-notices .ability-notice-player")).toContainText("策展人发动「闻香识女人」：对手当前所有手牌花色为梅花、黑桃、方块");
   await expect(page.locator("#presentation")).not.toContainText("闻香识女人");
   await page.getByRole("button", { name: /Stand 停牌/ }).click();
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "round-reveal");
   await page.getByRole("button", { name: "确认结果" }).click();
   await expect(page.locator("main.table-shell")).toHaveAttribute("data-phase", "turns");
-  await expect(page.locator(".opponent-zone .card-back").first()).not.toHaveClass(/revealed-suit/);
+  await expect(page.locator(".opponent-zone .card-back .card-suit")).toHaveCount(0);
 });
 
 test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给出短暂警告", async ({ page }) => {
