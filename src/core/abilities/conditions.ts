@@ -38,6 +38,7 @@ export function resolveScalar(value: ScalarValue, context: ConditionContext): nu
   if (numeric.type === "round-final-score") return context.event.roundOutcome?.comparisonScores?.[actor] ?? handTotal(context.world.hands[actor]);
   if (numeric.type === "hand-card-count") return handCardCount(context.world.hands[actor]);
   if (numeric.type === "hand-card-color-count") return context.world.hands[actor].cards.filter((card) => (cardSuit(card) === "hearts" || cardSuit(card) === "diamonds") === (numeric.color === "red")).length;
+  if (numeric.type === "hand-card-suit-count") return context.world.hands[actor].cards.filter((card) => cardSuit(card) === numeric.suit).length;
   if (numeric.type === "event-hand-card-count") return context.event.initialHandCardCounts?.[actor] ?? handCardCount(context.world.hands[actor]);
   if (numeric.type === "status-stacks") return context.world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === numeric.statusDefinitionId)?.stacks ?? 0;
   return context.event.roundHitCounts?.[actor] ?? 0;

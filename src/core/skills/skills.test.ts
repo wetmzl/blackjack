@@ -40,8 +40,12 @@ describe("separate ability domains", () => {
     expect(Object.fromEntries(PLAYER_SKILL_ABILITY_DEFINITIONS.map((definition) => [definition.id, definition.skillTags]))).toEqual({
       "blueberry-and-dark-chocolate": ["gambler"],
       "forge-heralds-the-year": ["gunslinger"],
+      "heart-hunter": ["gunslinger"],
       "hunter-instinct": ["intelligence-officer"],
+      "live-ammunition-bet": ["gunslinger"],
+      "critical-judgment": ["intelligence-officer"],
       "night-queen": ["gambler"],
+      "prepaid-premium": ["gunslinger"],
       "rhodes-heartthrob": ["gunslinger"],
       "scent-of-a-woman": ["intelligence-officer"],
       switcheroo: ["cheater"],
@@ -49,6 +53,7 @@ describe("separate ability domains", () => {
       "compound-interest": ["gambler"],
       "counterclockwise-clock": ["gambler"],
       "sissas-table": ["gambler"],
+      "situation-assessment": ["intelligence-officer"],
       "a-single-coin": ["gambler"],
       "mimic-eggplant": ["cheater"],
       carnival: ["cheater"],
@@ -61,10 +66,15 @@ describe("separate ability domains", () => {
   });
 
   it("requires classified, tagged Player and AI Skills", () => {
-    expect([...PLAYER_SKILL_ABILITY_DEFINITIONS, ...AI_SKILL_ABILITY_DEFINITIONS].every((definition) =>
-      definition.primaryDomain && definition.tags.length > 0 && new Set(definition.tags).size === definition.tags.length
+    const domains = new Set(["gambler", "cheater", "intelligence-officer", "gunslinger"]);
+    expect(ABILITY_DEFINITIONS.every((definition) =>
+      domains.has(definition.primaryDomain) && definition.tags.length > 0 && new Set(definition.tags).size === definition.tags.length
     )).toBe(true);
-    expect(INITIAL_PLAYER_SKILL_IDS).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
+    expect(PLAYER_SKILL_ABILITY_DEFINITIONS.every((definition) => definition.primaryDomain === definition.skillTags[0])).toBe(true);
+    const skill = getAbilityDefinition("hunter-instinct")!;
+    expect(AbilityDefinitionSchema.safeParse({ ...skill, primaryDomain: "information" }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...skill, primaryDomain: "gambler" }).success).toBe(false);
+    expect(INITIAL_PLAYER_SKILL_IDS).toEqual(["hunter-instinct", "critical-judgment", "situation-assessment", "live-ammunition-bet", "prepaid-premium", "heart-hunter", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
   });
 });
 
@@ -119,8 +129,8 @@ describe("skill draw weighted candidates", () => {
     expect(first.offer.candidateDefinitionIds.every((id) => unlocked.includes(id))).toBe(true);
     expect(first.offer.candidateDefinitionIds).not.toContain("rhodes-heartthrob");
     expect(first).toEqual(generateSkillDrawOffer(createRng("weighted-offer"), unlocked, ["hunter-instinct"]));
-    const activeRepeat = generateSkillDrawOffer(createRng("held-active"), ["hunter-instinct", "switcheroo", "scent-of-a-woman"], ["hunter-instinct"]);
-    expect(activeRepeat.offer.candidateDefinitionIds).toContain("hunter-instinct");
+    const activeRepeat = generateSkillDrawOffer(createRng("held-active"), ["critical-judgment", "switcheroo", "scent-of-a-woman"], ["critical-judgment"]);
+    expect(activeRepeat.offer.candidateDefinitionIds).toContain("critical-judgment");
   });
 
   it("excludes a held non-stackable passive but allows it before acquisition", () => {

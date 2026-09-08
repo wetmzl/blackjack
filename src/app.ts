@@ -217,6 +217,13 @@ function revealedOpponentCardIds(state: MatchState): ReadonlySet<string> {
     .filter((entry) => entry.type === "CARD_SUIT_REVEALED" && entry.viewer === "player" && entry.target === "opponent")
     .map((entry) => entry.type === "CARD_SUIT_REVEALED" ? entry.cardId : ""));
 }
+function revealedDrawPileCardIds(state: MatchState): ReadonlySet<string> {
+  let start = -1;
+  state.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") start = index; });
+  return new Set(state.history.slice(start + 1)
+    .filter((entry) => entry.type === "DRAW_PILE_CARD_SUIT_REVEALED" && entry.viewer === "player")
+    .map((entry) => entry.type === "DRAW_PILE_CARD_SUIT_REVEALED" ? entry.cardId : ""));
+}
 function gunStatusMarkup(label: string, bullets: number, capacity: number): string {
   const chambers = Array.from({ length: capacity }, (_, index) => `<i class="${index < bullets ? "loaded" : ""}" aria-hidden="true"></i>`).join("");
   return `<div class="gun-status-row" aria-label="${escapeHtml(label)}：${capacity} 个弹巢，已装填 ${bullets} 发"><span class="gun-icon"><img src="/assets/characters/staff-revolver-7mm.png" alt="" aria-hidden="true"></span><span class="gun-name">${escapeHtml(label)}</span><span class="gun-chambers">${chambers}</span></div>`;
@@ -347,7 +354,7 @@ const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
   PARTICIPANT_KILLED: "参与者倒下", SKILL_GAINED: "获得技能", MATCH_FINISHED: "对局结束",
   SKILL_DRAWS_ADDED: "获得抽卡次数", SKILL_DRAW_OPENED: "生成技能候选", SKILL_DRAW_RESOLVED: "完成技能抽取",
   MATCH_ESCAPED: "策展人离席", MATCH_RESULT_ACKNOWLEDGED: "已确认最终结果", AI_DECISION: "对手完成决策",
-  CARD_SUIT_REVEALED: "识破暗牌花色", ABILITY_RESULT: "能力结果"
+  CARD_SUIT_REVEALED: "识破暗牌花色", DRAW_PILE_CARD_SUIT_REVEALED: "识破牌堆顶花色", ABILITY_RESULT: "能力结果"
 };
 function decisionLabel(action: "hit" | "stand" | undefined): string { return action === "hit" ? "Hit 要牌" : action === "stand" ? "Stand 停牌" : "—"; }
 function displayedHandValueMarkup(baseScore: number | "?", modifier: number): string {
@@ -1264,10 +1271,12 @@ function renderMatch(state: MatchState): void {
   const gunStatuses = `<section class="roulette-status" aria-label="轮盘弹巢状态">${gunStatusMarkup(character.name, state.roulette.opponent.bullets, state.roulette.opponent.capacity)}${gunStatusMarkup("策展人", state.roulette.player.bullets, state.roulette.player.capacity)}</section>`;
   const shoeRemaining = Math.max(0, state.shoe.cards.length - state.shoe.cursor);
   const nextShoeCard = state.shoe.cards[state.shoe.cursor];
+  const nextShoeSuitVisible = Boolean(nextShoeCard && revealedDrawPileCardIds(state).has(nextShoeCard.id));
   const shoeCard = nextShoeCard
-    ? cardDisplayMarkup(describeCard(nextShoeCard, { surface: "back", showRank: false, showSuit: false, variant: "compact" }))
+    ? cardDisplayMarkup(describeCard(nextShoeCard, { surface: "back", showRank: false, showSuit: nextShoeSuitVisible, variant: "compact" }))
     : `<span class="shoe-status-empty" aria-hidden="true">—</span>`;
-  const shoeStatus = `<section class="shoe-status" aria-label="牌库：${nextShoeCard ? "下一张牌的点数与花色未知" : "没有下一张牌"}，剩余 ${shoeRemaining} 张"><span class="shoe-status-label">牌库</span><span class="shoe-status-next"><span class="shoe-status-next-label">next：</span>${shoeCard}</span><button class="shoe-info-button" type="button" data-shoe-info aria-label="查看牌库说明">i</button></section>`;
+  const shoeKnowledge = nextShoeCard ? `下一张牌点数未知，花色${nextShoeSuitVisible ? `为${suitPresentation(cardSuit(nextShoeCard)).label}` : "未知"}` : "没有下一张牌";
+  const shoeStatus = `<section class="shoe-status" aria-label="牌库：${shoeKnowledge}，剩余 ${shoeRemaining} 张"><span class="shoe-status-label">牌库</span><span class="shoe-status-next"><span class="shoe-status-next-label">next：</span>${shoeCard}</span><button class="shoe-info-button" type="button" data-shoe-info aria-label="查看牌库说明">i</button></section>`;
   const shoeInfoDialog = `<dialog id="shoe-info-dialog" class="modal shoe-info-modal" aria-labelledby="shoe-info-title"><button class="modal-close" type="button" data-shoe-info-close aria-label="关闭牌库说明">×</button><p class="eyebrow">牌桌 // 公共牌堆</p><h2 id="shoe-info-title">牌库</h2><p class="shoe-info-copy">UI中的next指的是下一次hit后发出的牌，你可以用各种手段尝试揭开它的面纱。<strong>牌堆总大小</strong>为52张扑克牌（即不带大小王的一副扑克牌）。开局时洗匀整副牌，此后每轮开始前，在牌堆剩余少于 12 张时，从弃牌堆回收所有牌，并重新洗匀。</p></dialog>`;
   const resolvedInfoBarValue = resolveCharacterInfoBarValue(character, state);
   const infoBar = characterInfoBarMarkup(character, resolvedInfoBarValue);
@@ -1277,7 +1286,7 @@ function renderMatch(state: MatchState): void {
     const skill = getPlayerSkillDefinition(id);
     if (!skill) return "";
     const action = { type: "SELECT_SKILL_DRAW" as const, definitionId: id };
-    return `<span class="skill-draw-tile"><button type="button" class="skill-draw-card" data-action='${JSON.stringify(action)}'><span>${skill.category === "active" ? "主动" : "被动"}</span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(skill.primaryDomain)}</small></button><button class="skill-info draw-skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
+    return `<span class="skill-draw-tile"><button type="button" class="skill-draw-card" data-action='${JSON.stringify(action)}'><span>${skill.category === "active" ? "主动" : "被动"}</span><strong>${escapeHtml(skill.name)}</strong><small>${escapeHtml(SKILL_TAG_METADATA[skill.primaryDomain].label)}</small></button><button class="skill-info draw-skill-info" type="button" data-skill-info="${escapeHtml(skill.id)}" aria-label="查看${escapeHtml(skill.name)}说明">i</button></span>`;
   }).join("") ?? "";
   const drawMarkup = drawOffer ? `<section class="skill-draw-backdrop is-entering"><div class="skill-draw-modal" role="dialog" aria-modal="true" aria-labelledby="skill-draw-title"><h2 id="skill-draw-title">选一张你心仪的技能卡</h2><div class="skill-draw-grid">${drawCards}</div></div></section>` : "";
   root.innerHTML = `<main class="table-shell" data-phase="${state.round.phase}"><header class="table-top"><div><span class="eyebrow">第 ${state.roundIndex + 1} 轮 // ${phaseLabel(state.round.phase)}</span><h1>命运牌桌</h1></div><div class="table-actions"><div class="table-action-row"><button class="icon-button fullscreen-button" type="button" data-fullscreen aria-label="进入全屏">⛶</button><button class="icon-button" data-action='${JSON.stringify({ type: "ESCAPE_MATCH" })}' ${legal(state, { type: "ESCAPE_MATCH" }) ? "" : "disabled"} aria-label="离开牌桌">×</button></div>${gunStatuses}${shoeStatus}${infoBar}</div></header><section class="opponent-zone"><div class="character-strip"><img class="character-portrait scaled-character-art portrait-${portraitState(state)}" style="--character-art-scale:${character.portraitScales.table}" src="${tablePortrait(state, character)}" alt="${portraitAlt(state, character)}" />${staffProp}<div><span class="eyebrow">${character.name} // ${character.tier}级</span><p class="dialogue">“<span id="dialogue-text" data-typing="false">${dialogueMarkup}</span>”</p></div></div><div class="hand-row"><span class="hand-label">${character.name} ${displayedHandValueMarkup(opponentBaseScore, opponentScoreModifier)}</span><div class="cards">${opponentCards}</div></div></section><div class="table-notice-row"><output class="bust-limit-indicator" aria-label="当前爆牌上限：${bustLimit}" data-actor="${bustLimitActor}"><span>爆牌上限</span><strong>${bustLimit}</strong></output><section class="round-notice"><div id="presentation" class="presentation" data-default="${escapeHtml(notice)}" role="status" aria-live="polite">${escapeHtml(notice)}</div></section></div><section class="player-zone"><div class="player-layout"><div class="player-main"><div class="hand-row"><span class="hand-label">策展人 ${displayedHandValueMarkup(playerBaseScore, playerScoreModifier)}</span><div class="cards">${playerCards}</div></div>${advice}</div></div><div class="controls action-dock">${controls}</div></section><dialog id="skill-info-dialog" class="modal skill-info-modal" aria-labelledby="skill-info-title"><button class="modal-close" type="button" data-skill-close aria-label="关闭技能说明">×</button><p class="eyebrow" id="skill-info-kind"></p><details class="profile-ability"><summary><strong id="skill-info-title"></strong><span>：</span><span id="skill-info-description"></span></summary><p id="skill-info-lore"></p></details><p id="skill-info-usage"></p><p class="status-line" id="skill-info-status"></p></dialog>${character.infoBar ? `<dialog id="ai-info-dialog" class="modal ai-info-modal" aria-labelledby="ai-info-title"><button class="modal-close" type="button" data-ai-info-close aria-label="关闭机制信息说明">×</button><p class="eyebrow">${escapeHtml(character.name)} // 机制信息</p><h2 id="ai-info-title">${escapeHtml(character.infoBar.label)}</h2><div class="ai-info-current"><span>当前值</span><output aria-label="当前值：${escapeHtml(infoBarValueText(resolvedInfoBarValue, character.infoBar.format))}">${infoBarValueMarkup(resolvedInfoBarValue, character.infoBar.format)}</output></div><p>${escapeHtml(character.infoBar.description)}</p></dialog>` : ""}${devHud(state)}</main>${skillDrawerMarkup}${drawMarkup}`;

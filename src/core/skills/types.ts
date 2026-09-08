@@ -1,6 +1,6 @@
 import type { AbilityTtl, SkillCardInstance } from "../abilities/types";
 
-/** Closed player archetypes used only for skill-draw preferences. */
+/** The four closed ability domains and player skill-draw archetypes. */
 export type SkillTag = "gambler" | "cheater" | "intelligence-officer" | "gunslinger";
 export const SKILL_TAG_METADATA: Readonly<Record<SkillTag, { readonly label: string; readonly symbol: string; readonly summary: string }>> = Object.freeze({
   gambler: { label: "赌徒", symbol: "♠", summary: "操作自己的手牌，目标是做出更大的牌型，同时避免自己爆牌。此类技能主要作用于策展人的手牌，核心用途是提高黑杰克牌局的胜率。" },
@@ -23,9 +23,9 @@ export interface PlayerSkillDefinition {
   readonly usage: string;
   readonly category: SkillCategory;
   readonly timing: readonly SkillTiming[];
-  /** The first entry is the primary catalog group; later entries are secondary draw affinities. */
+  /** The first entry matches primaryDomain; later entries are secondary draw affinities. */
   readonly skillTags: readonly SkillTag[];
-  readonly primaryDomain: "blackjack" | "roulette" | "information" | "skill-economy" | "rule-control";
+  readonly primaryDomain: SkillTag;
   readonly tags: readonly string[];
   readonly drop: { readonly enabled: boolean; readonly baseWeight: number };
   readonly stackable: boolean;

@@ -6,7 +6,7 @@
   "triggerNotice": "获得一张衍生牌。",
   "profileLore": "第一格一粒，第二格两粒，国王在第三十二格处处死了会计。",
   "sourceKind": "player-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "tags": ["blackjack", "player-skill", "active-skill-card"],
   "skillTags": ["gambler"],
   "drop": { "enabled": true, "baseWeight": 1 },

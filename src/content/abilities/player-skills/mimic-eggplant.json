@@ -6,7 +6,7 @@
   "triggerNotice": "获得一张技能牌。",
   "profileLore": "没人知道它为什么长成这样。更没人愿意解释为什么第二天仓库里多了一模一样的东西。",
   "sourceKind": "player-skill",
-  "primaryDomain": "skill-economy",
+  "primaryDomain": "cheater",
   "tags": ["skill-economy", "player-skill", "active-skill-card"],
   "skillTags": ["cheater"],
   "drop": { "enabled": true, "baseWeight": 1 },

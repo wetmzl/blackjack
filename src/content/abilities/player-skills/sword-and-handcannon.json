@@ -5,7 +5,7 @@
   "triggerNotice": "对手本轮每次 Hit 使本次轮盘哑火概率增加33%。",
   "profileLore": "敌人多寡从来不是审判官最该担心的事。真正危险的，是某一天清理完一个怪物后，发现自己已经不再站在人群这一边。",
   "sourceKind": "player-skill",
-  "primaryDomain": "roulette",
+  "primaryDomain": "gunslinger",
   "skillTags": ["gunslinger"],
   "activation": { "type": "passive" },
   "ttl": { "type": "triggers", "amount": 3 },

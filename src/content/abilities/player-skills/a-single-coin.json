@@ -6,7 +6,7 @@
   "triggerNotice": "获得1点点数优势。",
   "profileLore": "平平无奇的一枚硬币，真的没有别的特殊之处了。",
   "sourceKind": "player-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "tags": ["blackjack", "player-skill", "active-skill-card"],
   "skillTags": ["gambler"],
   "drop": { "enabled": true, "baseWeight": 1 },

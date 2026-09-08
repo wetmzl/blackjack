@@ -50,6 +50,10 @@ function effectResultNotice(
         : `对手暗牌花色为${labels[0]}`;
     }
   }
+  if (effect.type === "reveal-draw-pile-top-suit") {
+    const revealed = [...events].reverse().find((candidate): candidate is Extract<GameEvent, { type: "DRAW_PILE_CARD_SUIT_REVEALED" }> => candidate.type === "DRAW_PILE_CARD_SUIT_REVEALED" && candidate.viewer === event.owner);
+    if (revealed) return `牌堆顶下一张牌的花色是${suitLabel(revealed.suit)}`;
+  }
   if (effect.type === "cancel-pending-trigger") return "本次免于扣扳机";
   if (effect.type === "add-to-pending-bust-limit" && after) {
     const bust = [...events].reverse().find((candidate): candidate is Extract<GameEvent, { type: "BUST" }> => candidate.type === "BUST");
@@ -76,6 +80,12 @@ function ruleNotice(
 ): string {
   if (events.some((candidate) => candidate.type === "PENDING_EVENT_CANCELLED" && candidate.sourceInstanceId === event.instanceId)) return "本次免于扣扳机";
   const results = events.filter((candidate): candidate is Extract<GameEvent, { type: "ABILITY_RESULT" }> => candidate.type === "ABILITY_RESULT" && candidate.instanceId === event.instanceId).map((candidate) => candidate.result);
+  const forecast = results.find((candidate): candidate is Extract<typeof candidate, { type: "hit-bust-forecast" }> => candidate.type === "hit-bust-forecast");
+  if (forecast) return forecast.wouldBust ? "现在 Hit 会导致爆牌。" : "现在 Hit 不会导致爆牌。";
+  const comparison = results.find((candidate): candidate is Extract<typeof candidate, { type: "hand-total-compared" }> => candidate.type === "hand-total-compared");
+  if (comparison) return comparison.relation === "equal" ? "双方当前基础点数相同。" : comparison.relation === "higher" ? "你的当前基础点数更高。" : "对手的当前基础点数更高。";
+  const gunLoad = results.find((candidate): candidate is Extract<typeof candidate, { type: "gun-bullets-added" }> => candidate.type === "gun-bullets-added");
+  if (gunLoad) return `为自己装填${gunLoad.amount}发子弹，当前弹巢共有${gunLoad.bullets}发；若本轮败北，将免于扣动扳机。`;
   const derived = results.find((candidate): candidate is Extract<typeof candidate, { type: "derived-card-added" }> => candidate.type === "derived-card-added");
   const replaced = results.find((candidate): candidate is Extract<typeof candidate, { type: "derived-card-replaced" }> => candidate.type === "derived-card-replaced");
   const statusResult = results.find((candidate): candidate is Extract<typeof candidate, { type: "status-stacks-updated" }> => candidate.type === "status-stacks-updated");

@@ -6,7 +6,7 @@
   "triggerNotice": "最后一张手牌已与牌库顶牌交换。",
   "profileLore": "尸体还是那具尸体，口袋里的证件却换了名字。于是案子很快有了一个令人满意的结论。",
   "sourceKind": "player-skill",
-  "primaryDomain": "rule-control",
+  "primaryDomain": "cheater",
   "skillTags": ["cheater"],
   "activation": {
     "type": "action",

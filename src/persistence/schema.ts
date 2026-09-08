@@ -11,7 +11,7 @@ import characterCatalog from "../content/characters/catalog.json" with { type: "
 export const LONG_TERM_SAVE_FORMAT = "house-of-chances-save" as const;
 export const RUNTIME_SAVE_FORMAT = "house-of-chances-runtime" as const;
 export const CURRENT_LONG_TERM_SCHEMA_VERSION = 9 as const;
-export const CURRENT_RUNTIME_SCHEMA_VERSION = 7 as const;
+export const CURRENT_RUNTIME_SCHEMA_VERSION = 8 as const;
 export const CURRENT_GAME_VERSION = "0.1.0" as const;
 
 const CardFaceSchema = {
@@ -106,12 +106,16 @@ const GameEventSchema = z.union([
   z.object({ type: z.literal("PENDING_EVENT_MODIFIED"), eventId: z.string().min(1), effectType: z.string().min(1), sourceInstanceId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("PENDING_EVENT_CANCELLED"), eventId: z.string().min(1), sourceInstanceId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("CARD_SUIT_REVEALED"), viewer: z.enum(["player", "opponent"]), target: z.enum(["player", "opponent"]), cardId: z.string().min(1), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
+  z.object({ type: z.literal("DRAW_PILE_CARD_SUIT_REVEALED"), viewer: z.enum(["player", "opponent"]), cardId: z.string().min(1), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
   z.object({ type: z.literal("ABILITY_RESULT"), instanceId: z.string().min(1), definitionId: z.string().min(1), owner: z.enum(["player", "opponent"]), result: z.union([
     z.object({ type: z.literal("derived-card-added"), actor: z.enum(["player", "opponent"]), rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
     z.object({ type: z.literal("derived-card-replaced"), actor: z.enum(["player", "opponent"]), oldRank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]), rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]), suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(),
     z.object({ type: z.literal("status-stacks-updated"), actor: z.enum(["player", "opponent"]), statusDefinitionId: z.string().min(1), stacks: z.number().int().min(0), delta: z.number().int() }).strict(),
     z.object({ type: z.literal("skill-card-granted"), definitionId: z.string().min(1) }).strict(),
-    z.object({ type: z.literal("draw-pile-rotated") }).strict()
+    z.object({ type: z.literal("draw-pile-rotated") }).strict(),
+    z.object({ type: z.literal("hit-bust-forecast"), actor: z.enum(["player", "opponent"]), wouldBust: z.boolean() }).strict(),
+    z.object({ type: z.literal("hand-total-compared"), actor: z.enum(["player", "opponent"]), relation: z.enum(["higher", "equal", "lower"]) }).strict(),
+    z.object({ type: z.literal("gun-bullets-added"), actor: z.enum(["player", "opponent"]), amount: z.number().int().min(0), bullets: z.number().int().min(0) }).strict()
   ]) }).strict(),
   z.object({ type: z.literal("ROUND_STARTED"), roundIndex: z.number().int().min(0) }).strict(),
   z.object({ type: z.literal("CARD_DEALT"), actor: z.enum(["player", "opponent"]), card: CardSchema, private: z.boolean() }).strict(),

@@ -6,7 +6,7 @@
   "triggerNotice": "最后一张手牌A被替换为B。",
   "profileLore": "它每天都准两次，剩下的时候，则由使用者负责配合。",
   "sourceKind": "player-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "tags": ["blackjack", "player-skill", "active-skill-card"],
   "skillTags": ["gambler"],
   "drop": { "enabled": true, "baseWeight": 1 },

@@ -6,7 +6,7 @@
   "triggerNotice": "本轮公共爆牌上限提高至X点。",
   "profileLore": "规章第五版删去了“禁止擅自修改规章”这一条。修改人对此深表满意。",
   "sourceKind": "player-skill",
-  "primaryDomain": "rule-control",
+  "primaryDomain": "cheater",
   "tags": ["rule-control", "player-skill", "active-skill-card"],
   "skillTags": ["cheater"],
   "drop": { "enabled": true, "baseWeight": 1 },

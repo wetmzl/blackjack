@@ -107,6 +107,19 @@ describe("runtime save schema and validation", () => {
     expect(imported.activeMatch.history.at(-1)).toEqual(withReveal.history.at(-1));
   });
 
+  it("round-trips intelligence reports and direct gun-load results", () => {
+    const match = createMatch("new-player-skill-events");
+    const events = [
+      { type: "DRAW_PILE_CARD_SUIT_REVEALED" as const, viewer: "player" as const, cardId: match.shoe.cards[match.shoe.cursor]!.id, suit: "clubs" as const },
+      { type: "ABILITY_RESULT" as const, instanceId: "judgment", definitionId: "critical-judgment", owner: "player" as const, result: { type: "hit-bust-forecast" as const, actor: "player" as const, wouldBust: true } },
+      { type: "ABILITY_RESULT" as const, instanceId: "assessment", definitionId: "situation-assessment", owner: "player" as const, result: { type: "hand-total-compared" as const, actor: "player" as const, relation: "higher" as const } },
+      { type: "ABILITY_RESULT" as const, instanceId: "premium", definitionId: "prepaid-premium", owner: "player" as const, result: { type: "gun-bullets-added" as const, actor: "player" as const, amount: 1, bullets: 1 } }
+    ];
+    const withEvents = { ...match, history: [...match.history, ...events] };
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(withEvents, NOW))) as unknown);
+    expect(imported.activeMatch.history.slice(-events.length)).toEqual(events);
+  });
+
   it("round-trips an open skill draw without changing the player turn", () => {
     let match = createMatch("open-skill-draw-save");
     match = { ...match, round: { ...match.round, phase: "turns", currentActor: "player", outcome: null }, playerSkills: { ...match.playerSkills, drawCount: 1 } };
@@ -280,7 +293,7 @@ describe("boot and repositories", () => {
     expect(reset.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
-    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
+    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "critical-judgment", "situation-assessment", "live-ammunition-bet", "prepaid-premium", "heart-hunter", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
     expect(reset.profile.selectedSkillTags).toEqual([]);
     expect(reset.history).toEqual([]);
     expect(reset.defeats).toEqual([]);

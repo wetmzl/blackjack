@@ -6,7 +6,7 @@
   "triggerNotice": "获得一张X点衍生牌。",
   "profileLore": "赌场从不创造价值，它只是很擅长把同一笔钱登记一次，两次，无数次，直到把客人变成抵债物。",
   "sourceKind": "player-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "tags": ["blackjack", "player-skill", "active-skill-card"],
   "skillTags": ["gambler"],
   "drop": { "enabled": true, "baseWeight": 1 },

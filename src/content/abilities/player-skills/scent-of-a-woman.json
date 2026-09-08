@@ -6,7 +6,7 @@
   "triggerNotice": "揭示对手当前所有手牌的花色。",
   "profileLore": "她们一个接一个地来，又一个接一个地没能离开。多年以后，香水、火药与血腥味混在一起，成了这里最稳定的气味。",
   "sourceKind": "player-skill",
-  "primaryDomain": "information",
+  "primaryDomain": "intelligence-officer",
   "skillTags": ["intelligence-officer"],
   "activation": {
     "type": "action",

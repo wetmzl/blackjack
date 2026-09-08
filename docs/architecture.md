@@ -77,7 +77,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 `src/core/skills/` 负责 Player Skill 投影、解锁集合、10 张卡牌容量和确定性加权无放回抽取。候选读取建局时保存的全部已解锁 Player Skill，不读取大厅装备状态。候选数固定为 3；抽卡次数、库存空位和选择合法性都由核心逻辑决定，UI 只提交 `OPEN_SKILL_DRAW` 与 `SELECT_SKILL_DRAW` Action。
 
-权重和规则修正是能力 Definition 的通用扩展点。Player Skill 以封闭 `skillTags`（gambler/cheater/intelligence-officer/gunslinger）声明流派；长期档快照的至多两个偏好流派在建局时写入 `MatchState.playerSkills`，匹配任一流派统一乘 4。活动 Definition 的 modifier 也只匹配 `skillTags`，所有其他命中因子继续累乘；`primaryDomain` 与开放式 `tags` 不进入流派权重空间。候选生成只依赖可保存的 loot RNG，不写具体技能或角色 ID。
+权重和规则修正是能力 Definition 的通用扩展点。`primaryDomain` 封闭为 gambler/cheater/intelligence-officer/gunslinger 四个基础领域；Player Skill 的 `skillTags` 首项必须与其一致，后续项可声明次要抽取亲和。长期档快照的至多两个偏好流派在建局时写入 `MatchState.playerSkills`，匹配任一 `skillTags` 统一乘 4。活动 Definition 的 modifier 也只匹配 `skillTags`，所有其他命中因子继续累乘；开放式 `tags` 不进入流派权重空间。候选生成只依赖可保存的 loot RNG，不写具体技能或角色 ID。
 
 ## 能力底座
 

@@ -7,7 +7,7 @@
   "profileLore": "她把一场必然的惩罚说成漫不经心的邀请，连火药味也像被笑声吹散。",
   "hidden": true,
   "sourceKind": "player-skill",
-  "primaryDomain": "roulette",
+  "primaryDomain": "gunslinger",
   "skillTags": ["gunslinger"],
   "activation": {
     "type": "action",

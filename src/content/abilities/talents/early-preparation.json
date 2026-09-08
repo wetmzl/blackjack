@@ -6,7 +6,7 @@
   "triggerNotice": "获得 1 次抽卡次数。",
   "profileLore": "既然设宴待客，礼数自然不能少，你是否想好了应该如何招待远道而来的客人？",
   "sourceKind": "talent",
-  "primaryDomain": "skill-economy",
+  "primaryDomain": "cheater",
   "unlock": { "type": "defeat-count", "count": 1, "label": "击败 1 名角色" },
   "activation": { "type": "passive" },
   "rules": [

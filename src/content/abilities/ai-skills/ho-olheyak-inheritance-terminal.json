@@ -5,7 +5,7 @@
   "triggerNotice": "以记忆牌替换本次抽牌；若未爆牌，立即 Stand。",
   "profileLore": "她把上一轮的最后一张牌收进羽翼的阴影，等到命运再次把她推向死线时，才让那段已经结束的结果重新落回桌面。",
   "sourceKind": "ai-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "activation": { "type": "automatic" },
   "rules": [
     {

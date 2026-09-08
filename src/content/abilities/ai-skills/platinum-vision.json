@@ -5,7 +5,7 @@
   "triggerNotice": "白金获得1点点数优势。",
   "profileLore": "她曾经用视线丈量过无数目标与射界。现在，她只需要看清策展人什么时候会停手，以及自己还能把这份优势留多久。",
   "sourceKind": "ai-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "activation": { "type": "automatic" },
   "ttl": { "type": "rounds", "amount": 9999 },
   "rules": [

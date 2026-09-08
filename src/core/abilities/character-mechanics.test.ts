@@ -244,13 +244,13 @@ describe("new character mechanics", () => {
 
   it("strictly rejects extra fields on new primitives and keeps impossible derived effects atomic", () => {
     const base = {
-      id: "strict-new-primitive", name: "strict", description: "strict", sourceKind: "ai-skill", primaryDomain: "rule-control",
+      id: "strict-new-primitive", name: "strict", description: "strict", sourceKind: "ai-skill", primaryDomain: "cheater",
       activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "rule", trigger: "after-hand-changed", conditions: [{ type: "hand-all-color", target: "owner", color: "red" }], effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }]
     } as const;
     expect(AbilityDefinitionSchema.safeParse(base).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ ...base.rules[0].conditions[0], extra: true }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ ...base.rules[0].effects[0], extra: true }] }] }).success).toBe(false);
-    const impossible = { id: "atomic-derived", name: "atomic", description: "atomic", sourceKind: "ai-skill", primaryDomain: "rule-control", activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "derive", trigger: "after-hand-changed", effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }] } as const;
+    const impossible = { id: "atomic-derived", name: "atomic", description: "atomic", sourceKind: "ai-skill", primaryDomain: "cheater", activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "derive", trigger: "after-hand-changed", effects: [{ type: "add-derived-card-for-exact-total", target: "owner", total: 21 }] }] } as const;
     const registry = createAbilityRegistry([impossible]);
     const initialWorld = world(hand(createCard("spades", "K"), createCard("hearts", "K"), createCard("clubs", "K")));
     const runtime = { ...createAbilityRuntime(createRng("atomic").snapshot()), instances: [instance("atomic-derived")] };

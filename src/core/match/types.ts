@@ -68,11 +68,15 @@ export type GameEvent =
   | { readonly type: "PENDING_EVENT_MODIFIED"; readonly eventId: string; readonly effectType: string; readonly sourceInstanceId: string }
   | { readonly type: "PENDING_EVENT_CANCELLED"; readonly eventId: string; readonly sourceInstanceId: string }
   | { readonly type: "CARD_SUIT_REVEALED"; readonly viewer: Actor; readonly target: Actor; readonly cardId: string; readonly suit: Suit }
+  | { readonly type: "DRAW_PILE_CARD_SUIT_REVEALED"; readonly viewer: Actor; readonly cardId: string; readonly suit: Suit }
   | { readonly type: "ABILITY_RESULT"; readonly instanceId: string; readonly definitionId: string; readonly owner: Actor; readonly result:
       | { readonly type: "derived-card-added"; readonly actor: Actor; readonly rank: Rank; readonly suit: Suit }
       | { readonly type: "derived-card-replaced"; readonly actor: Actor; readonly oldRank: Rank; readonly rank: Rank; readonly suit: Suit }
       | { readonly type: "status-stacks-updated"; readonly actor: Actor; readonly statusDefinitionId: string; readonly stacks: number; readonly delta: number }
       | { readonly type: "skill-card-granted"; readonly definitionId: string }
+      | { readonly type: "hit-bust-forecast"; readonly actor: Actor; readonly wouldBust: boolean }
+      | { readonly type: "hand-total-compared"; readonly actor: Actor; readonly relation: "higher" | "equal" | "lower" }
+      | { readonly type: "gun-bullets-added"; readonly actor: Actor; readonly amount: number; readonly bullets: number }
       | { readonly type: "draw-pile-rotated" } }
   | { readonly type: "ROUND_STARTED"; readonly roundIndex: number }
   | { readonly type: "CARD_DEALT"; readonly actor: Actor; readonly card: Card; readonly private: boolean }

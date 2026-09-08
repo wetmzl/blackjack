@@ -5,7 +5,7 @@
   "triggerNotice": "场上每张红色牌使年获得1点点数优势。",
   "profileLore": "炉火不挑矿石，牌桌也不挑颜色。红色越多，她烧得越旺，连胜负的刻度都得替她让路。",
   "sourceKind": "ai-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "activation": { "type": "automatic" },
   "ttl": { "type": "rounds", "amount": 9999 },
   "rules": [

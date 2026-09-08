@@ -1,6 +1,6 @@
 import type { SeededRng } from "../rng/seeded";
-import { addToPendingLoad, multiplyPendingLoad } from "./roulette-adapter";
-import { createDerivedCardForExactTotal, drawExactResultingTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
+import { addGunBullets, addToPendingLoad, multiplyPendingLoad, setPendingLoad } from "./roulette-adapter";
+import { createDerivedCardForExactTotal, drawExactResultingTotal, handTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
 import { addCardTag, cardRank, cardSource, cardSuit, createDerivedCard, createDerivedCardId, removeCardTag } from "../blackjack/card";
 import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
 import { getAbilityDefinition, getStatusDefinition, instantiateAbility, type AbilityRegistry } from "./registry";
@@ -13,6 +13,7 @@ export interface EffectContext extends ConditionContext {
   readonly rng: SeededRng;
   readonly runtime: AbilityRuntimeState;
   readonly publishAdvice?: (owner: "player" | "opponent", world: AbilityWorld) => "hit" | "stand";
+  readonly forecastHitBust?: (owner: "player" | "opponent", world: AbilityWorld) => boolean;
   readonly registry?: AbilityRegistry;
 }
 
@@ -68,6 +69,24 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       if (!context.publishAdvice) throw new Error("No action-advice publisher configured");
       world = { ...world, advice: context.publishAdvice(actor, world) };
       break;
+    case "reveal-draw-pile-top-suit": {
+      const viewer = resolveActor(effect.viewer, context);
+      const card = world.shoe.cards[world.shoe.cursor];
+      if (!viewer || !card) throw new Error("Draw-pile top card is unavailable");
+      events.push({ type: "DRAW_PILE_CARD_SUIT_REVEALED", viewer, cardId: card.id, suit: cardSuit(card) });
+      break;
+    }
+    case "publish-hit-bust-forecast":
+      if (!context.forecastHitBust) throw new Error("No Hit bust forecaster configured");
+      events.push(resultEvent(context, { type: "hit-bust-forecast", actor, wouldBust: context.forecastHitBust(actor, world) }));
+      break;
+    case "publish-hand-total-comparison": {
+      const rival = actor === "player" ? "opponent" : "player";
+      const ownerTotal = handTotal(world.hands[actor]);
+      const rivalTotal = handTotal(world.hands[rival]);
+      events.push(resultEvent(context, { type: "hand-total-compared", actor, relation: ownerTotal === rivalTotal ? "equal" : ownerTotal > rivalTotal ? "higher" : "lower" }));
+      break;
+    }
     case "replace-hand-card": {
       const hand = world.hands[actor];
       const candidate = effect.candidate.type === "resulting-hand-total-at-most" ? "at-most" : "exactly";
@@ -277,11 +296,25 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       changed(effect.type);
       break;
     }
+    case "set-pending-load": {
+      if (!load) throw new Error("set-pending-load outside load event");
+      if (load.actor !== actor) throw new Error("Pending load actor does not match effect target");
+      load = setPendingLoad(load, resolveScalar(effect.amount, context));
+      changed(effect.type);
+      break;
+    }
     case "multiply-pending-load": {
       if (!load) throw new Error("multiply-pending-load outside load event");
       if (load.actor !== actor) throw new Error("Pending load actor does not match effect target");
       load = multiplyPendingLoad(load, resolveScalar(effect.factor, context));
       changed(effect.type);
+      break;
+    }
+    case "add-gun-bullets": {
+      const oldGun = world.guns[actor];
+      const gun = addGunBullets(oldGun, resolveScalar(effect.amount, context));
+      world = { ...world, guns: { ...world.guns, [actor]: gun } };
+      events.push(resultEvent(context, { type: "gun-bullets-added", actor, amount: gun.bullets - oldGun.bullets, bullets: gun.bullets }));
       break;
     }
     case "add-to-pending-comparison-score": {

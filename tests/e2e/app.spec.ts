@@ -37,7 +37,7 @@ function abilityToastMatch(): MatchState {
     if (dealt.round.phase !== "turns") continue;
     const player = { ...dealt.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
     const opponent = { ...dealt.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
-    const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "toast-hunter" };
+    const hunterCard = { kind: "player-skill" as const, definitionId: "critical-judgment", owner: "player" as const, instanceId: "toast-judgment" };
     const scentCard = { kind: "player-skill" as const, definitionId: "scent-of-a-woman", owner: "player" as const, instanceId: "toast-scent" };
     const sequence = dealt.abilities.sequence + 1;
     return {
@@ -47,7 +47,7 @@ function abilityToastMatch(): MatchState {
       round: { ...dealt.round, player, opponent, currentActor: "player" },
       playerSkills: {
         ...dealt.playerSkills,
-        unlockedDefinitionIds: [...new Set([...dealt.playerSkills.unlockedDefinitionIds, "hunter-instinct", "scent-of-a-woman"])],
+        unlockedDefinitionIds: [...new Set([...dealt.playerSkills.unlockedDefinitionIds, "critical-judgment", "scent-of-a-woman"])],
         cards: [hunterCard, scentCard],
         advice: null
       },
@@ -656,7 +656,7 @@ test("牌堆状态栏使用未知 compact 牌并随实体牌堆顶更新", async
   await expect(compactCard).not.toHaveClass(/(?:^|\s)(?:red|black)(?:\s|$)/);
   await expect(compactCard).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(compactCard.locator(".card-rank, .card-suit")).toHaveCount(0);
-  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌的点数与花色未知，剩余 ${initialRemaining} 张`);
+  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌点数未知，花色未知，剩余 ${initialRemaining} 张`);
 
   const widths = await tableActions.evaluate((actions) => {
     const roulette = actions.querySelector<HTMLElement>(".roulette-status")!;
@@ -686,7 +686,7 @@ test("牌堆状态栏使用未知 compact 牌并随实体牌堆顶更新", async
 
   await page.getByRole("button", { name: "Hit 要牌" }).click();
   await expect(compactCard).toHaveAttribute("data-card-id", secondCard.id);
-  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌的点数与花色未知，剩余 ${initialRemaining - 1} 张`);
+  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌点数未知，花色未知，剩余 ${initialRemaining - 1} 张`);
 });
 
 test("早有准备提供一次主动抽卡且单击候选立即确认", async ({ page }) => {
@@ -737,6 +737,7 @@ test("早有准备提供一次主动抽卡且单击候选立即确认", async ({
   const offer = page.locator(".skill-draw-modal");
   await expect(offer.getByRole("heading")).toHaveText("选一张你心仪的技能卡");
   await expect(offer.locator(".skill-draw-card")).toHaveCount(3);
+  expect((await offer.locator(".skill-draw-card > small").allTextContents()).every((domain) => ["赌徒", "老千", "情报官", "枪手"].includes(domain))).toBe(true);
   await expect(offer.getByRole("button", { name: /放弃|确认/ })).toHaveCount(0);
   await offer.locator(".skill-draw-card").first().click();
   await expect(offer).toHaveCount(0);
@@ -804,7 +805,7 @@ test("技能通知按最新在上堆叠并独立过期", async ({ page }) => {
   await expect(page.locator("main.table-shell")).toBeVisible();
 
   await page.locator(".skill-drawer-toggle").click();
-  const hunter = page.locator(".skill-card[data-skill-id='hunter-instinct']");
+  const hunter = page.locator(".skill-card[data-skill-id='critical-judgment']");
   const scent = page.locator(".skill-card[data-skill-id='scent-of-a-woman']");
   await hunter.click();
   const playerToasts = page.locator("#ability-notices .ability-notice-player");
@@ -814,7 +815,7 @@ test("技能通知按最新在上堆叠并独立过期", async ({ page }) => {
   await expect(playerToasts).toHaveCount(2);
   const texts = await playerToasts.allTextContents();
   expect(texts[0]).toContain("闻香识女人");
-  expect(texts[1]).toContain("猎手直觉");
+  expect(texts[1]).toContain("临界判断");
   await page.getByRole("button", { name: /Stand 停牌/ }).click();
   const aiToast = page.locator("#ability-notices .ability-notice-ai");
   await expect(aiToast).toHaveCount(1, { timeout: 1_000 });
@@ -828,12 +829,39 @@ test("技能通知按最新在上堆叠并独立过期", async ({ page }) => {
   });
   expect(["border", "text", "background"].some((key) => aiStyle[key as keyof typeof aiStyle] !== playerStyle[key as keyof typeof playerStyle])).toBe(true);
 
-  const hunterToast = playerToasts.filter({ hasText: "猎手直觉" });
+  const hunterToast = playerToasts.filter({ hasText: "临界判断" });
   const scentToast = playerToasts.filter({ hasText: "闻香识女人" });
   await expect(hunterToast).toHaveClass(/leaving/, { timeout: 3_000 });
   await expect(hunterToast).toHaveCount(0, { timeout: 1_000 });
   await expect(scentToast).toHaveCount(1);
   await expect(scentToast).toHaveCount(0, { timeout: 1_000 });
+});
+
+test("新版猎手直觉获得后只揭示当前牌堆顶的花色", async ({ page }) => {
+  const imported = createDefaultSave("2026-09-08T00:00:00.000Z");
+  const source = findTurnsMatch("hunter-rework-ui");
+  const activeMatch: MatchState = {
+    ...source,
+    round: { ...source.round, currentActor: "player" },
+    playerSkills: {
+      ...source.playerSkills,
+      unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "hunter-instinct"])],
+      drawCount: 1,
+      drawOffer: { id: "hunter-rework-offer", candidateDefinitionIds: ["hunter-instinct"] }
+    }
+  };
+  imported.settings.reducedMotion = true;
+  await page.goto("/?debug=1");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "hunter-rework.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
+  await page.locator(".skill-draw-card", { hasText: "猎手直觉" }).click();
+
+  await expect(page.locator(".shoe-status .card-suit")).toHaveCount(1);
+  await expect(page.locator(".shoe-status .card-rank")).toHaveText("?");
+  await expect(page.locator(".skill-sidebar .passive-card"), "Hunter Instinct should now be a passive card").toContainText("猎手直觉");
+  const debug = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: MatchState };
+  expect(debug.relevantMatchState.history).toContainEqual(expect.objectContaining({ type: "DRAW_PILE_CARD_SUIT_REVEALED", viewer: "player" }));
 });
 
 test("技能通知位于人物机制槽下方且不溢出小屏", async ({ page }) => {
@@ -849,7 +877,7 @@ test("技能通知位于人物机制槽下方且不溢出小屏", async ({ page 
   for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 720 }]) {
     await page.setViewportSize(viewport);
     if (viewport.width === 320) await expect(page.locator("#ability-notices .ability-notice")).toHaveCount(0, { timeout: 4_000 });
-    await page.locator(`.skill-card[data-skill-id='${viewport.width === 390 ? "hunter-instinct" : "scent-of-a-woman"}']`).click();
+    await page.locator(`.skill-card[data-skill-id='${viewport.width === 390 ? "critical-judgment" : "scent-of-a-woman"}']`).click();
     const geometry = await page.locator("#ability-notices").evaluate((container) => {
       const toast = container.querySelector<HTMLElement>(".ability-notice");
       const anchor = document.querySelector<HTMLElement>(".ai-info-bar");
@@ -868,7 +896,7 @@ test("技能牌库满时保留抽卡次数并禁用抽取按钮", async ({ page 
   const source = findTurnsMatch("full-skill-draw-ui");
   const cards = Array.from({ length: 10 }, (_, index) => ({
     kind: "player-skill" as const,
-    definitionId: "hunter-instinct",
+    definitionId: "critical-judgment",
     owner: "player" as const,
     instanceId: `full-skill-draw-${index}`
   }));
@@ -1222,14 +1250,14 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   const catalog = page.locator("#skill-catalog");
   await expect(catalog).toBeVisible();
   await expect(catalog.locator(".skill-catalog-group")).toHaveCount(4);
-  await expect(catalog.locator(".loadout-skill")).toHaveCount(14);
+  await expect(catalog.locator(".loadout-skill")).toHaveCount(19);
   await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(0);
   await expect(catalog.locator('[data-primary-skill-tag="gambler"] .loadout-skill')).toHaveCount(6);
   await expect(catalog.locator('[data-primary-skill-tag="cheater"] .loadout-skill')).toHaveCount(4);
-  await expect(catalog.locator('[data-primary-skill-tag="intelligence-officer"] .loadout-skill')).toHaveCount(2);
-  await expect(catalog.locator('[data-primary-skill-tag="gunslinger"] .loadout-skill')).toHaveCount(2);
+  await expect(catalog.locator('[data-primary-skill-tag="intelligence-officer"] .loadout-skill')).toHaveCount(4);
+  await expect(catalog.locator('[data-primary-skill-tag="gunslinger"] .loadout-skill')).toHaveCount(5);
   for (const group of await catalog.locator(".skill-catalog-group").all()) await group.locator(":scope > summary").click();
-  await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(14);
+  await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(19);
   await expect(catalog).not.toContainText("罗德岛万人迷");
   await expect(catalog.locator(".profile-ability[open]")).toHaveCount(0);
   await catalog.locator(".profile-ability").first().locator("summary").click();
@@ -1471,13 +1499,13 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const source = findTurnsMatch("compact-skills");
   const oldCardIds = new Set(source.playerSkills.cards.map((card) => card.instanceId));
-  const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-hunter-instinct" };
+  const hunterCard = { kind: "player-skill" as const, definitionId: "critical-judgment", owner: "player" as const, instanceId: "e2e-critical-judgment" };
   const hunterSequence = source.abilities.sequence + 1;
   imported.settings.reducedMotion = true;
   const activeMatch: MatchState = {
     ...source,
     round: { ...source.round, currentActor: "player" },
-    playerSkills: { ...source.playerSkills, unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "hunter-instinct"])], cards: [hunterCard], drawCount: 2 },
+    playerSkills: { ...source.playerSkills, unlockedDefinitionIds: [...new Set([...source.playerSkills.unlockedDefinitionIds, "critical-judgment"])], cards: [hunterCard], drawCount: 2 },
     abilities: {
       ...source.abilities,
       instances: [...source.abilities.instances.filter((instance) => !oldCardIds.has(instance.instanceId)), { ...hunterCard, createdAtSequence: hunterSequence, parameters: {} }],
@@ -1587,9 +1615,9 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   expect(openSidebar).not.toBeNull();
   expect(openDock).not.toBeNull();
   expect(openSidebar!.y + openSidebar!.height).toBeLessThanOrEqual(openDock!.y);
-  const activeSkill = page.locator(".skill-sidebar button.skill-card[data-action*='hunter-instinct']");
+  const activeSkill = page.locator(".skill-sidebar button.skill-card[data-action*='critical-judgment']");
   const activeCardsBefore = await activeSkill.allTextContents();
-  expect(activeCardsBefore).toEqual(["猎手直觉主动"]);
+  expect(activeCardsBefore).toEqual(["临界判断主动"]);
   await expect(page.locator(".player-zone .card").first()).toHaveCSS("width", "46px");
   await expect(activeSkill).toHaveCSS("width", "46px");
   await expect(page.locator(".player-zone .card").first()).toHaveCSS("height", "66px");
@@ -1601,13 +1629,13 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   expect(skillCard).not.toBeNull();
   expect(Math.abs(skillCard!.width - playingCard!.width)).toBeLessThanOrEqual(1);
   expect(Math.abs(skillCard!.height - playingCard!.height)).toBeLessThanOrEqual(1);
-  await page.locator("[data-skill-info='hunter-instinct']").click();
+  await page.locator("[data-skill-info='critical-judgment']").click();
   await expect(page.locator("#skill-info-dialog")).toBeVisible();
-  await expect(page.locator("#skill-info-dialog .profile-ability summary")).toContainText("猎手直觉：");
+  await expect(page.locator("#skill-info-dialog .profile-ability summary")).toContainText("临界判断：");
   await expect(page.locator("#skill-info-dialog .profile-ability[open]")).toHaveCount(0);
   await page.locator("#skill-info-dialog .profile-ability summary").click();
   await expect(page.locator("#skill-info-dialog #skill-info-lore")).toBeVisible();
-  await expect(page.locator("#skill-info-dialog")).toContainText("数学最优 Hit / Stand");
+  await expect(page.locator("#skill-info-dialog")).toContainText("Hit 是否会导致你爆牌");
   expect(await activeSkill.allTextContents()).toEqual(activeCardsBefore);
   const debugAfter = JSON.parse(await page.locator("#debug-json").inputValue()) as { relevantMatchState: { playerSkills: { cards: Array<{ instanceId: string; definitionId: string }> } } };
   expect(debugAfter.relevantMatchState.playerSkills.cards).toEqual(debugBefore.relevantMatchState.playerSkills.cards);
@@ -1622,8 +1650,8 @@ test("牌桌技能卡与扑克牌同尺寸，说明弹窗不消费技能且卡�
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
   await expect(activeSkill).toBeVisible();
   await page.locator(".skill-sidebar button.skill-card:not(:disabled)").first().click();
-  await expect(page.locator(".skill-advice")).toBeVisible();
-  await expect(page.locator("#ability-notices .ability-notice-player")).toContainText("策展人发动「猎手直觉」");
+  await expect(page.locator(".skill-advice")).toHaveCount(0);
+  await expect(page.locator("#ability-notices .ability-notice-player")).toContainText(/策展人发动「临界判断」：现在 Hit (?:会|不会)导致爆牌。/);
   await expect(page.locator("#presentation")).not.toContainText("发动");
   await page.setViewportSize({ width: 390, height: 700 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
@@ -1735,10 +1763,10 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   const base = createMatch("e2e-silent-drizzle", {
     opponentId: "texas",
-    unlockedPlayerSkillIds: ["hunter-instinct"],
+    unlockedPlayerSkillIds: ["critical-judgment"],
     opponentAiSkills: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
   });
-  const hunterCard = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "e2e-silent-drizzle-hunter" };
+  const hunterCard = { kind: "player-skill" as const, definitionId: "critical-judgment", owner: "player" as const, instanceId: "e2e-silent-drizzle-judgment" };
   const sequence = base.abilities.sequence + 1;
   const player = { ...base.player, hand: createHand([createCard("spades", "10"), createCard("hearts", "6")]), stood: false, busted: false };
   const opponent = { ...base.opponent, hand: createHand([createCard("clubs", "10"), createCard("diamonds", "8")]), stood: false, busted: false };
@@ -1747,7 +1775,7 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
     ...base,
     player,
     opponent,
-    shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 },
+    shoe: { cards: [createCard("clubs", "2"), createCard("spades", "3")], cursor: 0, shuffleIndex: 1 },
     round: { ...base.round, phase: "turns", currentActor: "opponent", player, opponent, outcome: null },
     playerSkills: { ...base.playerSkills, cards: [hunterCard] },
     abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...hunterCard, createdAtSequence: sequence, parameters: {} }], sequence },
@@ -1764,7 +1792,7 @@ test("德克萨斯发动细雨无声时展示效果，点击被封锁技能给�
   await expect(page.locator("#presentation")).not.toContainText("细雨无声");
 
   await page.locator(".skill-drawer-toggle").click();
-  const blockedSkill = page.locator(".skill-card[data-skill-id='hunter-instinct']");
+  const blockedSkill = page.locator(".skill-card[data-skill-id='critical-judgment']");
   await expect(blockedSkill).toHaveAttribute("aria-disabled", "true");
   const notifications = page.locator("#ability-notices .ability-notice-notification");
   await blockedSkill.click({ force: true });

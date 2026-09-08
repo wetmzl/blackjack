@@ -36,11 +36,12 @@ condition, effect, status, and runtime machinery. `hidden: true` keeps a
 definition in the registry for testing, while excluding it from the visible
 Player Skill catalog and offer pool.
 
-Every Player Skill and AI Skill declares one `primaryDomain` and at least one
-open-ended tag. Player Skills additionally declare one or more unique closed
-`skillTags` from `gambler`, `cheater`, `intelligence-officer`, and `gunslinger`.
-The first entry is the skill's primary tag and determines its group in the
-visible Skill Catalog; later entries are secondary affinities and still
+Every Player Skill, AI Skill, and Talent declares one closed `primaryDomain`
+from `gambler`, `cheater`, `intelligence-officer`, and `gunslinger`, plus at
+least one open-ended tag. Player Skills additionally declare one or more unique
+closed `skillTags` from the same set. The first entry must equal
+`primaryDomain`; it determines the visible Skill Catalog group and the Chinese
+domain label in skill offers. Later entries are secondary affinities and still
 participate in draw-weight matching.
 The player's selected zero-to-two skill tags apply a single factor of 4 when a
 skill matches any selected tag. Player Skills also declare `drop.enabled`, positive
@@ -176,6 +177,20 @@ state, events, counters, TTL, or RNG.
 `set-status-stacks` replaces a match-status stack count with a nonnegative,
 integer scalar result (zero removes the status), allowing a data-driven
 mechanic to carry one public numeric threshold between rounds.
+
+`on-ability-gained` targets only the newly created ability instance. It is the
+entry point for a passive Player Skill that must publish information as soon as
+the player selects it. `reveal-draw-pile-top-suit` records knowledge against the
+stable physical `cardId`; presentation may expose that suit only while the same
+card remains on top in the current round. `publish-hit-bust-forecast` and
+`publish-hand-total-comparison` publish conclusions without exposing the next
+rank or either numeric hand total.
+
+For roulette load composition, `set-pending-load` replaces the base load and
+should use an earlier priority than additive modifiers. `add-to-pending-load`
+then layers bonuses on top. `hand-card-suit-count` can derive the replacement
+from one exact suit, while `add-gun-bullets` is reserved for immediate direct
+loading outside the pending settlement window.
 
 The scalar `power` expression is deterministic and must resolve to a finite
 number before an effect commits. Derived-card effects use a closed card-face

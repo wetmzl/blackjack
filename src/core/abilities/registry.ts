@@ -1,4 +1,9 @@
 import hunterInstinct from "../../content/abilities/player-skills/hunter-instinct.json" with { type: "json" };
+import criticalJudgment from "../../content/abilities/player-skills/critical-judgment.json" with { type: "json" };
+import situationAssessment from "../../content/abilities/player-skills/situation-assessment.json" with { type: "json" };
+import liveAmmunitionBet from "../../content/abilities/player-skills/live-ammunition-bet.json" with { type: "json" };
+import prepaidPremium from "../../content/abilities/player-skills/prepaid-premium.json" with { type: "json" };
+import heartHunter from "../../content/abilities/player-skills/heart-hunter.json" with { type: "json" };
 import switcheroo from "../../content/abilities/player-skills/switcheroo.json" with { type: "json" };
 import rhodesHeartthrob from "../../content/abilities/player-skills/rhodes-heartthrob.json" with { type: "json" };
 import nightQueen from "../../content/abilities/player-skills/night-queen.json" with { type: "json" };
@@ -38,10 +43,13 @@ import carnivalIndexValueStatus from "../../content/abilities/statuses/carnival-
 import hoOlheyakMemoryCardStatus from "../../content/abilities/statuses/ho-olheyak-memory-card.json" with { type: "json" };
 import playerPointAdvantageStatus from "../../content/abilities/statuses/player-point-advantage.json" with { type: "json" };
 import carnivalBustBonusStatus from "../../content/abilities/statuses/carnival-bust-bonus.json" with { type: "json" };
+import liveAmmunitionBetBonusStatus from "../../content/abilities/statuses/live-ammunition-bet-bonus.json" with { type: "json" };
+import prepaidPremiumCoveredStatus from "../../content/abilities/statuses/prepaid-premium-covered.json" with { type: "json" };
+import heartHunterArmedStatus from "../../content/abilities/statuses/heart-hunter-armed.json" with { type: "json" };
 import { AbilityDefinitionSchema, StatusDefinitionSchema, validateBinding } from "./schema";
 import type { AbilityBinding, AbilityDefinition, AbilityInstance, AbilitySourceKind, AiSkillAbilityDefinition, PlayerSkillAbilityDefinition, StatusDefinition, TalentAbilityDefinition } from "./types";
 
-export const ABILITY_CATALOG_VERSION = "abilities-v19" as const;
+export const ABILITY_CATALOG_VERSION = "abilities-v22" as const;
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
@@ -50,9 +58,9 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const definitions = [hunterInstinct, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, playerSwordAndHandcannon, playerForgeHeraldsTheYear, compoundInterest, counterclockwiseClock, sissasTable, aSingleCoin, mimicEggplant, carnival, beforeTheShuffle, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle, bombManiac, wNightQueen, aiSwordAndHandcannon, aiForgeHeraldsTheYear, aiTinScorch, copperSeal, platinumVision, carnivalIndex, carnivalHeatsUp, hoOlheyakInheritanceTerminal, hoOlheyakOnceHadWings, earlyPreparation]
+const definitions = [hunterInstinct, criticalJudgment, situationAssessment, liveAmmunitionBet, prepaidPremium, heartHunter, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, playerSwordAndHandcannon, playerForgeHeraldsTheYear, compoundInterest, counterclockwiseClock, sissasTable, aSingleCoin, mimicEggplant, carnival, beforeTheShuffle, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, silentDrizzle, bombManiac, wNightQueen, aiSwordAndHandcannon, aiForgeHeraldsTheYear, aiTinScorch, copperSeal, platinumVision, carnivalIndex, carnivalHeatsUp, hoOlheyakInheritanceTerminal, hoOlheyakOnceHadWings, earlyPreparation]
   .map((value) => deepFreeze(AbilityDefinitionSchema.parse(value) as AbilityDefinition));
-const statuses = [rhodesHeartthrobStatus, silentDrizzleStatus, copperSealStatus, platinumVisionAdvantageStatus, carnivalIndexValueStatus, hoOlheyakMemoryCardStatus, playerPointAdvantageStatus, carnivalBustBonusStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
+const statuses = [rhodesHeartthrobStatus, silentDrizzleStatus, copperSealStatus, platinumVisionAdvantageStatus, carnivalIndexValueStatus, hoOlheyakMemoryCardStatus, playerPointAdvantageStatus, carnivalBustBonusStatus, liveAmmunitionBetBonusStatus, prepaidPremiumCoveredStatus, heartHunterArmedStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
 if (new Set(definitions.map((definition) => definition.id)).size !== definitions.length) throw new Error("Duplicate ability definition id across Player Skill, AI Skill, and Talent catalogs");
 if (new Set(statuses.map((status) => status.id)).size !== statuses.length) throw new Error("Duplicate status definition id");
 export const ABILITY_DEFINITIONS: readonly AbilityDefinition[] = Object.freeze(definitions);

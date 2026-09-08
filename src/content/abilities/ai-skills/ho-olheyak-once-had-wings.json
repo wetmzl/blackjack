@@ -5,7 +5,7 @@
   "triggerNotice": "记忆中的人物牌让本轮装填归零。",
   "profileLore": "有些牌面曾经属于翅膀，有些翅膀曾经属于她。只要那张牌还被记得，失败就不必留下弹药。",
   "sourceKind": "ai-skill",
-  "primaryDomain": "roulette",
+  "primaryDomain": "gunslinger",
   "activation": { "type": "automatic" },
   "rules": [
     {

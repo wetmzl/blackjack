@@ -6,7 +6,7 @@
   "triggerNotice": "末牌已转化为两张衍生牌，固定点数保持不变。",
   "profileLore": "她曾经觉得这个名字蠢得恰到好处，后来连她本人都成为了战利品，于是再也没有人会好奇她为什么会给了自己的剑起了这个名字。",
   "sourceKind": "player-skill",
-  "primaryDomain": "rule-control",
+  "primaryDomain": "gambler",
   "skillTags": ["gambler"],
   "activation": {
     "type": "action",

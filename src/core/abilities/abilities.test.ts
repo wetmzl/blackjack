@@ -24,7 +24,7 @@ function mechanic(definitionId: string, owner: "player" | "opponent", instanceId
 }
 
 const relativeFixture = {
-  id: "relative-load-adjustment", name: "relative", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
+  id: "relative-load-adjustment", name: "relative", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater",
   activation: { type: "automatic" }, tags: ["test-fixture"], rules: [
     { id: "owner-failed-load", trigger: "before-bullet-load", conditions: [{ type: "round-penalty-target-is", target: "owner" }], effects: [{ type: "add-to-pending-load", target: "owner", amount: -1 }] },
     { id: "rival-bust-load", trigger: "before-bullet-load", conditions: [{ type: "round-reason-is", value: "bust" }, { type: "round-penalty-target-is", target: "rival" }], effects: [{ type: "add-to-pending-load", target: "rival", amount: 1 }] }
@@ -34,7 +34,7 @@ const relativeFixture = {
 describe("ability schemas and immutable registry", () => {
   it("applies parameter defaults and rejects missing, unknown, and out-of-range values", () => {
     const registry = createAbilityRegistry([{
-      id: "parameter-fixture", name: "parameter", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
+      id: "parameter-fixture", name: "parameter", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater",
       parameters: {
         amount: { type: "number", minimum: -1, maximum: 1, default: -1 },
         required: { type: "boolean" }
@@ -48,8 +48,8 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers three disjoint ability domains as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(32);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(15);
+    expect(ABILITY_DEFINITIONS).toHaveLength(37);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(20);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(16);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
@@ -59,7 +59,7 @@ describe("ability schemas and immutable registry", () => {
 
   it("rejects unknown triggers, conditions, effects, selectors, and extra fields", () => {
     const base = {
-      id: "schema-fixture", name: "schema", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
+      id: "schema-fixture", name: "schema", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater",
       activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"], rules: [{ id: "rule", trigger: "on-match-created", effects: [{ type: "add-skill-draws", target: "owner", amount: 1 }] }]
     };
     expect(AbilityDefinitionSchema.safeParse(base).success).toBe(true);
@@ -75,7 +75,7 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "unknown-effect", target: "owner" }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "add-skill-draws", target: "player", amount: 1 }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, executable: "doSomething()" }).success).toBe(false);
-    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", primaryDomain: "rule-control", skillTags: ["cheater"], drop: { enabled: true, baseWeight: 1 }, stackable: false, activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, sourceKind: "player-skill", primaryDomain: "cheater", skillTags: ["cheater"], drop: { enabled: true, baseWeight: 1 }, stackable: false, activation: { type: "action", windows: ["owner-turn"], consume: "none" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, activation: { type: "action", windows: ["owner-turn"], consume: "card" } }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, ttl: undefined }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, ttl: { type: "triggers", amount: 0 } }).success).toBe(false);
@@ -105,7 +105,7 @@ describe("ability schemas and immutable registry", () => {
 
   it("rejects unresolved parameter, status, and ability references while building a registry", () => {
     const definition = (id: string, effect: unknown, availability?: readonly unknown[]) => ({
-      id, name: "reference", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control",
+      id, name: "reference", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater",
       activation: availability ? { type: "action", windows: ["owner-turn"], consume: "none", availability } : { type: "passive" },
       ...(!availability ? { ttl: { type: "rounds", amount: 2 } } : {}),
       rules: [{ id: "rule", trigger: "on-match-created", effects: [effect] }], tags: ["test-fixture"]
@@ -179,7 +179,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("orders rules by priority, instance creation sequence, and rule index", () => {
     const ordering = {
-      id: "ordering-fixture", name: "ordering", description: "fixture", sourceKind: "ai-skill", primaryDomain: "rule-control", activation: { type: "passive" }, ttl: { type: "triggers", amount: 10 }, tags: ["test-fixture"],
+      id: "ordering-fixture", name: "ordering", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater", activation: { type: "passive" }, ttl: { type: "triggers", amount: 10 }, tags: ["test-fixture"],
       rules: [
         { id: "late-a", trigger: "before-bullet-load", priority: 10, effects: [{ type: "add-to-pending-load", target: "owner", amount: 1 }] },
         { id: "first", trigger: "before-bullet-load", priority: -1, effects: [{ type: "add-to-pending-load", target: "owner", amount: 1 }] },
@@ -199,7 +199,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("consumes trigger TTL only after successful activation and removes an expired passive card", () => {
     const definition = {
-      id: "trigger-ttl-fixture", name: "trigger ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "roulette",
+      id: "trigger-ttl-fixture", name: "trigger ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "gunslinger",
       activation: { type: "passive" }, ttl: { type: "triggers", amount: 2 }, tags: ["test-fixture"],
       skillTags: ["gunslinger"],
       drop: { enabled: true, baseWeight: 1 }, stackable: false,
@@ -238,7 +238,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("counts round TTL after the round and frees the passive card slot at zero", () => {
     const definition = {
-      id: "round-ttl-fixture", name: "round ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "rule-control",
+      id: "round-ttl-fixture", name: "round ttl", description: "fixture", sourceKind: "player-skill", primaryDomain: "gunslinger",
       activation: { type: "passive" }, ttl: { type: "rounds", amount: 2 }, tags: ["test-fixture"],
       skillTags: ["gunslinger"],
       drop: { enabled: true, baseWeight: 1 }, stackable: false, rules: []
@@ -275,7 +275,7 @@ describe("generic resolution and lifecycle", () => {
   });
 
   it("expires only the requested duration and garbage-collects unreferenced consumed actions and counters", () => {
-    const source: AbilityInstance = { kind: "player-skill", definitionId: "hunter-instinct", owner: "player", instanceId: "consumed", createdAtSequence: 1, parameters: {} };
+    const source: AbilityInstance = { kind: "player-skill", definitionId: "critical-judgment", owner: "player", instanceId: "consumed", createdAtSequence: 1, parameters: {} };
     const statuses: AbilityStatus[] = (["turn", "round", "match", "until-owner-action", "until-consumed"] as const).map((duration, index) => ({ statusDefinitionId: "copper-seal-sealed", owner: "player", sourceInstanceId: source.instanceId, stacks: 1, duration, parameters: {}, createdAtSequence: index + 1 }));
     let runtime: AbilityRuntimeState = { ...createAbilityRuntime(createRng("lifecycle").snapshot()), instances: [source], statuses, counters: { "consumed:rule:match": 1 } };
     expect(expireStatuses(runtime, "turn").statuses.map((status) => status.duration)).toEqual(["round", "match", "until-owner-action", "until-consumed"]);
@@ -292,7 +292,7 @@ describe("generic resolution and lifecycle", () => {
 
   it("preflights direct effects without consuming a card and resolves valid actions atomically", () => {
     const invalid = {
-      id: "invalid-action-context", name: "invalid", description: "fixture", sourceKind: "player-skill", primaryDomain: "rule-control", drop: { enabled: true, baseWeight: 1 }, stackable: false,
+      id: "invalid-action-context", name: "invalid", description: "fixture", sourceKind: "player-skill", primaryDomain: "cheater", drop: { enabled: true, baseWeight: 1 }, stackable: false,
       activation: { type: "action", windows: ["owner-turn"], consume: "card" }, tags: ["test-fixture"], skillTags: ["cheater"],
       rules: [{ id: "requires-draw", trigger: "on-ability-played", effects: [{ type: "replace-pending-draw", target: "owner", policy: { type: "exact-resulting-total", total: 21, fallback: "create-derived-card" } }] }]
     } as const;
@@ -305,13 +305,14 @@ describe("generic resolution and lifecycle", () => {
     expect(() => playAbility(input)).toThrow(AbilityResolutionError);
     expect(input.world.cards).toEqual([card]);
 
-    const hunterCard: SkillCardInstance = { kind: "player-skill", definitionId: "hunter-instinct", owner: "player", instanceId: "hunter-card" };
-    const hunterInstance: AbilityInstance = { ...hunterCard, createdAtSequence: 1, parameters: {} };
-    const hunterInput = { world: world([hunterCard]), runtime: { ...createAbilityRuntime(createRng("hunter-action").snapshot()), instances: [hunterInstance] }, instanceId: hunterCard.instanceId, owner: "player" as const, window: "owner-turn" as const, publishAdvice: () => "hit" as const };
-    expect(canPlayAbility(hunterInput)).toBe(true);
-    const played = playAbility(hunterInput);
+    const judgmentCard: SkillCardInstance = { kind: "player-skill", definitionId: "critical-judgment", owner: "player", instanceId: "judgment-card" };
+    const judgmentInstance: AbilityInstance = { ...judgmentCard, createdAtSequence: 1, parameters: {} };
+    const judgmentWorld = { ...world([judgmentCard]), shoe: { cards: [createCard("clubs", "2")], cursor: 0, shuffleIndex: 1 } };
+    const judgmentInput = { world: judgmentWorld, runtime: { ...createAbilityRuntime(createRng("judgment-action").snapshot()), instances: [judgmentInstance] }, instanceId: judgmentCard.instanceId, owner: "player" as const, window: "owner-turn" as const, forecastHitBust: () => false };
+    expect(canPlayAbility(judgmentInput)).toBe(true);
+    const played = playAbility(judgmentInput);
     expect(played.world.cards).toEqual([]);
-    expect(played.events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "ABILITY_PLAYED", instanceId: hunterCard.instanceId }), expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "publish-advice" })]));
+    expect(played.events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "ABILITY_PLAYED", instanceId: judgmentCard.instanceId }), expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "forecast-next-hit" }), expect.objectContaining({ type: "ABILITY_RESULT", result: { type: "hit-bust-forecast", actor: "player", wouldBust: false } })]));
   });
 
   it("resolves Night Queen as an immediate derived-card action", () => {

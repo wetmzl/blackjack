@@ -5,7 +5,7 @@
   "triggerNotice": "拉普兰德达到狂欢指标，双方的爆牌上限提高2点。",
   "profileLore": "只要她率先追上那道刻度，规则就会为整张牌桌再让出两步。风险没有消失，只是被推向了更高、更适合失控的位置。",
   "sourceKind": "ai-skill",
-  "primaryDomain": "rule-control",
+  "primaryDomain": "cheater",
   "activation": { "type": "automatic" },
   "rules": [
     {

@@ -697,23 +697,49 @@ describe("skills", () => {
     expect(forgeResolved.round.outcome?.bulletsAdded).toBe(2);
   });
 
-  it("shows Hunter advice and clears it on the next action", () => {
-    const base = createMatch("hunter");
+  it("reports whether the next Hit will bust without drawing the card", () => {
+    const base = createMatch("critical-judgment");
     const player = { id: "player" as const, hand: createHand([card("10"), card("6")]), stood: false, busted: false };
     const opponent = { id: "opponent" as const, hand: createHand([card("10"), card("7")]), stood: false, busted: false };
     const round: RoundState = { ...base.round, phase: "turns", currentActor: "player", player, opponent, outcome: null };
-    const state: MatchState = { ...base, player, opponent, round, playerSkills: { ...base.playerSkills, cards: [skillCard("hunter-instinct")] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skillCard("hunter-instinct"), createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 }, shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 } };
-    const advised = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-hunter-instinct" });
-    expect(advised.playerSkills.advice).toBe("hit");
-    expect(gameReducer(advised, { type: "PLAYER_STAND" }).playerSkills.advice).toBeNull();
+    const state: MatchState = { ...base, player, opponent, round, playerSkills: { ...base.playerSkills, cards: [skillCard("critical-judgment")] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skillCard("critical-judgment"), createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 }, shoe: { cards: [card("K", "hearts")], cursor: 0, shuffleIndex: 1 } };
+    const judged = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-critical-judgment" });
+    expect(judged.player.hand).toEqual(state.player.hand);
+    expect(judged.shoe).toEqual(state.shoe);
+    expect(judged.history).toContainEqual(expect.objectContaining({ type: "ABILITY_RESULT", result: { type: "hit-bust-forecast", actor: "player", wouldBust: true } }));
+  });
+
+  it("replaces Hunter Instinct with a one-round passive that tracks the current top-card suit", () => {
+    const base = withHands(createMatch("hunter-rework"), [card("10"), card("6")], [card("10"), card("7")]);
+    const first = card("2", "hearts");
+    const second = card("3", "clubs");
+    const offered: MatchState = {
+      ...base,
+      shoe: { cards: [first, second], cursor: 0, shuffleIndex: 1 },
+      playerSkills: { ...base.playerSkills, drawCount: 1, drawOffer: { id: "hunter-offer", candidateDefinitionIds: ["hunter-instinct"] } }
+    };
+    const gained = gameReducer(offered, { type: "SELECT_SKILL_DRAW", definitionId: "hunter-instinct" });
+    expect(gained.playerSkills.cards).toContainEqual(expect.objectContaining({ definitionId: "hunter-instinct" }));
+    expect(gained.abilities.instances.find((instance) => instance.definitionId === "hunter-instinct")?.ttl).toEqual({ type: "rounds", remaining: 1 });
+    expect(gained.history).toContainEqual({ type: "DRAW_PILE_CARD_SUIT_REVEALED", viewer: "player", cardId: first.id, suit: "hearts" });
+
+    const hit = gameReducer(gained, { type: "PLAYER_HIT" });
+    expect(hit.history).toContainEqual({ type: "DRAW_PILE_CARD_SUIT_REVEALED", viewer: "player", cardId: second.id, suit: "clubs" });
+  });
+
+  it("reports only the base-total relation for Situation Assessment", () => {
+    const base = withHands(createMatch("situation-assessment"), [card("10"), card("8")], [card("10"), card("7")]);
+    const state = withSkillCard(base, "situation-assessment", "situation-card");
+    const assessed = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "situation-card" });
+    expect(assessed.history).toContainEqual(expect.objectContaining({ type: "ABILITY_RESULT", result: { type: "hand-total-compared", actor: "player", relation: "higher" } }));
   });
 
   it("broadcasts after-hand-changed only when an active ability actually mutates a hand", () => {
     const observer = [{ definitionId: "hand-change-observer", enabled: true, parameters: {} }];
     const hunterBase = withHands(createMatch("hunter-no-hand-event", { playerAiSkills: observer }), [card("10"), card("6")], [card("10"), card("7")]);
-    const hunter = withSkillCard(hunterBase, "hunter-instinct", "hunter-no-hand-event-card");
-    const advised = gameReducer(hunter, { type: "PLAY_ABILITY", instanceId: "hunter-no-hand-event-card" });
-    expect(advised.history.slice(hunter.history.length)).not.toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "observe-owner-hand-change" }));
+    const judgment = withSkillCard(hunterBase, "critical-judgment", "judgment-no-hand-event-card");
+    const advised = gameReducer(judgment, { type: "PLAY_ABILITY", instanceId: "judgment-no-hand-event-card" });
+    expect(advised.history.slice(judgment.history.length)).not.toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "observe-owner-hand-change" }));
 
     const switchBase = withHands(createMatch("switch-hand-event", { playerAiSkills: observer }), [card("10"), card("6")], [card("10"), card("7")]);
     const switcheroo = withSkillCard({ ...switchBase, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } }, "switcheroo", "switch-hand-event-card");
@@ -729,7 +755,7 @@ describe("skills", () => {
     expect(state.playerSkills.cards).toHaveLength(0);
   });
 
-  it.each(["hunter-instinct", "switcheroo", "scent-of-a-woman", "night-queen"] as const)("exposes, resolves, and deterministically records the active %s contract", (definitionId) => {
+  it.each(["critical-judgment", "situation-assessment", "switcheroo", "scent-of-a-woman", "night-queen"] as const)("exposes, resolves, and deterministically records the active %s contract", (definitionId) => {
     const makeState = (): MatchState => {
       const base = withHands(createMatch(`contract-${definitionId}`),
         definitionId === "night-queen" ? [card("Q", "hearts"), card("6", "hearts")] : [card("10"), card("6")],
@@ -987,7 +1013,7 @@ describe("match lifecycle", () => {
 
   it("expires turn and match statuses with history events and removes their orphaned sources", () => {
     const base = withHands(createMatch("status-lifecycle"), [card("10"), card("6")], [card("10"), card("7")]);
-    const source = { kind: "player-skill" as const, definitionId: "hunter-instinct", owner: "player" as const, instanceId: "status-source", createdAtSequence: base.abilities.sequence + 1, parameters: {} };
+    const source = { kind: "player-skill" as const, definitionId: "critical-judgment", owner: "player" as const, instanceId: "status-source", createdAtSequence: base.abilities.sequence + 1, parameters: {} };
     const status = { statusDefinitionId: "copper-seal-sealed", owner: "player" as const, sourceInstanceId: source.instanceId, stacks: 1, duration: "turn" as const, parameters: {}, createdAtSequence: source.createdAtSequence };
     const turnState: MatchState = { ...base, abilities: { ...base.abilities, instances: [...base.abilities.instances, source], statuses: [status], counters: { [`${source.instanceId}:rule:turn`]: 1 }, sequence: source.createdAtSequence } };
     const switched = gameReducer(turnState, { type: "PLAYER_STAND" });
@@ -1025,11 +1051,11 @@ describe("match lifecycle", () => {
 describe("character mechanic integration", () => {
   it("lets Silent Drizzle block only the player's next active skill-card window after Texas chooses Stand", () => {
     const configured = createMatch("silent-drizzle", {
-      unlockedPlayerSkillIds: ["hunter-instinct"],
+      unlockedPlayerSkillIds: ["critical-judgment"],
       opponentAiSkills: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
     });
-    const prepared = withSkillCard(withHands(configured, [card("10"), card("6")], [card("10"), card("8")], "opponent"), "hunter-instinct", "silent-drizzle-card");
-    const state: MatchState = { ...prepared, shoe: { cards: [card("2", "hearts")], cursor: 0, shuffleIndex: 1 } };
+    const prepared = withSkillCard(withHands(configured, [card("10"), card("6")], [card("10"), card("8")], "opponent"), "critical-judgment", "silent-drizzle-card");
+    const state: MatchState = { ...prepared, shoe: { cards: [card("2", "hearts"), card("3", "clubs")], cursor: 0, shuffleIndex: 1 } };
     const action = { type: "PLAY_ABILITY" as const, instanceId: "silent-drizzle-card" };
 
     const silenced = gameReducer(state, { type: "AI_STAND" });
@@ -1052,7 +1078,7 @@ describe("character mechanic integration", () => {
 
   it("does not let Silent Drizzle suppress passive player-skill resolution", () => {
     const base = createMatch("silent-drizzle-passive", {
-      unlockedPlayerSkillIds: ["hunter-instinct", "forge-heralds-the-year"],
+      unlockedPlayerSkillIds: ["critical-judgment", "forge-heralds-the-year"],
       opponentAiSkills: [{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]
     });
     const state: MatchState = {
@@ -1107,10 +1133,10 @@ describe("character mechanic integration", () => {
       unlockedPlayerSkillIds: ["hunter-instinct", "forge-heralds-the-year"],
       opponentAiSkills: [{ definitionId: "copper-seal", enabled: true, parameters: {} }]
     });
-    let state = withSkillCard(withHands(configured, [card("10"), card("6")], [card("10"), card("6")], "player"), "hunter-instinct", "first-skill");
+    let state = withSkillCard(withHands(configured, [card("10"), card("6")], [card("10"), card("6")], "player"), "critical-judgment", "first-skill");
     state = {
       ...state,
-      playerSkills: { ...state.playerSkills, unlockedDefinitionIds: ["hunter-instinct", "forge-heralds-the-year"] },
+      playerSkills: { ...state.playerSkills, unlockedDefinitionIds: ["critical-judgment", "forge-heralds-the-year"] },
       roulette: { player: { capacity: 6, bullets: 3 }, opponent: createGun() }
     };
     const first = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "first-skill" });
@@ -1118,13 +1144,13 @@ describe("character mechanic integration", () => {
     expect(first.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "copper-seal", ruleId: "seal-rival-active-skills" }));
     expect(first.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "copper-seal-sealed", owner: "player", duration: "round" }));
     expect(getLegalActions(first)).not.toContainEqual(expect.objectContaining({ type: "PLAY_ABILITY" }));
-    const secondCard = skillCard("hunter-instinct", "second-skill");
+    const secondCard = skillCard("critical-judgment", "second-skill");
     state = {
       ...first,
       playerSkills: { ...first.playerSkills, cards: [...first.playerSkills.cards, secondCard] },
       abilities: { ...first.abilities, instances: [...first.abilities.instances, { ...secondCard, createdAtSequence: first.abilities.sequence + 1, parameters: {} }], sequence: first.abilities.sequence + 1 }
     };
-    const secondInput = { world: { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, skillDraws: state.playerSkills.drawCount, statuses: state.abilities.statuses }, runtime: state.abilities, instanceId: "second-skill", owner: "player" as const, window: "owner-turn" as const, publishAdvice: () => "hit" as const };
+    const secondInput = { world: { hands: { player: state.player.hand, opponent: state.opponent.hand }, guns: state.roulette, shoe: state.shoe, cards: state.playerSkills.cards, skillDraws: state.playerSkills.drawCount, statuses: state.abilities.statuses }, runtime: state.abilities, instanceId: "second-skill", owner: "player" as const, window: "owner-turn" as const, forecastHitBust: () => false };
     expect(canPlayAbility(secondInput)).toBe(false);
     expect(() => playAbility(secondInput)).toThrow();
     expect(gameReducer(state, { type: "PLAY_ABILITY", instanceId: "second-skill" })).toBe(state);

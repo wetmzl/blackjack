@@ -6,14 +6,14 @@ import type { SkillTag } from "../skills/types";
 export type AbilityActor = "player" | "opponent";
 export type AbilitySourceKind = "player-skill" | "ai-skill" | "talent";
 export type AbilityDefinitionSourceKind = AbilitySourceKind;
-export type AbilityPrimaryDomain = "blackjack" | "roulette" | "information" | "skill-economy" | "rule-control";
+export type AbilityPrimaryDomain = SkillTag;
 export type AbilityTtl =
   | { readonly type: "rounds"; readonly amount: number }
   | { readonly type: "triggers"; readonly amount: number };
 export interface AbilityInstanceTtl { readonly type: AbilityTtl["type"]; readonly remaining: number; }
 export interface SkillDrawWeightModifier { readonly tag: SkillTag; readonly factor: number; }
 export type AbilityTrigger =
-  | "on-match-created" | "on-ability-played" | "before-card-draw" | "after-card-draw"
+  | "on-match-created" | "on-ability-gained" | "on-ability-played" | "before-card-draw" | "after-card-draw" | "after-draw-pile-changed"
   | "after-hand-changed" | "after-stand" | "before-bust-check" | "before-round-resolution" | "before-bullet-load" | "after-bullet-load"
   | "before-trigger-pull" | "after-trigger-result" | "on-round-end";
   /** Emitted after an active ability card has completed successfully. */
@@ -30,6 +30,7 @@ export type NumberValue =
   | { readonly type: "round-final-score"; readonly target: ActorSelector }
   | { readonly type: "hand-card-count"; readonly target: ActorSelector }
   | { readonly type: "hand-card-color-count"; readonly target: ActorSelector; readonly color: "red" | "black" }
+  | { readonly type: "hand-card-suit-count"; readonly target: ActorSelector; readonly suit: Suit }
   | { readonly type: "event-hand-card-count"; readonly target: ActorSelector }
   | { readonly type: "round-hit-count"; readonly target: ActorSelector }
   | { readonly type: "status-stacks"; readonly target: ActorSelector; readonly statusDefinitionId: string }
@@ -90,6 +91,9 @@ export type Condition =
 export type Effect =
   | { readonly type: "add-skill-draws"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "publish-action-advice"; readonly target: ActorSelector; readonly policy: "current-optimal-hit-stand" }
+  | { readonly type: "reveal-draw-pile-top-suit"; readonly viewer: ActorSelector }
+  | { readonly type: "publish-hit-bust-forecast"; readonly target: ActorSelector }
+  | { readonly type: "publish-hand-total-comparison"; readonly target: ActorSelector }
   | { readonly type: "replace-hand-card"; readonly target: ActorSelector; readonly card: CardSelector; readonly source: CardZoneSource; readonly candidate: CardCandidate; readonly pick: RandomPick }
   | { readonly type: "swap-last-hand-card-with-draw-pile-top"; readonly target: ActorSelector }
   | { readonly type: "reveal-hand-card-suit"; readonly target: ActorSelector; readonly card: "first-private-card" | "all-current-cards"; readonly viewer: ActorSelector }
@@ -109,7 +113,9 @@ export type Effect =
   | { readonly type: "add-to-pending-bust-limit"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "add-to-pending-trigger-misfire-chance"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "add-to-pending-load"; readonly target: ActorSelector; readonly amount: ScalarValue }
+  | { readonly type: "set-pending-load"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "multiply-pending-load"; readonly target: ActorSelector; readonly factor: ScalarValue }
+  | { readonly type: "add-gun-bullets"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "add-to-pending-comparison-score"; readonly target: ActorSelector; readonly amount: ScalarValue }
   | { readonly type: "cancel-pending-trigger"; readonly target: ActorSelector };
 
@@ -188,11 +194,15 @@ export type AbilityDomainEvent =
   | { readonly type: "PENDING_EVENT_MODIFIED"; readonly eventId: string; readonly effectType: string; readonly sourceInstanceId: string }
   | { readonly type: "PENDING_EVENT_CANCELLED"; readonly eventId: string; readonly sourceInstanceId: string }
   | { readonly type: "CARD_SUIT_REVEALED"; readonly viewer: AbilityActor; readonly target: AbilityActor; readonly cardId: string; readonly suit: Suit }
+  | { readonly type: "DRAW_PILE_CARD_SUIT_REVEALED"; readonly viewer: AbilityActor; readonly cardId: string; readonly suit: Suit }
   | { readonly type: "SKILL_GAINED"; readonly skillId: string }
   | { readonly type: "ABILITY_RESULT"; readonly instanceId: string; readonly definitionId: string; readonly owner: AbilityActor; readonly result:
       | { readonly type: "derived-card-added"; readonly actor: AbilityActor; readonly rank: Rank; readonly suit: Suit }
       | { readonly type: "derived-card-replaced"; readonly actor: AbilityActor; readonly oldRank: Rank; readonly rank: Rank; readonly suit: Suit }
       | { readonly type: "status-stacks-updated"; readonly actor: AbilityActor; readonly statusDefinitionId: string; readonly stacks: number; readonly delta: number }
       | { readonly type: "skill-card-granted"; readonly definitionId: string }
+      | { readonly type: "hit-bust-forecast"; readonly actor: AbilityActor; readonly wouldBust: boolean }
+      | { readonly type: "hand-total-compared"; readonly actor: AbilityActor; readonly relation: "higher" | "equal" | "lower" }
+      | { readonly type: "gun-bullets-added"; readonly actor: AbilityActor; readonly amount: number; readonly bullets: number }
       | { readonly type: "draw-pile-rotated" } };
 export type AbilityEvent = AbilityDomainEvent;

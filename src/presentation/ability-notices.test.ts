@@ -40,9 +40,28 @@ describe("ability trigger notices", () => {
     expect(abilityTriggerNotice([ability, trigger], "德克萨斯")).toEqual([]);
   });
 
-  it("uses the published action advice from after state", () => {
-    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "skill", definitionId: "hunter-instinct", ruleId: "publish-advice", owner: "player" };
-    expect(abilityTriggerNotice([event], "德克萨斯", afterWithAdvice("stand"))[0]?.text).toBe("策展人发动「猎手直觉」：建议 Stand 停牌");
+  it("uses the concrete Hit bust forecast", () => {
+    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "skill", definitionId: "critical-judgment", ruleId: "forecast-next-hit", owner: "player" };
+    const result: GameEvent = { type: "ABILITY_RESULT", instanceId: "skill", definitionId: "critical-judgment", owner: "player", result: { type: "hit-bust-forecast", actor: "player", wouldBust: true } };
+    expect(abilityTriggerNotice([event, result], "德克萨斯", afterWithAdvice("stand"))[0]?.text).toBe("策展人发动「临界判断」：现在 Hit 会导致爆牌。");
+  });
+
+  it("shows the currently revealed draw-pile suit for Hunter Instinct", () => {
+    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "hunter", definitionId: "hunter-instinct", ruleId: "reveal-top-on-gain", owner: "player" };
+    const revealed: GameEvent = { type: "DRAW_PILE_CARD_SUIT_REVEALED", viewer: "player", cardId: "next-card", suit: "diamonds" };
+    expect(abilityTriggerNotice([event, revealed], "德克萨斯")[0]?.text).toBe("策展人发动「猎手直觉」：牌堆顶下一张牌的花色是方块");
+  });
+
+  it("reports only the hand-total relation for Situation Assessment", () => {
+    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "situation", definitionId: "situation-assessment", ruleId: "compare-base-totals", owner: "player" };
+    const result: GameEvent = { type: "ABILITY_RESULT", instanceId: "situation", definitionId: "situation-assessment", owner: "player", result: { type: "hand-total-compared", actor: "player", relation: "lower" } };
+    expect(abilityTriggerNotice([event, result], "德克萨斯")[0]?.text).toBe("策展人发动「态势研判」：对手的当前基础点数更高。");
+  });
+
+  it("reports the immediate load from Prepaid Premium", () => {
+    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "premium", definitionId: "prepaid-premium", ruleId: "prepay-and-cover", owner: "player" };
+    const result: GameEvent = { type: "ABILITY_RESULT", instanceId: "premium", definitionId: "prepaid-premium", owner: "player", result: { type: "gun-bullets-added", actor: "player", amount: 1, bullets: 3 } };
+    expect(abilityTriggerNotice([event, result], "德克萨斯")[0]?.text).toContain("当前弹巢共有3发");
   });
 
   it("uses every actual revealed suit from the same batch", () => {

@@ -138,9 +138,23 @@ function broadcastHandChanges(state: MatchState, actors: readonly Actor[], sourc
   }, state);
 }
 
+function broadcastDrawPileChange(state: MatchState, before: AbilityWorld, sourceEventId: string, force = false): MatchState {
+  const previous = before.shoe.cards[before.shoe.cursor]?.id;
+  const current = state.shoe.cards[state.shoe.cursor]?.id;
+  if (!force && previous === current) return state;
+  return runAbilityEvent(state, { trigger: "after-draw-pile-changed", sourceEventId, roundHitCounts: getRoundHitCounts(state) }, {}).state;
+}
+
 function abilityServices(state: MatchState) {
   return {
-    publishAdvice: (owner: Actor) => owner === "player" ? decideOptimalAction(buildObservation(state, "player")) : "stand" as const
+    publishAdvice: (owner: Actor) => owner === "player" ? decideOptimalAction(buildObservation(state, "player")) : "stand" as const,
+    forecastHitBust: (owner: Actor, world: AbilityWorld) => {
+      const card = world.shoe.cards[world.shoe.cursor];
+      if (!card) throw new Error("Draw-pile top card is unavailable");
+      const projected = commitAbilityWorld(state, world);
+      const limit = getActiveBustLimit(projected, owner);
+      return handValueAtLimit(addCard(world.hands[owner], card), limit) > limit;
+    }
   };
 }
 function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly failed: boolean } {
@@ -255,6 +269,7 @@ export function resolveRound(state: MatchState, outcome: RoundOutcome, pointComp
 function resolveBust(state: MatchState, actor: Actor): MatchState { const winner: Actor = actor === "player" ? "opponent" : "player"; return resolveRound(state, { winner, reason: "bust", penaltyTarget: actor, bulletsAdded: 1 }); }
 
 function drawFor(state: MatchState, actor: Actor): MatchState {
+  const beforeDraw = abilityWorld(state);
   const base = drawCard(state.shoe);
   const pending: PendingDraw = { id: `draw:${state.roundIndex}:${state.history.length}`, actor, card: base.card };
   const prepared = runAbilityEvent({ ...state, playerSkills: actor === "player" ? playerSkillState(state, { advice: null }) : state.playerSkills }, { trigger: "before-card-draw", sourceEventId: pending.id, eventActor: actor }, { draw: pending });
@@ -270,7 +285,8 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
   const beforeAfterDraw = abilityWorld(next);
   const afterDraw = runAbilityEvent(next, { trigger: "after-card-draw", sourceEventId: `after:${pending.id}`, eventActor: actor }, {}).state;
   const changedActors = [...new Set<Actor>([actor, ...changedHandActors(beforeAfterDraw, abilityWorld(afterDraw))])];
-  let changed = expireOwnerActionLifecycle(normalizeAbilityHands(broadcastHandChanges(afterDraw, changedActors, `hand:${pending.id}`)), actor);
+  const withDrawPileNotice = broadcastDrawPileChange(afterDraw, beforeDraw, `draw-pile:${pending.id}`);
+  let changed = expireOwnerActionLifecycle(normalizeAbilityHands(broadcastHandChanges(withDrawPileNotice, changedActors, `hand:${pending.id}`)), actor);
   if (changed.round.phase !== "turns") return changed;
   if (changed[actor].stood) return setPhase(changed, "turns", actor === "player" ? "opponent" : "player");
   const other = actor === "player" ? "opponent" : "player";
@@ -344,6 +360,7 @@ function startNextRound(state: MatchState): MatchState {
 }
 
 function dealCurrentRound(state: MatchState): MatchState {
+  const beforeDeal = abilityWorld(state);
   const deck = SeededRng.fromSnapshot(state.rng.deck);
   const dealt = makeRound(state.roundIndex, state.shoe, deck);
   const round: RoundState = {
@@ -353,6 +370,7 @@ function dealCurrentRound(state: MatchState): MatchState {
   let next = withRound({ ...state, shoe: dealt.shoe, rng: { ...state.rng, deck: dealt.deckRng.snapshot() } }, round);
   if (state.roundIndex === 0) next = runAbilityEvent(next, { trigger: "on-match-created", sourceEventId: `match-created:${state.id}` }, {}).state;
   next = append(next, ...dealt.events);
+  next = broadcastDrawPileChange(next, beforeDeal, `draw-pile:deal:${state.roundIndex}`, true);
   return resolveInitialBlackjack(broadcastHandChanges(next, ["player", "opponent"], `initial-hand:${state.roundIndex}`));
 }
 function resolveInitialBlackjack(state: MatchState): MatchState {
@@ -454,6 +472,7 @@ function play(state: MatchState, instanceId: string): MatchState {
     // Broadcast only after the direct ability has successfully resolved so
     // observers (for example Copper Seal) cannot block the first card.
     next = runAbilityEvent(next, { trigger: "after-ability-played", sourceEventId: `after-ability:${instanceId}:${state.history.length}`, eventActor: instance.owner, playedAbilityKind: instance.kind }, {}).state;
+    next = broadcastDrawPileChange(next, input.world, `draw-pile:ability:${instanceId}:${state.history.length}`);
     if (handChanges.length > 0) next = broadcastHandChanges(next, handChanges, `ability-hand:${instanceId}:${state.history.length}`);
     if (next.round.phase === "turns") {
       next = normalizeAbilityHands(next);
@@ -494,8 +513,10 @@ function selectSkillDraw(state: MatchState, definitionId: string): MatchState {
   const offer = state.playerSkills.drawOffer;
   if (!offer || !offer.candidateDefinitionIds.includes(definitionId)) return state;
   if (state.playerSkills.drawCount <= 0 || state.playerSkills.cards.length >= PLAYER_SKILL_INVENTORY_CAPACITY) return state;
-  const next = grantSkillCards(state, [definitionId]);
+  let next = grantSkillCards(state, [definitionId]);
   if (next === state) return state;
+  const gained = next.playerSkills.cards.find((card) => !state.playerSkills.cards.some((old) => old.instanceId === card.instanceId));
+  if (gained) next = runAbilityEvent(next, { trigger: "on-ability-gained", sourceEventId: `ability-gained:${gained.instanceId}:${state.history.length}`, eventActor: gained.owner }, {}, gained.instanceId).state;
   return append({
     ...next,
     playerSkills: playerSkillState(next, { drawCount: next.playerSkills.drawCount - 1, drawOffer: null })

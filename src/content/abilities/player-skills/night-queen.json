@@ -6,7 +6,7 @@
   "triggerNotice": "获得一张衍生牌，手牌补至21点。",
   "profileLore": "她在夜色中辨认出一枚熟悉的花色，随后让牌面安静地抵达它应有的终点。",
   "sourceKind": "player-skill",
-  "primaryDomain": "blackjack",
+  "primaryDomain": "gambler",
   "skillTags": ["gambler"],
   "activation": {
     "type": "action",

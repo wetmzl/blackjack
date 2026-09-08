@@ -6,7 +6,7 @@
   "triggerNotice": "牌堆顶的一张牌已被移至牌堆底。",
   "profileLore": "荷官坚持说牌堆从未被人动过。后来大家一致同意，他说得非常有道理。",
   "sourceKind": "player-skill",
-  "primaryDomain": "rule-control",
+  "primaryDomain": "cheater",
   "tags": ["rule-control", "player-skill", "active-skill-card"],
   "skillTags": ["cheater"],
   "drop": { "enabled": true, "baseWeight": 1 },
