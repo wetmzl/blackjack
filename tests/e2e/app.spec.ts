@@ -1337,6 +1337,17 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
 });
 
 test("技能流派最多选择两个并持久化，天赋按击败进度解锁", async ({ page }) => {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __hapticPatterns: Array<number | number[]> };
+    target.__hapticPatterns = [];
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      value: (pattern: number | number[]) => {
+        target.__hapticPatterns.push(pattern);
+        return true;
+      }
+    });
+  });
   await page.goto("/");
   await installLongTermSave(page, createDefaultSave("2026-08-30T00:00:00.000Z"));
   await page.getByRole("button", { name: "技能与天赋" }).click();
@@ -1347,7 +1358,9 @@ test("技能流派最多选择两个并持久化，天赋按击败进度解锁",
   await expect(skills.locator("[data-skill-tag-info]")).toHaveCount(4);
   expect(await skills.locator(".skill-tag-grid").evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(/\s+/).filter(Boolean).length)).toBe(2);
   await expect(skills.locator(".skill-tag-card img").nth(0)).toHaveAttribute("src", "/assets/skills/archetype-gambler.png");
+  await page.evaluate(() => { (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns = []; });
   await tags.nth(0).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns)).toEqual([8, [22, 35, 28]]);
   await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "true");
   await expect(skills.locator(".skill-tag-card img").nth(0)).toHaveAttribute("src", "/assets/skills/archetype-gambler-selected.png");
   await skills.getByRole("button", { name: "查看老千流派说明" }).click();
@@ -1363,7 +1376,9 @@ test("技能流派最多选择两个并持久化，天赋按击败进度解锁",
   await expect(tags.nth(1)).toHaveAttribute("aria-pressed", "true");
   await tags.nth(2).click();
   await expect(skills.locator("#skill-management-status")).toContainText("最多选择两个流派");
+  await page.evaluate(() => { (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns = []; });
   await tags.nth(0).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns)).toEqual([8, [22, 35, 28]]);
   await expect(skills.locator(".skill-tag-card img").nth(0)).toHaveAttribute("src", "/assets/skills/archetype-gambler.png");
   await tags.nth(2).click();
   await expect(tags.nth(0)).toHaveAttribute("aria-pressed", "false");
@@ -2087,6 +2102,17 @@ test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({
 });
 
 test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人物层", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { __hapticPatterns: Array<number | number[]> };
+    target.__hapticPatterns = [];
+    Object.defineProperty(navigator, "vibrate", {
+      configurable: true,
+      value: (pattern: number | number[]) => {
+        target.__hapticPatterns.push(pattern);
+        return true;
+      }
+    });
+  });
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.history = [
     { id: "gallery-w", timestamp: "2026-08-27T20:10:00.000Z", opponentId: "w", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 1, opponent: 0 } },
@@ -2141,7 +2167,9 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     await expect(gallery.locator("[data-gallery-turn='-1']")).toHaveAttribute("aria-label", "向右翻转到右侧");
     await expect(gallery.locator("[data-gallery-turn='1']")).toHaveAttribute("aria-label", "向左翻转到左侧");
     if (character.slug === "w") {
+      await page.evaluate(() => { (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns = []; });
       await swipeTrophyGallery(page, "left");
+      await expect.poll(() => page.evaluate(() => (window as typeof window & { __hapticPatterns: Array<number | number[]> }).__hapticPatterns)).toEqual([[25, 75, 25, 75, 25, 75, 25, 75]]);
       await expect(gallery.locator(".trophy-gallery-subject")).toHaveAttribute("src", /w-trophy-gallery-left-subject\.png/);
       await expect(gallery.locator("#trophy-closeup-panel")).not.toHaveClass(/is-open/);
       await expect(gallery.locator(".trophy-hotspot").first()).toBeHidden();

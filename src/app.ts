@@ -25,7 +25,7 @@ import { requestPersistentStorage } from "./persistence/storage";
 import { SaveValidationError, type CharacterDefeatRecord, type LongTermSave } from "./persistence/schema";
 import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
-import { presentInteractionHaptic, presentMatchHaptics } from "./presentation/haptics";
+import { presentBodyMovedHaptic, presentInteractionHaptic, presentMatchHaptics, presentSkillSelectionHaptic } from "./presentation/haptics";
 import { roundResultText, triggerResultText } from "./presentation/round-notice";
 import { cardDisplayMarkup, describeCard, describeCards, suitPresentation } from "./presentation/cards";
 import { gameAudio } from "./audio/game-audio";
@@ -500,6 +500,8 @@ async function toggleSkillTag(tag: SkillTag): Promise<void> {
   const nextSave = { ...save, profile: { ...save.profile, selectedSkillTags: selected }, updatedAt: new Date().toISOString() };
   save = nextSave;
   skillManagementSelectedTags = selected;
+  gameAudio.play(index >= 0 ? "archetypeDeselect" : "archetypeSelect");
+  presentSkillSelectionHaptic(!save.settings.reducedMotion);
   const request = ++skillSaveRequest;
   renderSkillManagement("正在保存…");
   try {
@@ -1008,7 +1010,7 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
     if (open) hideCloseup();
     setDossierOpen(open);
   });
-  const showPose = (requestedIndex: number, direction: -1 | 1): void => {
+  const showPose = (requestedIndex: number, direction: -1 | 1, withFeedback = false): void => {
     if (!subject || !caption || !stage) return;
     currentPoseIndex = (requestedIndex + poses.length) % poses.length;
     const pose = poses[currentPoseIndex];
@@ -1022,6 +1024,10 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
     stage.dataset.galleryPose = pose.id;
     buttons.forEach((hotspot) => { hotspot.hidden = !isDefault; });
     caption.textContent = `${pose.name} · 左右滑动或点按箭头翻转${isDefault ? " · 点按圆环查看特写" : ""}`;
+    if (withFeedback) {
+      gameAudio.play("bodyMoved");
+      presentBodyMovedHaptic(!save.settings.reducedMotion);
+    }
     const previousPose = poses[(currentPoseIndex - 1 + poses.length) % poses.length];
     const nextPose = poses[(currentPoseIndex + 1) % poses.length];
     turnButtons.forEach((button) => {
@@ -1032,7 +1038,7 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
   };
   turnButtons.forEach((button) => button.addEventListener("click", () => {
     const direction = button.dataset.galleryTurn === "-1" ? -1 : 1;
-    showPose(currentPoseIndex + direction, direction);
+    showPose(currentPoseIndex + direction, direction, true);
   }));
   showPose(0, 1);
   subject?.classList.remove("is-turning-previous", "is-turning-next");
@@ -1053,7 +1059,7 @@ function openTrophyGallery(character: CharacterDefinition, gallery: CharacterTro
     const swipeThreshold = Math.max(36, stage.clientWidth * .1);
     if (Math.abs(horizontalDistance) < swipeThreshold || Math.abs(horizontalDistance) <= Math.abs(verticalDistance)) return;
     const direction = horizontalDistance < 0 ? 1 : -1;
-    showPose(currentPoseIndex + direction, direction);
+    showPose(currentPoseIndex + direction, direction, true);
   });
   const cancelSwipe = (event: PointerEvent): void => {
     if (swipeStart?.pointerId !== event.pointerId) return;

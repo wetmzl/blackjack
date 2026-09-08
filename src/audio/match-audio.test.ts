@@ -113,11 +113,11 @@ describe("match audio presentation mapping", () => {
     const fired = withEvents(waiting, "roulette-result", { type: "TRIGGER_PULLED", actor: "opponent", probability: 1, baseProbability: 1, misfireChance: 0, result: "fired", fired: true });
     const audio = new RecordingAudio();
     presentMatchAudio(audio, waiting, fired);
-    expect(audio.calls).toEqual(["heartbeat:stop", "play:gunshot:0"]);
+    expect(audio.calls).toEqual(["heartbeat:stop", "play:gunshot:0", "play:afterDeath:500"]);
 
     const summary = { ...fired, status: "finished" as const, view: "match-summary" as const };
     presentMatchAudio(audio, fired, summary);
-    expect(audio.calls).toEqual(["heartbeat:stop", "play:gunshot:0", "play:result:0"]);
+    expect(audio.calls).toEqual(["heartbeat:stop", "play:gunshot:0", "play:afterDeath:500", "play:result:0"]);
   });
 
   it("routes an ability-caused misfire to its own replaceable cue", () => {
