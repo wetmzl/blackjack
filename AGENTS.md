@@ -24,6 +24,15 @@
 - 改动规则或数据契约时同步更新测试。一般提交前运行 `npm test` 与 `npm run build`；涉及交互时再运行 `npm run test:e2e`。
 - 不打印、复制或提交 `.env.local` 及其中的凭据。部署密钥只进入本机环境或 CI 的加密 Secret。
 
+### 分支、同步、测试与合并门禁
+
+- 每个 Agent 每项任务只能创建并使用一个工作分支；不得直接在 `main` 上改动或提交，也不得为同一任务建立临时、接力或备用分支。分支使用 `codex/<task>` 命名。
+- 新分支必须从刚刚获取的远端最新 `main` 创建。本地 `main` 不作为“最新”的依据；创建前执行 `git fetch origin main`，然后执行 `git switch -c codex/<task> origin/main`。
+- 最终测试前必须再次执行 `git fetch origin main` 和 `git rebase origin/main`，再按改动范围运行测试。只有当前工作分支包含最新 `origin/main`，并且 `npm test` 与 `npm run build` 均通过，才能进入审查或合并步骤；涉及交互时还须运行 `npm run test:e2e`。
+- 测试结果只对当时的 `origin/main` 有效。测试后若远端 `main` 更新，旧结果立即作废，必须重新 rebase 到最新 `origin/main` 并重跑全部必需测试。
+- 合并前必须最后执行一次 `git fetch origin main` 并确认分支仍包含最新 `origin/main`；不满足时停止合并并回到 rebase 与测试步骤。禁止使用强制推送绕过此门禁。
+- 只允许通过 Pull Request 合并到 `main`。GitHub 的 `main` 分支规则必须启用“合并前必须通过状态检查”和“分支必须与合并目标保持最新”，并将 CI 的 `test-build` 设为必需检查；同时禁止直接推送与强制推送。Agent 只能推送自己的单一工作分支，CI 通过且分支保持最新后方可合并。
+
 ## 文档入口
 
 - [文档索引](docs/README.md)
