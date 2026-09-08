@@ -8,6 +8,13 @@ export const SOUND_SOURCES = {
   compare: "/assets/audio/sfx/compare.ogg",
   result: "/assets/audio/sfx/result.ogg",
   stand: "/assets/audio/sfx/stand.ogg",
+  /** Dedicated routing keys; replace these assets when the final skill SFX are available. */
+  skillDraw: "/assets/audio/sfx/stand.ogg",
+  skillUse: "/assets/audio/sfx/stand.ogg",
+  afterDeath: "/assets/audio/sfx/death-aftermath.ogg",
+  bodyMoved: "/assets/audio/sfx/body-moved.ogg",
+  archetypeSelect: "/assets/audio/sfx/archetype-select.ogg",
+  archetypeDeselect: "/assets/audio/sfx/archetype-deselect.ogg",
   heartbeat: "/assets/audio/sfx/heartbeat.ogg",
   dryFire: "/assets/audio/sfx/revolver-dry-fire.ogg",
   /** Dedicated routing key; replace this asset when the final misfire SFX is available. */
@@ -25,6 +32,12 @@ const SOUND_VOLUME: Readonly<Record<SoundCue, number>> = {
   compare: 0.64,
   result: 0.74,
   stand: 0.76,
+  skillDraw: 0.76,
+  skillUse: 0.76,
+  afterDeath: 0.72,
+  bodyMoved: 0.58,
+  archetypeSelect: 0.62,
+  archetypeDeselect: 0.62,
   heartbeat: 0.34,
   dryFire: 0.72,
   misfire: 0.72,
@@ -97,6 +110,7 @@ export class GameAudio {
   preloadLobby(): void {
     if (!this.enabled) return;
     this.requestBgmLoad("lobby");
+    for (const cue of ["bodyMoved", "archetypeSelect", "archetypeDeselect"] as const) void this.loadEncodedAudio(cue);
     if (this.tableBgmPreloadScheduled || this.requestedBgmLoads.has("match")) return;
     this.tableBgmPreloadScheduled = true;
     globalThis.setTimeout(() => {

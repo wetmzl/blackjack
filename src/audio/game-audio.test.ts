@@ -27,15 +27,28 @@ afterEach(() => {
 });
 
 describe("staged game audio loading", () => {
-  it("loads lobby music first, then preloads table music in the initial stage", () => {
+  it("keeps skill cues independently routed while they temporarily reuse Stand", () => {
+    expect(SOUND_SOURCES.skillDraw).toBe(SOUND_SOURCES.stand);
+    expect(SOUND_SOURCES.skillUse).toBe(SOUND_SOURCES.stand);
+    expect(SOUND_SOURCES.afterDeath).toBe("/assets/audio/sfx/death-aftermath.ogg");
+    expect(SOUND_SOURCES.bodyMoved).toBe("/assets/audio/sfx/body-moved.ogg");
+    expect(SOUND_SOURCES.archetypeSelect).toBe("/assets/audio/sfx/archetype-select.ogg");
+    expect(SOUND_SOURCES.archetypeDeselect).toBe("/assets/audio/sfx/archetype-deselect.ogg");
+  });
+
+  it("loads lobby music and lobby interaction cues, then preloads table music", () => {
     vi.useFakeTimers();
-    const requestFetch = vi.fn();
+    const requestFetch = vi.fn(async (_input: RequestInfo | URL) => new Response("sound", { status: 200 }));
     vi.stubGlobal("fetch", requestFetch);
     vi.stubGlobal("Audio", RecordingAudioElement);
 
     new GameAudio().preloadLobby();
 
-    expect(requestFetch).not.toHaveBeenCalled();
+    expect(requestFetch.mock.calls.map(([url]) => String(url))).toEqual([
+      SOUND_SOURCES.bodyMoved,
+      SOUND_SOURCES.archetypeSelect,
+      SOUND_SOURCES.archetypeDeselect
+    ]);
     expect(RecordingAudioElement.instances).toHaveLength(1);
     expect(RecordingAudioElement.instances[0]).toMatchObject({
       src: LOBBY_BGM_URL,
@@ -55,7 +68,7 @@ describe("staged game audio loading", () => {
     expect(RecordingAudioElement.instances[1]?.load).toHaveBeenCalledOnce();
   });
 
-  it("defers short sound fetches until the match stage", async () => {
+  it("preloads every configured sound at the match stage", async () => {
     const requestFetch = vi.fn(async (_input: RequestInfo | URL) => new Response("sound", { status: 200 }));
     vi.stubGlobal("fetch", requestFetch);
     vi.stubGlobal("Audio", RecordingAudioElement);

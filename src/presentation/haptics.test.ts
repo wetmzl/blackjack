@@ -1,9 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMatch } from "../core/match/reducer";
 import type { MatchState } from "../core/match/types";
-import { presentMatchHaptics } from "./haptics";
+import { presentBodyMovedHaptic, presentInteractionHaptic, presentMatchHaptics, presentSkillSelectionHaptic } from "./haptics";
 
 describe("match haptics", () => {
+  it("uses a minimal pulse for successful button interactions", () => {
+    const vibrate = vi.fn(() => true);
+    presentInteractionHaptic(true, { vibrate });
+    expect(vibrate).toHaveBeenCalledWith(8);
+  });
+
+  it("keeps interaction feedback silent when reduced effects disable haptics", () => {
+    const vibrate = vi.fn(() => true);
+    presentInteractionHaptic(false, { vibrate });
+    expect(vibrate).not.toHaveBeenCalled();
+  });
+
+  it("matches dry-fire strength for skill selection and uses a low-duty 400ms body-move pattern", () => {
+    const vibrate = vi.fn(() => true);
+    presentSkillSelectionHaptic(true, { vibrate });
+    presentBodyMovedHaptic(true, { vibrate });
+    expect(vibrate.mock.calls).toEqual([
+      [[22, 35, 28]],
+      [[25, 75, 25, 75, 25, 75, 25, 75]]
+    ]);
+    const calls = vibrate.mock.calls as unknown as Array<[number | number[]]>;
+    expect((calls[1]?.[0] as number[]).reduce((sum, duration) => sum + duration, 0)).toBe(400);
+  });
+
   it("uses distinct confirmation, dry-fire, and gunshot patterns", () => {
     const base = createMatch("haptics");
     const vibrate = vi.fn(() => true);
