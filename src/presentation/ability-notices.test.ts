@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices } from "./ability-notices";
+import { createMatch } from "../core/match/reducer";
 import type { GameEvent, MatchState } from "../core/match/types";
 import type { PendingTriggerPreview } from "../core/match/reducer";
 
@@ -92,7 +93,18 @@ describe("ability trigger notices", () => {
 
     const carnival: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "carnival", definitionId: "carnival", ruleId: "raise-shared-bust-limit", owner: "player" };
     const carnivalResult: GameEvent = { type: "ABILITY_RESULT", instanceId: "carnival", definitionId: "carnival", owner: "player", result: { type: "status-stacks-updated", actor: "player", statusDefinitionId: "carnival-bust-bonus", stacks: 1, delta: 1 } };
-    expect(abilityTriggerNotice([carnival, carnivalResult], "W", { player: { bustLimit: 24 } } as MatchState)[0]?.text).toContain("公共爆牌上限提高至24点");
+    const base = createMatch("carnival-notice");
+    const source = { kind: "player-skill" as const, definitionId: "carnival", owner: "player" as const, instanceId: "carnival", createdAtSequence: base.abilities.sequence + 1, parameters: {} };
+    const after = {
+      ...base,
+      abilities: {
+        ...base.abilities,
+        instances: [...base.abilities.instances, source],
+        statuses: [{ statusDefinitionId: "carnival-bust-bonus", owner: "player" as const, sourceInstanceId: source.instanceId, stacks: 1, duration: "round" as const, parameters: {}, createdAtSequence: source.createdAtSequence }],
+        sequence: source.createdAtSequence
+      }
+    };
+    expect(abilityTriggerNotice([carnival, carnivalResult], "W", after)[0]?.text).toContain("本轮公共爆牌上限提高至22点");
   });
 
   it("suppresses internal shared-status rule toasts", () => {

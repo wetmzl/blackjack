@@ -315,8 +315,8 @@ describe("data-driven character registry", () => {
     ]);
     expect(irene.aiSkills).toEqual([{ definitionId: "ai-sword-and-handcannon", enabled: true, parameters: {} }]);
     expect(nian.aiSkills).toEqual([
-      { definitionId: "ai-forge-heralds-the-year", enabled: true, parameters: {} },
-      { definitionId: "copper-seal", enabled: true, parameters: {} }
+      { definitionId: "ai-tin-scorch", enabled: true, parameters: {} },
+      { definitionId: "ai-forge-heralds-the-year", enabled: true, parameters: {} }
     ]);
     expect(texas.aiSkills).toEqual([{ definitionId: "silent-drizzle", enabled: true, parameters: {} }]);
     expect(plume.aiSkills).toEqual([]);

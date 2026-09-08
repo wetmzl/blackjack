@@ -1,5 +1,5 @@
 import { getAbilityDefinition, getStatusDefinition, STATUS_DEFINITIONS } from "../core/abilities/registry";
-import type { PendingTriggerPreview } from "../core/match/reducer";
+import { getActiveBustLimit, type PendingTriggerPreview } from "../core/match/reducer";
 import type { MatchState, GameEvent } from "../core/match/types";
 import type { AbilityRule, Effect } from "../core/abilities/types";
 
@@ -89,7 +89,7 @@ function ruleNotice(
     const status = getStatusDefinition(statusResult.statusDefinitionId);
     const hasBustRule = status?.rules.some((candidate) => candidate.effects.some((effect) => effect.type === "add-to-pending-bust-limit"));
     const hasComparisonRule = status?.rules.some((candidate) => candidate.effects.some((effect) => effect.type === "add-to-pending-comparison-score"));
-    if (hasBustRule) return `公共爆牌上限提高至${after?.[statusResult.actor]?.bustLimit ?? 21 + statusResult.stacks}点。`;
+    if (hasBustRule) return `本轮公共爆牌上限提高至${after ? getActiveBustLimit(after, statusResult.actor) : 21 + statusResult.stacks}点。`;
     if (hasComparisonRule) return `获得${statusResult.delta}点点数优势。`;
   }
   const dynamic = rule?.effects

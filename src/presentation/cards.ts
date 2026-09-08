@@ -56,7 +56,9 @@ const TAG_MARKERS: readonly { readonly tag: string; readonly marker: CardMarker 
 ];
 
 export function describeCard(card: Card, visibility: CardVisibility): CardDisplayDescription {
-  const tagMarkers = TAG_MARKERS.filter(({ tag }) => cardHasTag(card, tag)).map(({ marker }) => marker);
+  const tagMarkers = visibility.variant === "compact"
+    ? []
+    : TAG_MARKERS.filter(({ tag }) => cardHasTag(card, tag)).map(({ marker }) => marker);
   return {
     cardId: card.id,
     source: cardSource(card),
@@ -104,20 +106,36 @@ function markerMarkup(marker: CardMarker): string {
 /** The sole HTML renderer for actual playing-card entities. */
 export function cardDisplayMarkup(display: CardDisplayDescription): string {
   const suit = display.suit ? suitPresentation(display.suit) : null;
-  const visibleFacts = [display.rank ? `点数${display.rank}` : "", suit ? `花色${suit.label}` : ""].filter(Boolean).join("，");
+  const compact = display.variant === "compact";
+  const visibleFacts = [
+    display.rank ? `点数${display.rank}` : compact ? "点数未知" : "",
+    suit ? `花色${suit.label}` : compact ? "花色未知" : ""
+  ].filter(Boolean).join("，");
   const surfaceLabel = display.surface === "front" ? "正面" : "牌背";
   const markerLabels = display.markers.map((marker) => marker.label).join("、");
   const aria = [surfaceLabel, visibleFacts, markerLabels].filter(Boolean).join("，");
-  const classes = [
+  const face = compact
+    ? suit
+      ? `<em class="card-suit">${suit.symbol}</em><b class="card-rank${display.rank ? "" : " card-rank-unknown"}">${display.rank ? escapeHtml(display.rank) : "?"}</b>`
+      : display.rank
+        ? `<b class="card-rank">${escapeHtml(display.rank)}</b>`
+        : `<b class="card-unknown">??</b>`
+    : `${suit ? `<em class="card-suit">${suit.symbol}</em>` : ""}${display.rank ? `<b class="card-rank">${escapeHtml(display.rank)}</b>` : ""}`;
+  const classes = (compact ? [
+    "card-compact",
+    "ai-info-card",
+    suit ? (suit.red ? "red" : "black") : "neutral",
+    display.rank ? "card-rank-visible" : "",
+    suit ? "card-suit-visible" : ""
+  ] : [
     "card",
     `card-${display.surface}`,
     suit?.red ? "red" : "black",
     display.rank ? "card-rank-visible" : "",
     suit ? "card-suit-visible" : "",
-    display.variant === "compact" ? "card-compact ai-info-card" : "",
     cardHasDisplayTag(display, "derived") ? "card-derived" : ""
-  ].filter(Boolean).join(" ");
-  return `<span class="${classes}" data-card-id="${escapeHtml(display.cardId)}" data-card-source="${display.source}" aria-label="${escapeHtml(aria)}"><span class="card-surface" aria-hidden="true">${suit ? `<em class="card-suit">${suit.symbol}</em>` : ""}${display.rank ? `<b class="card-rank">${escapeHtml(display.rank)}</b>` : ""}</span>${display.markers.map(markerMarkup).join("")}</span>`;
+  ]).filter(Boolean).join(" ");
+  return `<span class="${classes}" data-card-id="${escapeHtml(display.cardId)}" data-card-source="${display.source}" data-card-surface="${display.surface}" aria-label="${escapeHtml(aria)}">${compact ? face : `<span class="card-surface" aria-hidden="true">${face}</span>`}${display.markers.map(markerMarkup).join("")}</span>`;
 }
 
 function cardHasDisplayTag(display: CardDisplayDescription, tag: string): boolean {

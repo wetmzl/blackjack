@@ -308,6 +308,27 @@ describe("createMatch and legal actions", () => {
     expect(ready.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "platinum-vision" && event.ruleId === "apply-comparison-advantage")).toBe(false);
   });
 
+  it("Nian's Tin Scorch grants one comparison point per red card on the table", () => {
+    const configured = createMatch("nian-tin-scorch", {
+      opponentId: "nian",
+      opponentAiSkills: [
+        { definitionId: "ai-tin-scorch", enabled: true, parameters: {} },
+        { definitionId: "ai-forge-heralds-the-year", enabled: true, parameters: {} }
+      ]
+    });
+    const ready = withHands(configured, [card("10", "hearts"), card("8", "hearts")], [card("10", "diamonds"), card("9", "hearts")]);
+
+    expect(previewComparisonScores(ready)).toEqual({
+      baseScores: { player: 18, opponent: 19 },
+      scores: { player: 18, opponent: 23 }
+    });
+
+    const playerStood = gameReducer(ready, { type: "PLAYER_STAND" });
+    const reveal = gameReducer(playerStood, { type: "AI_STAND" });
+    expect(reveal.round.outcome?.comparisonScores).toEqual({ player: 18, opponent: 23 });
+    expect(reveal.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "ai-tin-scorch", ruleId: "red-cards-grant-score-advantage" }));
+  });
+
   it("recalculates Lappland's live score modifier when the player's hand crosses the index", () => {
     const configured = createMatch("lappland-live-comparison-preview", {
       opponentId: "lappland-the-decadenza",

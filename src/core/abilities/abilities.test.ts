@@ -48,9 +48,9 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers three disjoint ability domains as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(31);
+    expect(ABILITY_DEFINITIONS).toHaveLength(32);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(15);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(15);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(16);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind !== "talent").every((definition) => definition.rules.length > 0)).toBe(true);
@@ -66,6 +66,7 @@ describe("ability schemas and immutable registry", () => {
     expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案中的文学化技能描写。" }).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, profileLore: "档案", profileLoreExtra: true }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "Q" }] }] }).success).toBe(true);
+    expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], effects: [{ type: "add-to-pending-comparison-score", target: "owner", amount: { type: "hand-card-color-count", target: "rival", color: "red" } }] }] }).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-card-has-tag", target: "owner", card: "last-card", tag: "marked" }], effects: [{ type: "add-hand-card-tag", target: "owner", card: "last-card", tag: "marked" }] }] }).success).toBe(true);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "Q", extra: true }] }] }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...base, rules: [{ ...base.rules[0], conditions: [{ type: "hand-rank-has-suit-partner", target: "owner", rank: "joker" }] }] }).success).toBe(false);

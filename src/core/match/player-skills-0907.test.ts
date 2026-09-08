@@ -11,7 +11,7 @@ import type { MatchState, ParticipantState, RoundState } from "./types";
 const card = (rank: Rank, suit: Suit = "hearts"): Card => createCard(suit, rank);
 const skillCard = (definitionId: string, instanceId: string) => ({ kind: "player-skill" as const, definitionId, owner: "player" as const, instanceId });
 
-function fixture(definitionId: string, hand: Card[], shoe: Card[] = [card("2", "clubs")]): MatchState {
+function fixture(definitionId: string, hand: Card[], shoe: Card[] = [card("2", "clubs"), card("3", "clubs"), card("4", "clubs"), card("5", "clubs")]): MatchState {
   const base = createMatch(`player-skill-${definitionId}`, { unlockedPlayerSkillIds: [definitionId] });
   const instanceId = `skill-${definitionId}`;
   const skill = skillCard(definitionId, instanceId);
@@ -126,7 +126,7 @@ describe("0907 declarative Player Skills", () => {
     expect(rejected.abilities.lastPlayedPlayerSkillDefinitionId).toBeNull();
   });
 
-  it("Carnival applies its shared match status to either actor and accumulates", () => {
+  it("Carnival accumulates for both actors in the current round, then resets to 21 next round", () => {
     let state = fixture("carnival", [card("2"), card("3")]);
     state = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "skill-carnival" });
     const carnival = skillCard("carnival", "skill-carnival-2");
@@ -136,6 +136,13 @@ describe("0907 declarative Player Skills", () => {
     expect(getActiveBustLimit(state, "player")).toBe(23);
     expect(getActiveBustLimit(state, "opponent")).toBe(23);
     expect(normalizeAbilityHands(state).player.busted).toBe(false);
+    expect(state.abilities.statuses).toContainEqual(expect.objectContaining({ statusDefinitionId: "carnival-bust-bonus", duration: "round", stacks: 2 }));
+
+    const reveal = resolveRound(state, { winner: null, reason: "push", penaltyTarget: null, bulletsAdded: 0 });
+    const nextRound = gameReducer(reveal, { type: "ACK_ROUND_RESULT" });
+    expect(nextRound.abilities.statuses.some((status) => status.statusDefinitionId === "carnival-bust-bonus")).toBe(false);
+    expect(getActiveBustLimit(nextRound, "player")).toBe(21);
+    expect(getActiveBustLimit(nextRound, "opponent")).toBe(21);
   });
 
   it("point advantage does not run comparison effects during a bust settlement", () => {

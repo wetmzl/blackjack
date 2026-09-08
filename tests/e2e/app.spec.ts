@@ -596,6 +596,8 @@ test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌",
   const rememberedCard = infoBar.locator(".ai-info-card");
   await expect(rememberedCard.locator("em")).toHaveText("♥");
   await expect(rememberedCard.locator("b")).toHaveText("4");
+  await expect(rememberedCard.locator(".card-marker")).toHaveCount(0);
+  await expect(rememberedCard).not.toContainText("◇");
   const faceOrder = await rememberedCard.evaluate((card) => ({
     suit: card.querySelector("em")!.getBoundingClientRect().x,
     rank: card.querySelector("b")!.getBoundingClientRect().x
@@ -611,12 +613,80 @@ test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌",
   expect(appearance.color).toBe("rgb(201, 47, 78)");
   expect(appearance.suitSize).toBeGreaterThanOrEqual(14);
   expect(appearance.width).toBeGreaterThanOrEqual(43);
-  expect(appearance.height).toBeGreaterThanOrEqual(24);
+  expect(appearance.width).toBeLessThan(58);
+  expect(appearance.height).toBe(24);
+  await expect(rememberedCard).not.toHaveClass(/(?:^|\s)card(?:\s|$)/);
 
   await installRuntimeSave(page, hoOlheyakInfoBarMatch("spades"));
   const blackCard = page.locator(".ai-info-bar .ai-info-card.black");
   await expect(blackCard.locator("em")).toHaveText("♠");
   await expect(blackCard).toHaveCSS("color", "rgb(21, 26, 30)");
+});
+
+test("牌堆状态栏使用未知 compact 牌并随实体牌堆顶更新", async ({ page }) => {
+  await page.goto("/");
+  const match = wInfoBarMatch();
+  const firstCard = match.shoe.cards[match.shoe.cursor]!;
+  const secondCard = match.shoe.cards[match.shoe.cursor + 1]!;
+  const initialRemaining = match.shoe.cards.length - match.shoe.cursor;
+  await installRuntimeSave(page, match);
+
+  const tableActions = page.locator(".table-actions");
+  const statusOrder = await tableActions.evaluate((actions) => Array.from(actions.children)
+    .filter((element) => element.tagName === "SECTION")
+    .map((section) => section.className));
+  expect(statusOrder).toEqual(["roulette-status", "shoe-status", "ai-info-bar"]);
+
+  const shoeStatus = page.locator(".shoe-status");
+  const compactCard = shoeStatus.locator(".card-compact");
+  await expect(shoeStatus.locator(".shoe-status-label")).toHaveText("牌库");
+  await expect(shoeStatus.locator(".shoe-status-arrow")).toHaveCount(0);
+  await expect(shoeStatus.locator(".shoe-status-next-label")).toHaveText("next：");
+  const alignment = await shoeStatus.evaluate((status) => ({
+    label: status.querySelector<HTMLElement>(".shoe-status-label")!.getBoundingClientRect().left,
+    next: status.querySelector<HTMLElement>(".shoe-status-next")!.getBoundingClientRect().left,
+    innerLeft: status.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(status).paddingLeft)
+  }));
+  expect(Math.abs(alignment.label - alignment.innerLeft)).toBeLessThanOrEqual(1);
+  expect(alignment.next).toBeGreaterThan(alignment.label);
+  await expect(shoeStatus).not.toContainText(`×${initialRemaining}`);
+  await expect(compactCard).toHaveAttribute("data-card-id", firstCard.id);
+  await expect(compactCard.locator(".card-unknown")).toHaveText("??");
+  await expect(compactCard).toHaveClass(/neutral/);
+  await expect(compactCard).not.toHaveClass(/(?:^|\s)(?:red|black)(?:\s|$)/);
+  await expect(compactCard).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(compactCard.locator(".card-rank, .card-suit")).toHaveCount(0);
+  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌的点数与花色未知，剩余 ${initialRemaining} 张`);
+
+  const widths = await tableActions.evaluate((actions) => {
+    const roulette = actions.querySelector<HTMLElement>(".roulette-status")!;
+    const shoe = actions.querySelector<HTMLElement>(".shoe-status")!;
+    const info = actions.querySelector<HTMLElement>(".ai-info-bar")!;
+    return [roulette, shoe, info].map((element) => element.getBoundingClientRect().width);
+  });
+  expect(Math.abs(widths[0]! - widths[1]!)).toBeLessThanOrEqual(1);
+  expect(Math.abs(widths[1]! - widths[2]!)).toBeLessThanOrEqual(1);
+  const palette = await tableActions.evaluate((actions) => {
+    const gun = getComputedStyle(actions.querySelector<HTMLElement>(".gun-status-row")!);
+    const shoe = getComputedStyle(actions.querySelector<HTMLElement>(".shoe-status")!);
+    return {
+      gun: [gun.backgroundColor, gun.borderTopColor],
+      shoe: [shoe.backgroundColor, shoe.borderTopColor]
+    };
+  });
+  expect(palette.shoe).toEqual(palette.gun);
+
+  await shoeStatus.getByRole("button", { name: "查看牌库说明" }).click();
+  const shoeDialog = page.locator("#shoe-info-dialog");
+  await expect(shoeDialog).toBeVisible();
+  await expect(shoeDialog.getByRole("heading", { name: "牌库" })).toBeVisible();
+  await expect(shoeDialog.locator(".shoe-info-copy")).toHaveText("UI中的next指的是下一次hit后发出的牌，你可以用各种手段尝试揭开它的面纱。牌堆总大小为52张扑克牌（即不带大小王的一副扑克牌）。开局时洗匀整副牌，此后每轮开始前，在牌堆剩余少于 12 张时，从弃牌堆回收所有牌，并重新洗匀。");
+  await shoeDialog.getByRole("button", { name: "关闭牌库说明" }).click();
+  await expect(shoeDialog).not.toBeVisible();
+
+  await page.getByRole("button", { name: "Hit 要牌" }).click();
+  await expect(compactCard).toHaveAttribute("data-card-id", secondCard.id);
+  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌的点数与花色未知，剩余 ${initialRemaining - 1} 张`);
 });
 
 test("早有准备提供一次主动抽卡且单击候选立即确认", async ({ page }) => {
@@ -987,7 +1057,7 @@ test("年在击败 S 级角色后显示解离式档案并按需载入", async ({
   const profile = page.locator("#profile");
   await expect(profile).toContainText("年");
   await expect(profile.locator(".profile-ability")).toHaveCount(2);
-  await expect(profile.locator(".profile-ability summary")).toContainText(["洪炉示岁", "铜印"]);
+  await expect(profile.locator(".profile-ability summary")).toContainText(["锡灼", "洪炉示岁"]);
   await expect(profile.locator("#profile-content")).toHaveText(/\S+/);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });

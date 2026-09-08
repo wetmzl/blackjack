@@ -1,0 +1,32 @@
+{
+  "id": "ai-tin-scorch",
+  "name": "锡灼",
+  "description": "当前双方手牌中每存在一张红色牌，年获得1点点数优势；点数比较时计入全部优势。",
+  "triggerNotice": "场上每张红色牌使年获得1点点数优势。",
+  "profileLore": "炉火不挑矿石，牌桌也不挑颜色。红色越多，她烧得越旺，连胜负的刻度都得替她让路。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "blackjack",
+  "activation": { "type": "automatic" },
+  "ttl": { "type": "rounds", "amount": 9999 },
+  "rules": [
+    {
+      "id": "red-cards-grant-score-advantage",
+      "trigger": "before-round-resolution",
+      "conditions": [
+        { "type": "round-reason-is", "value": "comparison" }
+      ],
+      "effects": [
+        {
+          "type": "add-to-pending-comparison-score",
+          "target": "owner",
+          "amount": {
+            "type": "add",
+            "left": { "type": "hand-card-color-count", "target": "owner", "color": "red" },
+            "right": { "type": "hand-card-color-count", "target": "rival", "color": "red" }
+          }
+        }
+      ]
+    }
+  ],
+  "tags": ["blackjack", "hand-value", "score-advantage", "ai-skill"]
+}

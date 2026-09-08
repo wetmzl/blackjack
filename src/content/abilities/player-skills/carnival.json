@@ -1,9 +1,9 @@
 {
   "id": "carnival",
   "name": "狂欢节",
-  "description": "爆牌上限增加1点，对双方同时生效。",
-  "usage": "爆牌上限增加1点。",
-  "triggerNotice": "公共爆牌上限提高至X点。",
+  "description": "本轮公共爆牌上限增加1点，对双方同时生效。",
+  "usage": "本轮双方爆牌上限增加1点。",
+  "triggerNotice": "本轮公共爆牌上限提高至X点。",
   "profileLore": "规章第五版删去了“禁止擅自修改规章”这一条。修改人对此深表满意。",
   "sourceKind": "player-skill",
   "primaryDomain": "rule-control",

@@ -1,6 +1,6 @@
 {
   "id": "carnival-bust-bonus",
-  "defaultDuration": "match",
+  "defaultDuration": "round",
   "rules": [
     {
       "id": "apply-carnival-bust-bonus",

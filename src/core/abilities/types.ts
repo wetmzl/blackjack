@@ -29,6 +29,7 @@ export type NumberValue =
   | { readonly type: "hand-total"; readonly target: ActorSelector }
   | { readonly type: "round-final-score"; readonly target: ActorSelector }
   | { readonly type: "hand-card-count"; readonly target: ActorSelector }
+  | { readonly type: "hand-card-color-count"; readonly target: ActorSelector; readonly color: "red" | "black" }
   | { readonly type: "event-hand-card-count"; readonly target: ActorSelector }
   | { readonly type: "round-hit-count"; readonly target: ActorSelector }
   | { readonly type: "status-stacks"; readonly target: ActorSelector; readonly statusDefinitionId: string }

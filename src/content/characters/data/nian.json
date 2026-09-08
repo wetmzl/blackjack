@@ -121,12 +121,12 @@
   },
   "aiSkills": [
     {
-      "definitionId": "ai-forge-heralds-the-year",
+      "definitionId": "ai-tin-scorch",
       "enabled": true,
       "parameters": {}
     },
     {
-      "definitionId": "copper-seal",
+      "definitionId": "ai-forge-heralds-the-year",
       "enabled": true,
       "parameters": {}
     }

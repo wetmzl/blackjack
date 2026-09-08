@@ -32,7 +32,7 @@ src/
 
 实体牌统一采用 Card Entity：`id` 是实体在牌堆、手牌和事件之间移动时保持不变的身份；`attributes` 保存唯一键的 `source`、`rank`、`suit`；`tags` 是无重复值的开放标签集合。普通牌与衍生牌共享这一结构，衍生牌以 `source: derived` 和 `derived` / `generated-by:*` 标签表达来源，其 ID 由可保存的能力 RNG 确定性生成。能力可用通用标签条件及增删标签效果处理具体牌，不在规则层创建另一套牌类型。
 
-牌面表现位于 `src/presentation/cards.ts`。领域实体先投影为互相独立的 `surface`、`rank`、`suit` 与四角 `markers` 描述，再由唯一 renderer 输出牌面；明牌、暗牌、已知花色暗牌、衍生牌和技能标记牌不各自维护 renderer。`CARD_SUIT_REVEALED` 通过稳定 `cardId` 绑定被识破的实体，换牌后不会把已知信息错误附着到相同下标的新牌。
+牌面表现位于 `src/presentation/cards.ts`。领域实体先投影为互相独立的 `surface`、`rank`、`suit` 与四角 `markers` 描述，再由唯一 renderer 输出牌面；明牌、暗牌、已知花色暗牌、衍生牌和技能标记牌不各自维护 renderer。`compact` 变体沿用角色信息栏的内嵌字符样式，不继承牌桌实体牌的完整尺寸与牌背；它同样只读取该投影：完整牌显示“♥ 8”，仅点数显示“8”，仅花色显示“♥ ?”，两者未知显示“??”。未知花色时统一使用中性色，不能从实体的真实花色推导 CSS。compact 投影默认不附加由实体 tag 自动产生的装饰，避免遮挡有限的牌面空间；调用方明确传入的 marker 仍然保留。牌桌牌库状态栏直接用同一 renderer 表示 `shoe.cards[shoe.cursor]` 并保留实体 `cardId`，剩余张数只进入无障碍描述；信息弹窗说明牌堆总大小、NEXT 含义及少于 12 张时的轮间重洗规则。`CARD_SUIT_REVEALED` 通过稳定 `cardId` 绑定被识破的实体，换牌后不会把已知信息错误附着到相同下标的新牌。
 
 ## 状态与动作流
 
@@ -106,6 +106,8 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 `replace-pending-draw` 的 `create-derived-card` fallback 只在实体牌堆没有合适候选时创建衍生牌。衍生牌不修改实体牌堆、不进入弃牌堆，离开手牌或本轮结束后不作为实体牌保存回牌堆。
 
 通用能力牌面原语还支持有限的 `power` 标量、静态或 scalar rank、完整牌面映射、能力 RNG 均匀花色，以及添加/替换衍生牌；`rotate-draw-pile-top-to-bottom` 只轮转牌堆 cursor 后的剩余区。`grant-player-skill-card` 从运行时记忆复制上一张成功使用的 Player Skill（首次回退当前技能），并原子创建卡牌与能力实例。上述结果统一记录为 `ABILITY_RESULT`，通知层据此读取实际牌面、技能名、状态增量与公共爆牌上限，不在 reducer 或解释器按定义 ID 分支。
+
+每轮的爆牌上限都从基础值 21 重新计算。参与者上的 `bustLimit` 只是在当前手牌状态完成爆牌检查后的缓存；跨轮效果必须由能力状态重新声明，`round` 状态（包括玩家技能“狂欢节”的公共加成）会在下一轮发牌前清除。
 
 能力目录版本由 `ABILITY_CATALOG_VERSION` 标识。定义语义变化时提升版本；当前快速开发策略不迁移旧能力运行时。能力事件还提供爆牌检查、扳机前待处理修改、TTL 到期事实，以及主动能力成功后的观察广播；标量表达式和衍生牌效果均由能力 RNG 确定性解析。修改子弹判定的规则必须在 `before-trigger-pull` 提交，最终 `TRIGGER_PULLED` 明确记录命中、能力哑火或自然空膛；结果提示与音效可据此区分，角色对白则统一进入既有未击发存活状态池。新增能力流程见 [新增能力工作流](adding-an-ability.md)。
 
