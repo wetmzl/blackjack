@@ -38,7 +38,7 @@ export function presentMatchAudio(audio: MatchAudioPort, before: MatchState, aft
   if (trigger?.type === "TRIGGER_PULLED") {
     audio.stopHeartbeat();
     audio.play(trigger.result === "fired" ? "gunshot" : trigger.result === "misfire" ? "misfire" : "dryFire");
-    if (trigger.result === "fired") audio.play("afterDeath", 500);
+    if (trigger.result === "fired") audio.play("afterDeath", 1_500);
     return;
   }
 
