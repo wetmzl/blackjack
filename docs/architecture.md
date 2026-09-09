@@ -65,7 +65,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 `src/content/characters/catalog.json` 只保存大厅、战利品和历史索引所需的元数据与安全 `dataFile`。`catalog.ts` 校验并冻结目录；`loader.ts` 通过 `import.meta.glob("./data/*.json")` 按需加载完整角色并缓存结果。
 
-目录元数据包含自定义 `tags`；角色 tier 由 `getCharacterTags` 暴露为 `tier:s`、`tier:a` 等查询标签。`unlock` 使用通用条件引擎，支持击败任意角色、击败带标签角色、击败指定角色和按标签击败百分比。
+目录元数据包含自定义 `tags`；角色 tier 由 `getCharacterTags` 暴露为 `tier:s`、`tier:a` 等查询标签。`unlock` 使用通用条件引擎，支持击败任意角色、击败指定数量的不同角色、击败带标签角色、击败指定角色和按标签击败百分比。
 
 进度层的 `CharacterDefeatRecord` 是击败事实的唯一来源，每名角色至多一条，只保存角色 ID 与首次击败时间。角色解锁、技能解锁、候场过滤、已击败名册和战利品时间线都读取该集合；完整 `MatchHistoryRecord` 只负责逐局结果和统计。确认结算时两者与 profile 原子写入，清理历史时只置空 `history`，不会修改 `defeats` 或 profile。
 

@@ -1140,6 +1140,7 @@ async function openProfile(id: string): Promise<void> {
 function unlockConditionLabel(condition: CharacterUnlockCondition | undefined): string {
   if (!condition) return "完成条件后";
   if (condition.type === "defeat-any") return "击败任意角色";
+  if (condition.type === "defeat-count") return `击败 ${condition.count} 名不同与会者`;
   const tagLabel = (tag: string): string => {
     const tier = /^tier:(d|c|b|a|s|ss)$/.exec(tag)?.[1];
     return tier ? `${tier.toUpperCase()}级` : `带有「${tag}」标签的`;
@@ -1398,8 +1399,7 @@ function renderMatch(state: MatchState): void {
   if (shouldType) { lastDialogueKey = key; startTypewriter(dialogue); }
 }
 function devHud(state: MatchState): string {
-  const dev = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
-  if (!dev && !new URLSearchParams(window.location.search).has("debug")) return "";
+  if (!new URLSearchParams(window.location.search).has("debug")) return "";
   const ai = state.lastAiDecision;
   const text = JSON.stringify({ gameVersion: save.gameVersion, seed: state.seed, round: state.roundIndex, phase: state.round.phase, currentActor: state.round.currentActor, relevantMatchState: state, recentActionsOrEvents: state.history.slice(-8), lastAction, lastDomainEvent, aiDecision: ai }, null, 2);
   const profile = state.aiProfile;

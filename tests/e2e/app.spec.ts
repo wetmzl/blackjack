@@ -1027,6 +1027,7 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   await expect(page.locator(".guest-section:not(.defeated-section) .character-card")).toHaveCount(3);
   expect(requestedPaths.some((path) => path.includes("/content/characters/data/"))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/cimei\.json|\/assets\/cimei-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/nian\.json|\/assets\/nian-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/plume\.json|\/assets\/plume-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
   expect(requestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/platinum\.json|\/assets\/platinum-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
@@ -1052,7 +1053,32 @@ test("大厅仅加载轻量目录并按需载入所选角色定义", async ({ pa
   });
   await startCharacter(page, "irene");
   expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/irene\.json|\/assets\/irene-[^/]+\.js)(?:\?|$)/.test(path))).toBe(true);
-  expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|nian|plume|platinum|lappland-the-decadenza)\.json|\/assets\/(?:w|texas|nian|plume|platinum|lappland-the-decadenza)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+  expect(ireneRequestedPaths.some((path) => /(?:\/src\/content\/characters\/data\/(?:w|texas|cimei|nian|plume|platinum|lappland-the-decadenza)\.json|\/assets\/(?:w|texas|cimei|nian|plume|platinum|lappland-the-decadenza)-[^/]+\.js)(?:\?|$)/.test(path))).toBe(false);
+});
+
+test("刺玫在击败三名不同对手后解锁并可进入牌桌", async ({ page }) => {
+  const imported = saveWithDefeats("plume", "irene");
+  imported.settings.reducedMotion = true;
+  const activeMatch = playerWinSummary("texas");
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "cimei-unlock.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
+
+  const unlockPanel = page.locator(".character-unlock-panel");
+  await expect(unlockPanel).toContainText("刺玫");
+  await expect(unlockPanel).toContainText("击败 3 名不同与会者");
+  await page.getByRole("button", { name: "返回大厅" }).click();
+  await enterCharacterSelection(page);
+  await ensureGuestCandidate(page, "cimei");
+  await inviteCharacter(page, "cimei");
+  await expect(page.locator("#profile")).toContainText("温室守着最后一株白玫瑰");
+  await page.setViewportSize({ width: 320, height: 720 });
+  expect(await page.locator("#profile").evaluate((element) => element.getBoundingClientRect().right <= window.innerWidth)).toBe(true);
+  await page.locator("#profile [data-profile-start]").click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator(".character-portrait")).toHaveAttribute("src", /cimei-relaxed\.png/);
+  await expect.poll(() => page.locator(".character-portrait").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
 });
 
 test("首次胜利会显示第一阶段角色解锁，刷新候场时确保换人", async ({ page }, testInfo) => {
@@ -2260,7 +2286,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-nian", timestamp: "2026-08-30T20:10:00.000Z", opponentId: "nian", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
     { id: "gallery-plume", timestamp: "2026-08-31T20:10:00.000Z", opponentId: "plume", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 0 }, blackjacks: { player: 1, opponent: 0 } },
     { id: "gallery-lappland", timestamp: "2026-09-01T20:10:00.000Z", opponentId: "lappland-the-decadenza", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
-    { id: "gallery-dorothy", timestamp: "2026-09-02T20:10:00.000Z", opponentId: "dorothy", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
+    { id: "gallery-cimei", timestamp: "2026-09-02T20:10:00.000Z", opponentId: "cimei", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
+    { id: "gallery-dorothy", timestamp: "2026-09-03T20:10:00.000Z", opponentId: "dorothy", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
   ];
   imported.defeats = [
     { opponentId: "w", timestamp: "2026-08-27T20:10:00.000Z" },
@@ -2269,7 +2296,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { opponentId: "nian", timestamp: "2026-08-30T20:10:00.000Z" },
     { opponentId: "plume", timestamp: "2026-08-31T20:10:00.000Z" },
     { opponentId: "lappland-the-decadenza", timestamp: "2026-09-01T20:10:00.000Z" },
-    { opponentId: "dorothy", timestamp: "2026-09-02T20:10:00.000Z" }
+    { opponentId: "cimei", timestamp: "2026-09-02T20:10:00.000Z" },
+    { opponentId: "dorothy", timestamp: "2026-09-03T20:10:00.000Z" }
   ];
   const cases = [
     { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
@@ -2278,6 +2306,7 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 5, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
     { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" },
     { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet", closeupName: "长靴与短袜", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png" },
+    { id: "gallery-cimei", slug: "cimei", name: "刺玫", tier: "A", closeupCount: 5, closeupId: "bodice", closeupName: "白礼服束带", closeupAsset: "cimei-trophy-detail-bodice.png" },
     { id: "gallery-dorothy", slug: "dorothy", name: "多萝西", tier: "S", closeupCount: 5, closeupId: "face-inspected", closeupName: "面部摆弄特写", closeupAsset: "dorothy-trophy-detail-face-inspected.png" }
   ] as const;
 
@@ -2338,11 +2367,11 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
   }
 
   await page.setViewportSize({ width: 320, height: 720 });
-  await page.locator("[data-trophy-character-id='irene']").click();
+  await page.locator("[data-trophy-character-id='cimei']").click();
   const detail = page.locator("#history-detail");
   await detail.locator("[data-open-trophy-gallery]").click();
   const gallery = page.locator("#trophy-gallery");
-  await gallery.locator("[data-closeup-id='shoes']").click();
+  await gallery.locator("[data-closeup-id='ankle-ribbons']").click();
   await expect(gallery.locator(".trophy-gallery-stage")).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await gallery.screenshot({ path: testInfo.outputPath("irene-trophy-gallery-320.png") });

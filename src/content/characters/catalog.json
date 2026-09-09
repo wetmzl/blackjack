@@ -35,6 +35,17 @@
       "dataFile": "irene.json"
     },
     {
+      "id": "cimei",
+      "name": "刺玫",
+      "subtitle": "守着一座枯死花园的白色荆棘，愿拿自己的命换它再开一次",
+      "tier": "A",
+      "tags": ["floral", "guardian"],
+      "unlock": { "type": "defeat-count", "count": 3 },
+      "previewImage": "/assets/characters/cimei-relaxed.png",
+      "trophyImage": "/assets/characters/cimei-trophy-defeated.png",
+      "dataFile": "cimei.json"
+    },
+    {
       "id": "nian",
       "name": "年",
       "subtitle": "岁家老九，活得太久的人，也会拿命去赌一场不会散的团圆",

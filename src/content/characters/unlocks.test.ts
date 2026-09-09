@@ -11,13 +11,15 @@ describe("character unlock conditions", () => {
     expect(unlockedCharacterIdsForDefeats([defeat("plume"), defeat("lappland-the-decadenza")])).toEqual(["w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak"]);
   });
 
-  it("supports any, exact, tag, and percentage defeat predicates", () => {
+  it("supports any, distinct-count, exact, tag, and percentage defeat predicates", () => {
     const w = CHARACTER_CATALOG.find((character) => character.id === "w")!;
     const nian = CHARACTER_CATALOG.find((character) => character.id === "nian")!;
     const hoOlheyak = CHARACTER_CATALOG.find((character) => character.id === "ho-olheyak")!;
     const dorothy = CHARACTER_CATALOG.find((character) => character.id === "dorothy")!;
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [])).toBe(false);
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [defeat("plume")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-count", count: 3 } }, [defeat("plume"), defeat("plume"), defeat("texas")])).toBe(false);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-count", count: 3 } }, [defeat("plume"), defeat("texas"), defeat("irene")])).toBe(true);
     expect(isCharacterUnlocked(w, [defeat("texas")])).toBe(true);
     expect(isCharacterUnlocked(nian, [defeat("texas")])).toBe(false);
     expect(isCharacterUnlocked(w, [])).toBe(false);
@@ -53,5 +55,9 @@ describe("character unlock conditions", () => {
     expect(newlyUnlockedCharacterIds([], [defeat("plume")])).toEqual(["w", "irene", "platinum", "lappland-the-decadenza"]);
     expect(newlyUnlockedCharacterIds([defeat("plume")], [defeat("plume"), defeat("lappland-the-decadenza")])).toEqual(["texas", "nian", "ho-olheyak"]);
     expect(newlyUnlockedCharacterIds([defeat("w")], [defeat("w"), defeat("ho-olheyak")])).toEqual(["dorothy"]);
+    expect(newlyUnlockedCharacterIds(
+      [defeat("plume"), defeat("lappland-the-decadenza")],
+      [defeat("plume"), defeat("lappland-the-decadenza"), defeat("texas")]
+    )).toEqual(["cimei"]);
   });
 });

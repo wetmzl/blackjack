@@ -9,6 +9,7 @@ const portraitScales = z.object({ selection: portraitScale, table: portraitScale
 const characterTag = z.string().min(1).regex(/^[a-z0-9][a-z0-9:_-]*$/, "角色 tag 必须是安全标识");
 const unlockCondition = z.discriminatedUnion("type", [
   z.object({ type: z.literal("defeat-any") }).strict(),
+  z.object({ type: z.literal("defeat-count"), count: z.number().int().positive() }).strict(),
   z.object({ type: z.literal("defeat-any-tag"), tag: characterTag }).strict(),
   z.object({ type: z.literal("defeat-character"), characterId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("defeat-tag-percentage"), tag: characterTag, percentage: z.number().finite().gt(0).max(100) }).strict()

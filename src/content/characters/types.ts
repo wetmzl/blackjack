@@ -7,6 +7,7 @@ export type Tier = "D" | "C" | "B" | "A" | "S" | "SS";
 /** Data-driven prerequisites for inviting an attendee to the table. */
 export type CharacterUnlockCondition =
   | { readonly type: "defeat-any" }
+  | { readonly type: "defeat-count"; readonly count: number }
   | { readonly type: "defeat-any-tag"; readonly tag: string }
   | { readonly type: "defeat-character"; readonly characterId: string }
   | { readonly type: "defeat-tag-percentage"; readonly tag: string; readonly percentage: number };

@@ -106,7 +106,7 @@
      }
    }
    ```
-2. 在 `catalog.json` 添加唯一的 `id`、名称、副标题、等级、多个 `tags`、预览图、收藏横幅和数据文件名。`tier:<小写等级>` 会由目录自动生成，不能在自定义 tag 中重复声明。需要门槛时再配置 `unlock`：可使用 `defeat-any`、`defeat-any-tag`、`defeat-character` 或 `defeat-tag-percentage`；引用的角色和 tag 必须已经存在于同一目录。
+2. 在 `catalog.json` 添加唯一的 `id`、名称、副标题、等级、多个 `tags`、预览图、收藏横幅和数据文件名。`tier:<小写等级>` 会由目录自动生成，不能在自定义 tag 中重复声明。需要门槛时再配置 `unlock`：可使用 `defeat-any`、按不同与会者数量解锁的 `defeat-count`、`defeat-any-tag`、`defeat-character` 或 `defeat-tag-percentage`；引用的角色和 tag 必须已经存在于同一目录。
 3. 为角色单独配置 AI 阈值参数 `P/A/B/C`、结算文案和 `revolverPlacement`；参数默认值为 `0/1/1/1`，含义与公式见 [玩法与叙事设计](game-design.md#ai-与信息权限)。选择页或牌局内立绘只有在实机验收明确要求时，才在 `catalog.json` 设置 `portraitScales.selection` 或 `portraitScales.table`。不要复制 W 的人物对白充数。
 4. `staffRevolver` 指向共享发牌员资源；根据紧张态头部位置分别校准桌面端和移动端坐标。
 5. 只有在任务明确要求时才新增该角色解锁的 Player Skill；通过其 `unlock.opponentId` 声明解锁来源，局内抽卡会从全部已解锁且允许掉落的技能中生成候选。

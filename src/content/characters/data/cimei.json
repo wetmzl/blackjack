@@ -1,0 +1,204 @@
+{
+  "$schema": "../character.schema.json",
+  "assets": {
+    "relaxed": "/assets/characters/cimei-relaxed.png",
+    "conflicted": "/assets/characters/cimei-conflicted.png",
+    "mocking": "/assets/characters/cimei-mocking.png",
+    "threatened": "/assets/characters/cimei-threatened.png",
+    "staffRevolver": "/assets/characters/staff-revolver-7mm.png",
+    "unconscious": "/assets/characters/cimei-unconscious-reclined.png",
+    "defeatedSummary": "/assets/characters/cimei-defeated-summary-chair.png"
+  },
+  "profile": {
+    "description": "刺玫曾替一座被灰烬吞没的温室守着最后一株白玫瑰。她的执念不是复活某个人，而是让那片寸草不生的土地重新长出能被孩子摘下的花。收到策展人的邀请后，她把愿望写得很短，独自来到古堡，并依照要求换上象征祭礼的白色层叠礼服；缠绕其上的黑色细带像勒住花枝的铁丝，提醒她这场赌局的装饰与代价从来都是同一件东西。"
+  },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 09",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "刺玫" },
+      { "id": "race", "label": "种族", "value": "未记录" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "A" },
+      { "id": "weight", "label": "重量", "value": "未记录" },
+      { "id": "virginity", "label": "处女性", "value": "未核验" }
+    ],
+    "condition": {
+      "label": "尸体状况",
+      "description": "确认死亡；遗体已完成初步收容，荆棘冠、白花头饰、层叠礼服与脚踝缎带保存完整。"
+    }
+  },
+  "matchSummary": {
+    "playerVictory": "枪声截断了刺玫最后一次呼吸。她瘫进椅背，荆棘环在灯下仍维持着端正的圆，像一场固执到主人已经死去也不肯谢幕的祭礼。花园没有等到她带回奇迹，只等到策展人替这朵白花贴上新的档案编号。",
+    "playerDefeat": "刺玫安静地收拢牌面，没有炫耀，也没有讨价还价。她只要求策展人履行约定：让那座枯死的花园重新拥有泥土、雨水和春天。至少在公开的结局里，她终于替那些尚未来得及看见花的人赢回了一次盛放。",
+    "escaped": "牌局被提前终止。刺玫把散开的黑色细带重新系紧，没有追问，也没有挽留；她只是把那张写着愿望的纸折回原样，等下一次邀请重新落到桌面。"
+  },
+  "trophyGallery": {
+    "headshot": "/assets/characters/cimei-trophy-gallery-headshot.png",
+    "fullBody": "/assets/characters/cimei-trophy-gallery-full-subject.png",
+    "poses": [
+      {
+        "id": "left",
+        "name": "左侧",
+        "image": "/assets/characters/cimei-trophy-gallery-left-subject.png"
+      },
+      {
+        "id": "prone",
+        "name": "俯卧",
+        "image": "/assets/characters/cimei-trophy-gallery-prone-subject.png"
+      },
+      {
+        "id": "right",
+        "name": "右侧",
+        "image": "/assets/characters/cimei-trophy-gallery-right-subject.png"
+      }
+    ],
+    "closeups": [
+      {
+        "id": "face",
+        "name": "失焦的琥珀",
+        "x": 50,
+        "y": 17,
+        "image": "/assets/characters/cimei-trophy-detail-face.png",
+        "description": "半启的琥珀色眼睛已经无法聚焦，紧凑的面部轮廓、桃棕刘海与微张的嘴唇仍保持着死亡瞬间留下的松弛。"
+      },
+      {
+        "id": "crown",
+        "name": "荆棘与白花",
+        "x": 43,
+        "y": 9,
+        "image": "/assets/characters/cimei-trophy-detail-crown.png",
+        "description": "哑黑荆棘冠压在桃棕发间，白玫瑰与暗金叶片固定在一侧；后方的浅色荆棘环完整保留，没有因收容而变形。"
+      },
+      {
+        "id": "hands",
+        "name": "松开的双手",
+        "x": 31,
+        "y": 48,
+        "image": "/assets/characters/cimei-trophy-detail-hands.png",
+        "description": "双手无力地落在深色软垫上，手腕周围的黑色束带、白玫瑰与层叠蕾丝仍按原来的顺序缠绕。"
+      },
+      {
+        "id": "bodice",
+        "name": "白礼服束带",
+        "x": 50,
+        "y": 34,
+        "image": "/assets/characters/cimei-trophy-detail-bodice.png",
+        "description": "高领胸衣由褶皱白布、半透明蕾丝和交叉黑带共同定形，喉间玫瑰与小型金饰构成唯一的亮色节点。"
+      },
+      {
+        "id": "ankle-ribbons",
+        "name": "脚踝缎带",
+        "x": 51,
+        "y": 82,
+        "image": "/assets/characters/cimei-trophy-detail-ankle-ribbons.png",
+        "description": "细窄黑带交叉绕过脚踝与足背，白玫瑰扣和微小枝叶负责固定；收容后两侧缎带仍保持对称的缠绕层次。"
+      }
+    ]
+  },
+  "revolverPlacement": {
+    "top": 116,
+    "left": 116,
+    "mobileTop": 104,
+    "mobileLeft": 108
+  },
+  "ai": {
+    "P": 0,
+    "A": 1,
+    "B": 1,
+    "C": 1
+  },
+  "aiSkills": [],
+  "dialogue": {
+    "MATCH_START": [
+      "规则我已经看完了。请发牌吧，我不想让花园再等一个夜晚。",
+      "白玫瑰会记住每一次被剪断的枝条，我也一样。开始吧，策展人。",
+      "只要你的承诺有效，这条命就有放上赌桌的价值。"
+    ],
+    "PLAYER_HIT": [
+      "还要一张……你比看起来更贪心。",
+      "请继续。我会记住你每一次伸手。",
+      "牌堆没有刺，伸得太深却一样会流血。"
+    ],
+    "PLAYER_STAND": [
+      "停在这里吗？那么，该我决定了。",
+      "你守住了自己的数字，接下来看看我守不守得住。",
+      "Stand。很谨慎，也可能只是害怕。"
+    ],
+    "OPPONENT_FIRST_HIT": [
+      "Hit。枯枝想活下来，就得继续向前长。",
+      "再给我一张，我还不能停。",
+      "风险还在可以承受的范围内。继续。"
+    ],
+    "OPPONENT_FIRST_STAND": [
+      "到这里就够了。Stand。",
+      "我不需要每一根枝条都长到尽头。停牌。",
+      "剩下的交给你的选择。"
+    ],
+    "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": [
+      "你已经停下，我却还得再向荆棘里走一步。Hit。",
+      "再来一张。现在退缩，之前的风险就全成了笑话。",
+      "继续。我听得见弹仓在等我犯错。"
+    ],
+    "PLAYER_BLACKJACK": [
+      "两张牌就封死了路……这次是你赢得漂亮。",
+      "Blackjack。两发子弹，干净得像一次修枝。"
+    ],
+    "OPPONENT_BLACKJACK": [
+      "Blackjack。看来今晚的花还愿意朝我这边开。",
+      "二十一点。策展人，请接受你的两发惩罚。"
+    ],
+    "PLAYER_BUST": [
+      "超过了。你亲手把自己的枝条折断了。",
+      "爆牌。贪心终于替你把子弹送进枪膛。"
+    ],
+    "OPPONENT_BUST": [
+      "……爆牌。是我把这根枝条伸得太远了。",
+      "点数越界。装弹吧，我不会假装没看见自己的失误。"
+    ],
+    "PLAYER_SURVIVED_TRIGGER": [
+      "空响。别急着庆幸，枪膛里的风险没有枯萎。",
+      "你躲过了这一次。下一轮，荆棘会再长回来。"
+    ],
+    "OPPONENT_SURVIVED_TRIGGER": [
+      "……没响。我还可以替花园再赌一轮。",
+      "空膛。心跳很吵，但至少它还在。"
+    ],
+    "PLAYER_WIN_ROUND": [
+      "这一轮归你。把子弹装进去吧，我接受修剪。",
+      "你赢了一手，不代表已经拔掉了整株荆棘。"
+    ],
+    "OPPONENT_WIN_ROUND": [
+      "这一轮是我的。你的弹仓该多一颗种子了。",
+      "点数压过你了。希望那声装弹比你的借口更清楚。"
+    ],
+    "PUSH_ROUND": [
+      "平局。谁也没有折断，谁也没有开花。",
+      "相同的点数……那就让下一轮继续替我们挑选。"
+    ],
+    "PLAYER_TRIGGER_READY": [
+      "轮到你扣扳机了。别让高处的天花板替你发抖。",
+      "枪已经准备好。请让你的承诺也一样坚定。"
+    ],
+    "OPPONENT_TRIGGER_READY": [
+      "枪口已经到了吗……给我一秒，我不会逃。",
+      "如果这一枝必须折在这里，就请干脆一点。"
+    ],
+    "PLAYER_TRIGGER_HIT": [
+      "枪响了。策展人，别忘了那座花园……这是我赢来的愿望。"
+    ],
+    "OPPONENT_TRIGGER_HIT": [
+      "……花……还没有开……"
+    ],
+    "SPECIAL_TWENTY_ONE_PUSH": [
+      "都是二十一点。两根枝条碰在一起，谁也没能再往前。",
+      "同样的二十一……这次连牌桌都不肯选边。"
+    ],
+    "SPECIAL_LOW_PUSH": [
+      "相同的低点数。我们都把手停得太早了。",
+      "平得很谨慎，像两个人同时避开了一根刺。"
+    ]
+  }
+}

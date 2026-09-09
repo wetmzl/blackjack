@@ -12,6 +12,8 @@ function conditionMet(condition: CharacterUnlockCondition, defeats: readonly Cha
   switch (condition.type) {
     case "defeat-any":
       return defeated.size > 0;
+    case "defeat-count":
+      return defeated.size >= condition.count;
     case "defeat-character":
       return defeated.has(condition.characterId);
     case "defeat-any-tag":
