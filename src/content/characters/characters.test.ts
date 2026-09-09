@@ -478,6 +478,9 @@ describe("data-driven character registry", () => {
     expect(wData.trophyGallery.closeups.find((point) => point.id === "boots")?.variants?.[0]?.image).toBe("/assets/characters/w-trophy-detail-boots-p1.png");
     expect(texasData.trophyGallery.closeups.find((point) => point.id === "boots")?.variants?.[0]?.image).toBe("/assets/characters/texas-trophy-detail-boots-removed.png");
     expect(ireneData.trophyGallery.closeups.find((point) => point.id === "shoes")?.variants?.[0]?.image).toBe("/assets/characters/irene-trophy-detail-shoes-p1.png");
+    expect(cimeiData.trophyGallery.closeups).toHaveLength(4);
+    expect(cimeiData.trophyGallery.closeups.some((point) => point.id === "hands")).toBe(false);
+    expect(cimeiData.trophyGallery.closeups.find((point) => point.id === "ankle-ribbons")?.variants?.[0]?.image).toBe("/assets/characters/cimei-trophy-detail-ankle-ribbons-p1.png");
     expect(plumeData.trophyGallery.closeups.find((point) => point.id === "boots")?.variants?.[0]?.image).toBe("/assets/characters/plume-trophy-detail-boots-p1.png");
     expect(platinumData.trophyGallery.closeups.find((point) => point.id === "feet")?.variants?.[0]?.image).toBe("/assets/characters/platinum-trophy-detail-feet-p1.png");
     expect(lapplandData.trophyGallery.closeups.find((point) => point.id === "feet")?.variants?.[0]?.image).toBe("/assets/characters/lappland-the-decadenza-trophy-detail-feet-white-socks.png");

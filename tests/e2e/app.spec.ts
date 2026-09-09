@@ -2223,13 +2223,14 @@ test("战利品陈列室只显示首次击败藏品，并可进入和清理独�
 
 test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({ page }) => {
   await page.goto("/");
-  await installLongTermSave(page, saveWithDefeats("w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy"));
+  await installLongTermSave(page, saveWithDefeats("w", "texas", "irene", "cimei", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy"));
   await page.locator("[data-open-trophies]").click();
 
   const cases = [
     { slug: "w", name: "W", point: "boots", p0: "w-trophy-detail-boots.png", p1: "w-trophy-detail-boots-p1.png", description: "长靴被移开后" },
     { slug: "texas", name: "德克萨斯", point: "boots", p0: "texas-trophy-detail-boots.png", p1: "texas-trophy-detail-boots-removed.png", description: "短靴被卸下并作为装备放在一旁" },
     { slug: "irene", name: "艾丽妮", point: "shoes", p0: "irene-trophy-detail-shoes.png", p1: "irene-trophy-detail-shoes-p1.png", description: "鞋履全部卸下后" },
+    { slug: "cimei", name: "刺玫", point: "ankle-ribbons", p0: "cimei-trophy-detail-ankle-ribbons.png", p1: "cimei-trophy-detail-ankle-ribbons-p1.png", description: "按揉脚掌与足弓" },
     { slug: "nian", name: "年", point: "feet-overhead", p0: "nian-trophy-detail-feet-overhead.png", p1: "nian-trophy-detail-feet-overhead-p1.png", description: "白色高跟鞋已被移开" },
     { slug: "nian", name: "年", point: "feet-side", p0: "nian-trophy-detail-feet-side.png", p1: "nian-trophy-detail-feet-side-p1.png", description: "卸下高跟鞋后再从足端观察" },
     { slug: "plume", name: "翎羽", point: "boots", p0: "plume-trophy-detail-boots.png", p1: "plume-trophy-detail-boots-p1.png", description: "短靴被移开后" },
@@ -2306,7 +2307,7 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 5, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
     { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" },
     { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet", closeupName: "长靴与短袜", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png" },
-    { id: "gallery-cimei", slug: "cimei", name: "刺玫", tier: "A", closeupCount: 5, closeupId: "bodice", closeupName: "白礼服束带", closeupAsset: "cimei-trophy-detail-bodice.png" },
+    { id: "gallery-cimei", slug: "cimei", name: "刺玫", tier: "A", closeupCount: 4, closeupId: "bodice", closeupName: "白礼服束带", closeupAsset: "cimei-trophy-detail-bodice.png" },
     { id: "gallery-dorothy", slug: "dorothy", name: "多萝西", tier: "S", closeupCount: 5, closeupId: "face-inspected", closeupName: "面部摆弄特写", closeupAsset: "dorothy-trophy-detail-face-inspected.png" }
   ] as const;
 
@@ -2374,7 +2375,7 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
   await gallery.locator("[data-closeup-id='ankle-ribbons']").click();
   await expect(gallery.locator(".trophy-gallery-stage")).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await gallery.screenshot({ path: testInfo.outputPath("irene-trophy-gallery-320.png") });
+  await gallery.screenshot({ path: testInfo.outputPath("cimei-trophy-gallery-320.png") });
 });
 
 test("开发者面板显示确定性诊断字段", async ({ page }) => {

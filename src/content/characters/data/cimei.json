@@ -73,14 +73,6 @@
         "description": "哑黑荆棘冠压在桃棕发间，白玫瑰与暗金叶片固定在一侧；后方的浅色荆棘环完整保留，没有因收容而变形。"
       },
       {
-        "id": "hands",
-        "name": "松开的双手",
-        "x": 31,
-        "y": 48,
-        "image": "/assets/characters/cimei-trophy-detail-hands.png",
-        "description": "双手无力地落在深色软垫上，手腕周围的黑色束带、白玫瑰与层叠蕾丝仍按原来的顺序缠绕。"
-      },
-      {
         "id": "bodice",
         "name": "白礼服束带",
         "x": 50,
@@ -94,7 +86,13 @@
         "x": 51,
         "y": 82,
         "image": "/assets/characters/cimei-trophy-detail-ankle-ribbons.png",
-        "description": "细窄黑带交叉绕过脚踝与足背，白玫瑰扣和微小枝叶负责固定；收容后两侧缎带仍保持对称的缠绕层次。"
+        "description": "细窄黑带交叉绕过脚踝与足背，白玫瑰扣和微小枝叶负责固定；收容后两侧缎带仍保持对称的缠绕层次。",
+        "variants": [
+          {
+            "image": "/assets/characters/cimei-trophy-detail-ankle-ribbons-p1.png",
+            "description": "戴黑色检查手套的工作人员托住脚跟，以拇指和手指按揉脚掌与足弓，记录受力时的足底轮廓；脚踝缎带与白玫瑰扣保持原位。"
+          }
+        ]
       }
     ]
   },
