@@ -479,6 +479,8 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   expect(Object.values(profileFonts).every((font) => !/(songti|stsong|simsun|noto serif)/i.test(font))).toBe(true);
   await profile.getByRole("button", { name: "开始对局" }).click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  const dialogue = page.locator("#dialogue-text");
+  await expect(dialogue).toHaveAttribute("data-typing", "true");
   await waitForInitialDeal(page);
   await expect(page.locator(".player-zone .card")).toHaveCount(2);
   await expect(page.locator(".table-shell .gun-row")).toHaveCount(0);
@@ -512,8 +514,6 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   if (await devHud.getAttribute("open") !== null) await devHud.locator("summary").click();
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 2)).toBe(true);
   await expect(page.locator(".table-shell")).not.toContainText("7mm 左轮");
-  const dialogue = page.locator("#dialogue-text");
-  await expect(dialogue).toHaveAttribute("data-typing", "true");
   await expect(dialogue).toHaveAttribute("data-typing", "false", { timeout: 5_000 });
   await expect(dialogue).not.toHaveText("");
   await page.locator("button[data-action*='ESCAPE_MATCH']").click();
@@ -907,6 +907,17 @@ test("技能通知按最新在上堆叠并独立过期", async ({ page }) => {
   const texts = await playerToasts.allTextContents();
   expect(texts[0]).toContain("闻香识女人");
   expect(texts[1]).toContain("临界判断");
+  const hunterToast = playerToasts.filter({ hasText: "临界判断" });
+  const scentToast = playerToasts.filter({ hasText: "闻香识女人" });
+  const hunterLeaving = hunterToast.evaluate((element) => new Promise<void>((resolve) => {
+    if (element.classList.contains("leaving")) { resolve(); return; }
+    const observer = new MutationObserver(() => {
+      if (!element.classList.contains("leaving")) return;
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(element, { attributes: true, attributeFilter: ["class"] });
+  }));
   await page.getByRole("button", { name: /Stand 停牌/ }).click();
   const aiToast = page.locator("#ability-notices .ability-notice-ai");
   await expect(aiToast).toHaveCount(1, { timeout: 1_000 });
@@ -920,9 +931,7 @@ test("技能通知按最新在上堆叠并独立过期", async ({ page }) => {
   });
   expect(["border", "text", "background"].some((key) => aiStyle[key as keyof typeof aiStyle] !== playerStyle[key as keyof typeof playerStyle])).toBe(true);
 
-  const hunterToast = playerToasts.filter({ hasText: "临界判断" });
-  const scentToast = playerToasts.filter({ hasText: "闻香识女人" });
-  await expect(hunterToast).toHaveClass(/leaving/, { timeout: 3_000 });
+  await hunterLeaving;
   await expect(hunterToast).toHaveCount(0, { timeout: 1_000 });
   await expect(scentToast).toHaveCount(1);
   await expect(scentToast).toHaveCount(0, { timeout: 1_000 });
