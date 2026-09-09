@@ -98,6 +98,11 @@ emitting one `CARD_SUIT_REVEALED` event per selected `cardId`. Use
 `first-private-card` for the first hidden card or `all-current-cards` for the
 cards present in the target hand at resolution time. Cards drawn later are not
 implicitly revealed, and the projection expires at the round boundary.
+`swap-last-hand-card-with-draw-pile-top` similarly emits
+`DRAW_PILE_CARD_REVEALED` when a physical hand card returns to the draw-pile
+top, preserving that card's known rank and suit for its owner during the
+current round. A derived outgoing card dissipates instead and emits no such
+knowledge event.
 
 Talent definitions must declare an explicit data-driven `unlock`, currently
 `{ "type": "defeat-count", "count": N, "label": "..." }`; unlocked Talent IDs

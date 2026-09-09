@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createCard, createDerivedCard } from "../blackjack/card";
+import { createCard, createDerivedCard, isPhysicalCard } from "../blackjack/card";
 import { createHand, handValue } from "../blackjack/hand";
-import type { Card } from "../blackjack/types";
+import type { Card, PhysicalCard } from "../blackjack/types";
 import { createRng, SeededRng } from "../rng/seeded";
 import { buildObservation } from "../ai/observation";
 import { calculateAiThreshold, decideAiAction, sampleAiNoise } from "../ai/policy";
@@ -18,6 +18,10 @@ const W_DIALOGUE = wData.dialogue;
 
 const card = (rank: Parameters<typeof createCard>[1], suit: Parameters<typeof createCard>[0] = "spades") => createCard(suit, rank);
 const skillCard = (definitionId: string, instanceId = `test-${definitionId}`) => ({ kind: "player-skill" as const, definitionId, owner: "player" as const, instanceId });
+const physicalCard = (value: Card): PhysicalCard => {
+  if (!isPhysicalCard(value)) throw new Error("Expected a physical card fixture");
+  return value;
+};
 
 function withHands(state: MatchState, playerCards: Card[], opponentCards: Card[], actor: "player" | "opponent" = "player"): MatchState {
   const player: ParticipantState = { id: "player", hand: createHand(playerCards), stood: false, busted: false };
@@ -568,7 +572,7 @@ describe("round resolution and roulette", () => {
     expect([...outcomes.keys()].sort()).toEqual(["empty-chamber", "fired", "misfire"]);
     expect(outcomes.get("misfire")).toMatchObject({ fired: false, baseProbability: 0.5, misfireChance: 0.33 });
     expect(outcomes.get("empty-chamber")).toMatchObject({ fired: false, baseProbability: 0.5, misfireChance: 0.33 });
-    expect(outcomes.get("fired")?.probability).toBeCloseTo(0.17);
+    expect(outcomes.get("fired")?.probability).toBeCloseTo(0.335);
   });
 
   it("Sword and Handcannon uses only current-round Hits, adjusts probability, and consumes one roulette roll", () => {
@@ -598,7 +602,7 @@ describe("round resolution and roulette", () => {
     if (pulled?.type === "TRIGGER_PULLED") {
       expect(pulled.baseProbability).toBeCloseTo(0.5);
       expect(pulled.misfireChance).toBeCloseTo(0.99);
-      expect(pulled.probability).toBe(0);
+      expect(pulled.probability).toBeCloseTo(0.005);
     }
     const newEvents = next.history.slice(state.history.length);
     expect(newEvents.findIndex((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "ai-sword-and-handcannon"))
@@ -614,13 +618,19 @@ describe("skills", () => {
     const base = createMatch("switcheroo-physical-bust");
     const top = card("5", "hearts");
     const last = card("2", "clubs");
-    const state = withSkillCard({ ...withHands(base, [card("K"), card("9"), last], [card("10"), card("7")]), shoe: { cards: [top, card("3", "diamonds")], cursor: 0, shuffleIndex: 1 } }, "switcheroo", "switch-physical");
+    const playerCards = [card("K"), card("9", "hearts"), last];
+    const opponentCards = [card("10", "diamonds"), card("7", "clubs")];
+    const shoeCards = [playerCards[0]!, opponentCards[0]!, playerCards[1]!, opponentCards[1]!, last, top, card("3", "diamonds")];
+    const state = withSkillCard({ ...withHands(base, playerCards, opponentCards), shoe: { cards: shoeCards, cursor: 5, shuffleIndex: 1 } }, "switcheroo", "switch-physical");
     const beforeRng = state.abilities.rng;
     const beforeMatchRng = state.rng;
     const next = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "switch-physical" });
     expect(next.player.hand.cards.at(-1)).toBe(top);
-    expect(next.shoe.cards[0]).toBe(last);
-    expect(next.shoe.cursor).toBe(0);
+    expect(next.shoe.cards[4]).toBe(top);
+    expect(next.shoe.cards[5]).toBe(last);
+    expect(next.shoe.cursor).toBe(5);
+    expect(new Set(next.shoe.cards.map((entry) => entry.id)).size).toBe(next.shoe.cards.length);
+    expect(next.history).toContainEqual({ type: "DRAW_PILE_CARD_REVEALED", viewer: "player", cardId: last.id, rank: "2", suit: "clubs" });
     expect(next.abilities.rng).toEqual(beforeRng);
     expect(next.rng).toEqual(beforeMatchRng);
     expect(next.history).toContainEqual(expect.objectContaining({ type: "BUST", actor: "player" }));
@@ -686,7 +696,7 @@ describe("skills", () => {
     expect(swordReaction.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "sword-and-handcannon", owner: "player" }));
     expect(swordReaction.history).toContainEqual(expect.objectContaining({ type: "TRIGGER_PULLED", actor: "player", baseProbability: 0.5, misfireChance: 0.33 }));
     const pulled = swordReaction.history.filter((event) => event.type === "TRIGGER_PULLED").at(-1);
-    if (pulled?.type === "TRIGGER_PULLED") expect(pulled.probability).toBeCloseTo(0.17);
+    if (pulled?.type === "TRIGGER_PULLED") expect(pulled.probability).toBeCloseTo(0.335);
     const forgeBase = withSkillCard(createMatch("shared-player-forge", { unlockedPlayerSkillIds: ["forge-heralds-the-year"] }), "forge-heralds-the-year", "player-forge-card");
     const forge = withHands(forgeBase, [card("10", "hearts"), card("7", "diamonds")], [card("10"), card("6")]);
     const forgeState: MatchState = { ...forge, opponent: { ...forge.opponent, stood: true }, round: { ...forge.round, opponent: { ...forge.round.opponent, stood: true } } };
@@ -742,7 +752,8 @@ describe("skills", () => {
     expect(advised.history.slice(judgment.history.length)).not.toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "observe-owner-hand-change" }));
 
     const switchBase = withHands(createMatch("switch-hand-event", { playerAiSkills: observer }), [card("10"), card("6")], [card("10"), card("7")]);
-    const switcheroo = withSkillCard({ ...switchBase, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } }, "switcheroo", "switch-hand-event-card");
+    const outgoing = physicalCard(switchBase.player.hand.cards.at(-1)!);
+    const switcheroo = withSkillCard({ ...switchBase, shoe: { cards: [outgoing, card("2", "clubs")], cursor: 1, shuffleIndex: 1 } }, "switcheroo", "switch-hand-event-card");
     const switched = gameReducer(switcheroo, { type: "PLAY_ABILITY", instanceId: "switch-hand-event-card" });
     expect(switched.history.slice(switcheroo.history.length)).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", ruleId: "observe-owner-hand-change" }));
     expect(switched.round.player.hand).toBe(switched.player.hand);
@@ -757,10 +768,12 @@ describe("skills", () => {
 
   it.each(["critical-judgment", "situation-assessment", "switcheroo", "scent-of-a-woman", "night-queen"] as const)("exposes, resolves, and deterministically records the active %s contract", (definitionId) => {
     const makeState = (): MatchState => {
-      const base = withHands(createMatch(`contract-${definitionId}`),
-        definitionId === "night-queen" ? [card("Q", "hearts"), card("6", "hearts")] : [card("10"), card("6")],
-        [card("10"), card("7")]);
-      return withSkillCard({ ...base, shoe: { cards: [card("2", "clubs"), card("A", "diamonds")], cursor: 0, shuffleIndex: 1 } }, definitionId);
+      const playerCards = definitionId === "night-queen" ? [card("Q", "hearts"), card("6", "hearts")] : [card("10"), card("6")];
+      const base = withHands(createMatch(`contract-${definitionId}`), playerCards, [card("10"), card("7")]);
+      const shoe = definitionId === "switcheroo"
+        ? { cards: [playerCards.at(-1)!, card("2", "clubs"), card("A", "diamonds")], cursor: 1, shuffleIndex: 1 }
+        : { cards: [card("2", "clubs"), card("A", "diamonds")], cursor: 0, shuffleIndex: 1 };
+      return withSkillCard({ ...base, shoe }, definitionId);
     };
     const state = makeState();
     const action = { type: "PLAY_ABILITY" as const, instanceId: `contract-${definitionId}` };
@@ -806,6 +819,7 @@ describe("skills", () => {
     expect(replaced.player.hand.cards.some((entry) => entry.attributes.source === "derived")).toBe(false);
     expect(replaced.shoe.cards.every((entry) => entry.attributes.source === "shoe")).toBe(true);
     expect(replaced.shoe.cursor).toBe(1);
+    expect(replaced.history).not.toContainEqual(expect.objectContaining({ type: "DRAW_PILE_CARD_REVEALED" }));
 
     const endBase = withHands(createMatch("derived-round-end"), [card("10"), derived], [card("10"), card("7")]);
     const atRoundEnd = { ...endBase, round: { ...endBase.round, phase: "round-end" as const, currentActor: null } };
@@ -843,8 +857,12 @@ describe("skills", () => {
 
   it("Switcheroo reaching 21 waits for an explicit Stand when the opponent already stood", () => {
     const base = createMatch("switcheroo-stood");
-    const state = { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]), playerSkills: { ...base.playerSkills, cards: [skillCard("switcheroo")] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skillCard("switcheroo"), createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 }, opponent: { ...base.opponent, stood: true }, round: { ...withHands(base, [card("10"), card("9")], [card("10"), card("7")]).round, currentActor: "player" as const, opponent: { ...base.opponent, hand: createHand([card("10"), card("7")]), stood: true, busted: false } }, shoe: { cards: [card("A", "clubs")], cursor: 0, shuffleIndex: 1 } };
+    const prepared = withHands(base, [card("10"), card("9")], [card("10"), card("7")]);
+    const opponent = { ...prepared.opponent, stood: true };
+    const state = { ...prepared, playerSkills: { ...prepared.playerSkills, cards: [skillCard("switcheroo")] }, abilities: { ...prepared.abilities, instances: [...prepared.abilities.instances, { ...skillCard("switcheroo"), createdAtSequence: prepared.abilities.sequence + 1, parameters: {} }], sequence: prepared.abilities.sequence + 1 }, opponent, round: { ...prepared.round, currentActor: "player" as const, opponent }, shoe: { cards: [physicalCard(prepared.player.hand.cards.at(-1)!), card("A", "clubs")], cursor: 1, shuffleIndex: 1 } };
     const next = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-switcheroo" });
+    expect(next.history).toContainEqual(expect.objectContaining({ type: "ABILITY_PLAYED", definitionId: "switcheroo" }));
+    expect(handValue(next.player.hand)).toBe(21);
     expect(next.round.phase).toBe("turns");
     expect(next.round.currentActor).toBe("player");
     expect(next.player.stood).toBe(false);
@@ -884,11 +902,12 @@ describe("skills", () => {
 
   it("keeps player turn after a non-21 Switcheroo", () => {
     const base = createMatch("switcheroo-continue");
-    const state = { ...withHands(base, [card("10"), card("5")], [card("10"), card("7")]), playerSkills: { ...base.playerSkills, cards: [skillCard("switcheroo")] }, abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...skillCard("switcheroo"), createdAtSequence: base.abilities.sequence + 1, parameters: {} }], sequence: base.abilities.sequence + 1 }, shoe: { cards: [card("2", "clubs")], cursor: 0, shuffleIndex: 1 } };
+    const prepared = withHands(base, [card("10"), card("5")], [card("10"), card("7")]);
+    const state = { ...prepared, playerSkills: { ...prepared.playerSkills, cards: [skillCard("switcheroo")] }, abilities: { ...prepared.abilities, instances: [...prepared.abilities.instances, { ...skillCard("switcheroo"), createdAtSequence: prepared.abilities.sequence + 1, parameters: {} }], sequence: prepared.abilities.sequence + 1 }, shoe: { cards: [physicalCard(prepared.player.hand.cards.at(-1)!), card("2", "clubs")], cursor: 1, shuffleIndex: 1 } };
     const next = gameReducer(state, { type: "PLAY_ABILITY", instanceId: "test-switcheroo" });
     expect(next.player.hand.cards.at(-1)).not.toEqual(card("5"));
     expect(next.shoe.cards).toContainEqual(card("5"));
-    expect(next.shoe.cursor).toBe(0);
+    expect(next.shoe.cursor).toBe(1);
     expect(next.round.currentActor).toBe("player");
     expect(next.round.phase).toBe("turns");
     expect(next.history.some((event) => event.type === "PLAYER_HIT")).toBe(false);

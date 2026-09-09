@@ -111,6 +111,7 @@ describe("runtime save schema and validation", () => {
     const match = createMatch("new-player-skill-events");
     const events = [
       { type: "DRAW_PILE_CARD_SUIT_REVEALED" as const, viewer: "player" as const, cardId: match.shoe.cards[match.shoe.cursor]!.id, suit: "clubs" as const },
+      { type: "DRAW_PILE_CARD_REVEALED" as const, viewer: "player" as const, cardId: match.shoe.cards[match.shoe.cursor]!.id, rank: "A" as const, suit: "clubs" as const },
       { type: "ABILITY_RESULT" as const, instanceId: "judgment", definitionId: "critical-judgment", owner: "player" as const, result: { type: "hit-bust-forecast" as const, actor: "player" as const, wouldBust: true } },
       { type: "ABILITY_RESULT" as const, instanceId: "assessment", definitionId: "situation-assessment", owner: "player" as const, result: { type: "hand-total-compared" as const, actor: "player" as const, relation: "higher" as const } },
       { type: "ABILITY_RESULT" as const, instanceId: "premium", definitionId: "prepaid-premium", owner: "player" as const, result: { type: "gun-bullets-added" as const, actor: "player" as const, amount: 1, bullets: 1 } }
@@ -392,6 +393,32 @@ describe("boot and repositories", () => {
 });
 
 describe("serial autosave", () => {
+  it("keeps Switcheroo's physical shoe valid for the synchronous autosave boundary", async () => {
+    const base = createMatch("switcheroo-autosave", { unlockedPlayerSkillIds: ["switcheroo"] });
+    const instanceId = "switcheroo-autosave-card";
+    const card = { kind: "player-skill" as const, definitionId: "switcheroo", owner: "player" as const, instanceId };
+    const sequence = base.abilities.sequence + 1;
+    const match: MatchState = {
+      ...base,
+      playerSkills: { ...base.playerSkills, cards: [card] },
+      abilities: { ...base.abilities, instances: [...base.abilities.instances, { ...card, createdAtSequence: sequence, parameters: {} }], sequence },
+      round: { ...base.round, phase: "turns", currentActor: "player", outcome: null }
+    };
+    const outgoing = match.player.hand.cards.at(-1)!;
+    const incoming = match.shoe.cards[match.shoe.cursor]!;
+    const repository = new MemorySaveRepository();
+    const controller = createAutosaveController(repository, createDefaultSave(NOW), match, { now: () => NOW });
+
+    expect(() => controller.dispatch({ type: "PLAY_ABILITY", instanceId })).not.toThrow();
+    await controller.flush();
+
+    const saved = repository.runtimeWrites.at(-1)!.activeMatch;
+    expect(saved.player.hand.cards.at(-1)?.id).toBe(incoming.id);
+    expect(saved.shoe.cards[saved.shoe.cursor]?.id).toBe(outgoing.id);
+    expect(new Set(saved.shoe.cards.map((entry) => entry.id)).size).toBe(saved.shoe.cards.length);
+    expect(saved.history).toContainEqual(expect.objectContaining({ type: "ABILITY_PLAYED", definitionId: "switcheroo" }));
+  });
+
   class DelayedRepository implements SaveRepository {
     longTerm: LongTermSave | null = null;
     runtime: RuntimeSave | null = null;

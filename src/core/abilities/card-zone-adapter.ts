@@ -14,7 +14,10 @@ export function swapLastHandCardWithDrawPileTop(shoe: ShoeState, hand: Hand): { 
   const top = shoe.cards[shoe.cursor]!;
   const cards = [...hand.cards.slice(0, -1), top];
   if (isDerivedCard(outgoing)) return { hand: createHand(cards), shoe: { ...shoe, cursor: shoe.cursor + 1 } };
+  const outgoingIndex = shoe.cards.findIndex((card, index) => index < shoe.cursor && card.id === outgoing.id);
+  if (outgoingIndex < 0) return undefined;
   const shoeCards = [...shoe.cards];
+  shoeCards[outgoingIndex] = top;
   shoeCards[shoe.cursor] = outgoing;
   return { hand: createHand(cards), shoe: { ...shoe, cards: shoeCards } };
 }
