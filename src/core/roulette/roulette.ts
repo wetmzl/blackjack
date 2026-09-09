@@ -25,7 +25,7 @@ export function deathProbability(gun: GunState): number {
 export function pullTrigger(gun: GunState, rng: SeededRng, misfireChance = 0): { result: TriggerResult; rng: RngSnapshot } {
   const baseProbability = deathProbability(gun);
   const effectiveMisfireChance = Math.max(0, Math.min(1, misfireChance));
-  const probability = Math.max(0, Math.min(1, baseProbability - effectiveMisfireChance));
+  const probability = baseProbability * (1 - effectiveMisfireChance);
   const roll = rng.next();
   const result = roll < probability ? "fired" : roll < baseProbability ? "misfire" : "empty-chamber";
   return {
