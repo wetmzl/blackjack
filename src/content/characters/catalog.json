@@ -84,13 +84,24 @@
     {
       "id": "ho-olheyak",
       "name": "霍尔海雅",
-      "subtitle": "曾经拥有羽翼的历史学者，向牌桌索回一段被遗忘的传承",
+      "subtitle": "为达目的，不择手段之人，用这身媚肉可以接近的答案，赌上身体也可以得到，得到一个可以斩断命运，复现荣光，永世流传的答案",
       "tier": "S",
       "tags": ["columbia", "historian", "memory"],
       "unlock": { "type": "defeat-any-tag", "tag": "tier:s" },
       "previewImage": "/assets/characters/ho-olheyak-relaxed.png",
       "trophyImage": "/assets/characters/ho-olheyak-trophy-defeated.png",
       "dataFile": "ho-olheyak.json"
+    },
+    {
+      "id": "dorothy",
+      "name": "多萝西",
+      "subtitle": "在莱茵生命时，她的实验差点要了许多人的命——但至少，她从来不会假装那是命运的安排",
+      "tier": "S",
+      "tags": ["columbia", "rhodes-island", "zalak", "researcher"],
+      "unlock": { "type": "defeat-character", "characterId": "ho-olheyak" },
+      "previewImage": "/assets/characters/dorothy-relaxed.png",
+      "trophyImage": "/assets/characters/dorothy-trophy-defeated.png",
+      "dataFile": "dorothy.json"
     }
   ]
 }

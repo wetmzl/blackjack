@@ -15,6 +15,7 @@ describe("character unlock conditions", () => {
     const w = CHARACTER_CATALOG.find((character) => character.id === "w")!;
     const nian = CHARACTER_CATALOG.find((character) => character.id === "nian")!;
     const hoOlheyak = CHARACTER_CATALOG.find((character) => character.id === "ho-olheyak")!;
+    const dorothy = CHARACTER_CATALOG.find((character) => character.id === "dorothy")!;
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [])).toBe(false);
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any" } }, [defeat("plume")])).toBe(true);
     expect(isCharacterUnlocked(w, [defeat("texas")])).toBe(true);
@@ -23,6 +24,8 @@ describe("character unlock conditions", () => {
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-any-tag", tag: "tier:s" } }, [defeat("w")])).toBe(true);
     expect(isCharacterUnlocked(hoOlheyak, [defeat("texas")])).toBe(false);
     expect(isCharacterUnlocked(hoOlheyak, [defeat("w")])).toBe(true);
+    expect(isCharacterUnlocked(dorothy, [defeat("w")])).toBe(false);
+    expect(isCharacterUnlocked(dorothy, [defeat("ho-olheyak")])).toBe(true);
     expect(isCharacterUnlocked(nian, [defeat("w")])).toBe(true);
     const texas = CHARACTER_CATALOG.find((character) => character.id === "texas")!;
     expect(isCharacterUnlocked(texas, [defeat("lappland-the-decadenza")])).toBe(true);
@@ -49,5 +52,6 @@ describe("character unlock conditions", () => {
   it("reports only newly satisfied conditions", () => {
     expect(newlyUnlockedCharacterIds([], [defeat("plume")])).toEqual(["w", "irene", "platinum", "lappland-the-decadenza"]);
     expect(newlyUnlockedCharacterIds([defeat("plume")], [defeat("plume"), defeat("lappland-the-decadenza")])).toEqual(["texas", "nian", "ho-olheyak"]);
+    expect(newlyUnlockedCharacterIds([defeat("w")], [defeat("w"), defeat("ho-olheyak")])).toEqual(["dorothy"]);
   });
 });

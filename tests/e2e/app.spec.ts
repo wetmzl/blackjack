@@ -290,9 +290,12 @@ function opponentPenaltyReveal(): MatchState {
 }
 
 async function enterCharacterSelection(page: Page): Promise<void> {
+  const selection = page.locator("main.lobby-character-shell");
+  if (await selection.isVisible()) return;
   const entry = page.locator("[data-enter-duel]");
-  if (await entry.isVisible()) await entry.click();
-  await expect(page.locator("main.lobby-character-shell")).toBeVisible();
+  await expect(entry).toBeVisible();
+  await entry.click();
+  await expect(selection).toBeVisible();
 }
 
 async function ensureGuestCandidate(page: Page, id: string): Promise<void> {
@@ -479,6 +482,8 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   expect(playerZone).not.toBeNull();
   expect(actionDock!.y).toBeGreaterThanOrEqual(playerLayout!.y + playerLayout!.height);
   expect(Math.abs((actionDock!.x + actionDock!.width) - (playerZone!.x + playerZone!.width))).toBeLessThanOrEqual(1);
+  const devHud = page.locator("details.dev-hud");
+  if (await devHud.getAttribute("open") !== null) await devHud.locator("summary").click();
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 2)).toBe(true);
   await expect(page.locator(".table-shell")).not.toContainText("7mm 左轮");
   const dialogue = page.locator("#dialogue-text");
@@ -2099,7 +2104,7 @@ test("战利品陈列室只显示首次击败藏品，并可进入和清理独�
 
 test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({ page }) => {
   await page.goto("/");
-  await installLongTermSave(page, saveWithDefeats("w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak"));
+  await installLongTermSave(page, saveWithDefeats("w", "texas", "irene", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy"));
   await page.locator("[data-open-trophies]").click();
 
   const cases = [
@@ -2111,7 +2116,8 @@ test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({
     { slug: "plume", name: "翎羽", point: "boots", p0: "plume-trophy-detail-boots.png", p1: "plume-trophy-detail-boots-p1.png", description: "短靴被移开后" },
     { slug: "platinum", name: "白金", point: "feet", p0: "platinum-trophy-detail-feet.png", p1: "platinum-trophy-detail-feet-p1.png", description: "失去装备遮挡的轮廓" },
     { slug: "lappland-the-decadenza", name: "拉普兰德", point: "feet", p0: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png", p1: "lappland-the-decadenza-trophy-detail-feet-white-socks.png", description: "白色罗纹短袜与黑色软垫" },
-    { slug: "ho-olheyak", name: "霍尔海雅", point: "shoes", p0: "ho-olheyak-trophy-detail-shoes.png", p1: "ho-olheyak-trophy-detail-shoes-p1.png", description: "褪去鞋履后" }
+    { slug: "ho-olheyak", name: "霍尔海雅", point: "shoes", p0: "ho-olheyak-trophy-detail-shoes.png", p1: "ho-olheyak-trophy-detail-shoes-p1.png", description: "褪去精致的包装后" },
+    { slug: "dorothy", name: "多萝西", point: "feet", p0: "dorothy-trophy-detail-boots-p0.png", p1: "dorothy-trophy-detail-boots-p1-white-socks.png", description: "剥下高筒靴" }
   ] as const;
 
   for (const entry of cases) {
@@ -2160,7 +2166,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-irene", timestamp: "2026-08-29T20:10:00.000Z", opponentId: "irene", winner: "player", escaped: false, finalRoulette: { player: { bullets: 4, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 2 }, blackjacks: { player: 0, opponent: 1 } },
     { id: "gallery-nian", timestamp: "2026-08-30T20:10:00.000Z", opponentId: "nian", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
     { id: "gallery-plume", timestamp: "2026-08-31T20:10:00.000Z", opponentId: "plume", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 0 }, blackjacks: { player: 1, opponent: 0 } },
-    { id: "gallery-lappland", timestamp: "2026-09-01T20:10:00.000Z", opponentId: "lappland-the-decadenza", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
+    { id: "gallery-lappland", timestamp: "2026-09-01T20:10:00.000Z", opponentId: "lappland-the-decadenza", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
+    { id: "gallery-dorothy", timestamp: "2026-09-02T20:10:00.000Z", opponentId: "dorothy", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
   ];
   imported.defeats = [
     { opponentId: "w", timestamp: "2026-08-27T20:10:00.000Z" },
@@ -2168,7 +2175,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { opponentId: "irene", timestamp: "2026-08-29T20:10:00.000Z" },
     { opponentId: "nian", timestamp: "2026-08-30T20:10:00.000Z" },
     { opponentId: "plume", timestamp: "2026-08-31T20:10:00.000Z" },
-    { opponentId: "lappland-the-decadenza", timestamp: "2026-09-01T20:10:00.000Z" }
+    { opponentId: "lappland-the-decadenza", timestamp: "2026-09-01T20:10:00.000Z" },
+    { opponentId: "dorothy", timestamp: "2026-09-02T20:10:00.000Z" }
   ];
   const cases = [
     { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
@@ -2176,7 +2184,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-irene", slug: "irene", name: "艾丽妮", tier: "A", closeupCount: 4, closeupId: "hand", closeupName: "松开的手", closeupAsset: "irene-trophy-detail-hand.png" },
     { id: "gallery-nian", slug: "nian", name: "年", tier: "S", closeupCount: 5, closeupId: "tail-root", closeupName: "龙尾根部", closeupAsset: "nian-trophy-detail-tail-root.png" },
     { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" },
-    { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet", closeupName: "长靴与短袜", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png" }
+    { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet", closeupName: "长靴与短袜", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png" },
+    { id: "gallery-dorothy", slug: "dorothy", name: "多萝西", tier: "S", closeupCount: 5, closeupId: "face-inspected", closeupName: "面部摆弄特写", closeupAsset: "dorothy-trophy-detail-face-inspected.png" }
   ] as const;
 
   await page.goto("/");
