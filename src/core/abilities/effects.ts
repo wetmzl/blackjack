@@ -1,7 +1,7 @@
 import type { SeededRng } from "../rng/seeded";
 import { addGunBullets, addToPendingLoad, multiplyPendingLoad, setPendingLoad } from "./roulette-adapter";
 import { createDerivedCardForExactTotal, drawExactResultingTotal, handTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
-import { addCardTag, cardRank, cardSource, cardSuit, createDerivedCard, createDerivedCardId, removeCardTag } from "../blackjack/card";
+import { addCardTag, cardRank, cardSource, cardSuit, createDerivedCard, createDerivedCardId, isDerivedCard, removeCardTag } from "../blackjack/card";
 import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
 import { getAbilityDefinition, getStatusDefinition, instantiateAbility, type AbilityRegistry } from "./registry";
 import { resolveActor, resolveScalar, type ConditionContext } from "./conditions";
@@ -97,9 +97,13 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       break;
     }
     case "swap-last-hand-card-with-draw-pile-top": {
+      const outgoing = world.hands[actor].cards.at(-1);
       const result = swapLastHandCardWithDrawPileTop(world.shoe, world.hands[actor]);
       if (!result) throw new Error("Cannot swap an empty hand or draw pile");
       world = withHands({ ...world, shoe: result.shoe }, actor, result.hand);
+      if (outgoing && !isDerivedCard(outgoing)) {
+        events.push({ type: "DRAW_PILE_CARD_REVEALED", viewer: actor, cardId: outgoing.id, rank: cardRank(outgoing), suit: cardSuit(outgoing) });
+      }
       changed(effect.type);
       break;
     }

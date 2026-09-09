@@ -67,6 +67,26 @@ function abilityToastMatch(): MatchState {
   throw new Error("No deterministic ability toast fixture found");
 }
 
+function switcherooKnowledgeMatch(): MatchState {
+  const dealt = findTurnsMatch("e2e-switcheroo-knowledge");
+  const card = { kind: "player-skill" as const, definitionId: "switcheroo", owner: "player" as const, instanceId: "e2e-switcheroo-card" };
+  const sequence = dealt.abilities.sequence + 1;
+  return {
+    ...dealt,
+    round: { ...dealt.round, currentActor: "player" },
+    playerSkills: {
+      ...dealt.playerSkills,
+      unlockedDefinitionIds: [...new Set([...dealt.playerSkills.unlockedDefinitionIds, "switcheroo"])],
+      cards: [card]
+    },
+    abilities: {
+      ...dealt.abilities,
+      instances: [...dealt.abilities.instances, { ...card, createdAtSequence: sequence, parameters: {} }],
+      sequence
+    }
+  };
+}
+
 function earlyPreparationDrawMatch(): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
     const match = createMatch(`e2e-early-preparation-draw-${index}`, {
@@ -687,6 +707,26 @@ test("牌堆状态栏使用未知 compact 牌并随实体牌堆顶更新", async
   await page.getByRole("button", { name: "Hit 要牌" }).click();
   await expect(compactCard).toHaveAttribute("data-card-id", secondCard.id);
   await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌点数未知，花色未知，剩余 ${initialRemaining - 1} 张`);
+});
+
+test("偷梁换柱塞回牌库顶的手牌保持点数与花色已知", async ({ page }) => {
+  await page.goto("/");
+  const match = switcherooKnowledgeMatch();
+  const outgoing = match.player.hand.cards.at(-1)!;
+  const remaining = match.shoe.cards.length - match.shoe.cursor;
+  const suitNames = { spades: "黑桃", hearts: "红桃", diamonds: "方块", clubs: "梅花" } as const;
+  const suitSymbols = { spades: "♠", hearts: "♥", diamonds: "♦", clubs: "♣" } as const;
+  await installRuntimeSave(page, match);
+
+  await page.locator(".skill-drawer-toggle").click();
+  await page.getByRole("button", { name: "使用偷梁换柱" }).click();
+
+  const shoeStatus = page.locator(".shoe-status");
+  const compactCard = shoeStatus.locator(".card-compact");
+  await expect(compactCard).toHaveAttribute("data-card-id", outgoing.id);
+  await expect(compactCard.locator(".card-rank")).toHaveText(outgoing.attributes.rank);
+  await expect(compactCard.locator(".card-suit")).toHaveText(suitSymbols[outgoing.attributes.suit]);
+  await expect(shoeStatus).toHaveAccessibleName(`牌库：下一张牌点数为${outgoing.attributes.rank}，花色为${suitNames[outgoing.attributes.suit]}，剩余 ${remaining} 张`);
 });
 
 test("早有准备提供一次主动抽卡且单击候选立即确认", async ({ page }) => {

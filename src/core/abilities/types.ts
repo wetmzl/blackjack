@@ -195,6 +195,7 @@ export type AbilityDomainEvent =
   | { readonly type: "PENDING_EVENT_CANCELLED"; readonly eventId: string; readonly sourceInstanceId: string }
   | { readonly type: "CARD_SUIT_REVEALED"; readonly viewer: AbilityActor; readonly target: AbilityActor; readonly cardId: string; readonly suit: Suit }
   | { readonly type: "DRAW_PILE_CARD_SUIT_REVEALED"; readonly viewer: AbilityActor; readonly cardId: string; readonly suit: Suit }
+  | { readonly type: "DRAW_PILE_CARD_REVEALED"; readonly viewer: AbilityActor; readonly cardId: string; readonly rank: Rank; readonly suit: Suit }
   | { readonly type: "SKILL_GAINED"; readonly skillId: string }
   | { readonly type: "ABILITY_RESULT"; readonly instanceId: string; readonly definitionId: string; readonly owner: AbilityActor; readonly result:
       | { readonly type: "derived-card-added"; readonly actor: AbilityActor; readonly rank: Rank; readonly suit: Suit }

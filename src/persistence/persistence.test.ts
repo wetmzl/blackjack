@@ -111,6 +111,7 @@ describe("runtime save schema and validation", () => {
     const match = createMatch("new-player-skill-events");
     const events = [
       { type: "DRAW_PILE_CARD_SUIT_REVEALED" as const, viewer: "player" as const, cardId: match.shoe.cards[match.shoe.cursor]!.id, suit: "clubs" as const },
+      { type: "DRAW_PILE_CARD_REVEALED" as const, viewer: "player" as const, cardId: match.shoe.cards[match.shoe.cursor]!.id, rank: "A" as const, suit: "clubs" as const },
       { type: "ABILITY_RESULT" as const, instanceId: "judgment", definitionId: "critical-judgment", owner: "player" as const, result: { type: "hit-bust-forecast" as const, actor: "player" as const, wouldBust: true } },
       { type: "ABILITY_RESULT" as const, instanceId: "assessment", definitionId: "situation-assessment", owner: "player" as const, result: { type: "hand-total-compared" as const, actor: "player" as const, relation: "higher" as const } },
       { type: "ABILITY_RESULT" as const, instanceId: "premium", definitionId: "prepaid-premium", owner: "player" as const, result: { type: "gun-bullets-added" as const, actor: "player" as const, amount: 1, bullets: 1 } }

@@ -218,12 +218,17 @@ function revealedOpponentCardIds(state: MatchState): ReadonlySet<string> {
     .filter((entry) => entry.type === "CARD_SUIT_REVEALED" && entry.viewer === "player" && entry.target === "opponent")
     .map((entry) => entry.type === "CARD_SUIT_REVEALED" ? entry.cardId : ""));
 }
-function revealedDrawPileCardIds(state: MatchState): ReadonlySet<string> {
+function revealedDrawPileSuitCardIds(state: MatchState): ReadonlySet<string> {
   let start = -1;
   state.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") start = index; });
-  return new Set(state.history.slice(start + 1)
-    .filter((entry) => entry.type === "DRAW_PILE_CARD_SUIT_REVEALED" && entry.viewer === "player")
-    .map((entry) => entry.type === "DRAW_PILE_CARD_SUIT_REVEALED" ? entry.cardId : ""));
+  return new Set(state.history.slice(start + 1).flatMap((entry) =>
+    (entry.type === "DRAW_PILE_CARD_SUIT_REVEALED" || entry.type === "DRAW_PILE_CARD_REVEALED") && entry.viewer === "player" ? [entry.cardId] : []));
+}
+function revealedDrawPileRankCardIds(state: MatchState): ReadonlySet<string> {
+  let start = -1;
+  state.history.forEach((event, index) => { if (event.type === "ROUND_STARTED") start = index; });
+  return new Set(state.history.slice(start + 1).flatMap((entry) =>
+    entry.type === "DRAW_PILE_CARD_REVEALED" && entry.viewer === "player" ? [entry.cardId] : []));
 }
 function gunStatusMarkup(label: string, bullets: number, capacity: number): string {
   const chambers = Array.from({ length: capacity }, (_, index) => `<i class="${index < bullets ? "loaded" : ""}" aria-hidden="true"></i>`).join("");
@@ -355,7 +360,7 @@ const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
   PARTICIPANT_KILLED: "参与者倒下", SKILL_GAINED: "获得技能", MATCH_FINISHED: "对局结束",
   SKILL_DRAWS_ADDED: "获得抽卡次数", SKILL_DRAW_OPENED: "生成技能候选", SKILL_DRAW_RESOLVED: "完成技能抽取",
   MATCH_ESCAPED: "策展人离席", MATCH_RESULT_ACKNOWLEDGED: "已确认最终结果", AI_DECISION: "对手完成决策",
-  CARD_SUIT_REVEALED: "识破暗牌花色", DRAW_PILE_CARD_SUIT_REVEALED: "识破牌堆顶花色", ABILITY_RESULT: "能力结果"
+  CARD_SUIT_REVEALED: "识破暗牌花色", DRAW_PILE_CARD_SUIT_REVEALED: "识破牌堆顶花色", DRAW_PILE_CARD_REVEALED: "识破牌堆顶牌面", ABILITY_RESULT: "能力结果"
 };
 function decisionLabel(action: "hit" | "stand" | undefined): string { return action === "hit" ? "Hit 要牌" : action === "stand" ? "Stand 停牌" : "—"; }
 function displayedHandValueMarkup(baseScore: number | "?", modifier: number): string {
@@ -1288,11 +1293,12 @@ function renderMatch(state: MatchState): void {
   const gunStatuses = `<section class="roulette-status" aria-label="轮盘弹巢状态">${gunStatusMarkup(character.name, state.roulette.opponent.bullets, state.roulette.opponent.capacity)}${gunStatusMarkup("策展人", state.roulette.player.bullets, state.roulette.player.capacity)}</section>`;
   const shoeRemaining = Math.max(0, state.shoe.cards.length - state.shoe.cursor);
   const nextShoeCard = state.shoe.cards[state.shoe.cursor];
-  const nextShoeSuitVisible = Boolean(nextShoeCard && revealedDrawPileCardIds(state).has(nextShoeCard.id));
+  const nextShoeSuitVisible = Boolean(nextShoeCard && revealedDrawPileSuitCardIds(state).has(nextShoeCard.id));
+  const nextShoeRankVisible = Boolean(nextShoeCard && revealedDrawPileRankCardIds(state).has(nextShoeCard.id));
   const shoeCard = nextShoeCard
-    ? cardDisplayMarkup(describeCard(nextShoeCard, { surface: "back", showRank: false, showSuit: nextShoeSuitVisible, variant: "compact" }))
+    ? cardDisplayMarkup(describeCard(nextShoeCard, { surface: "back", showRank: nextShoeRankVisible, showSuit: nextShoeSuitVisible, variant: "compact" }))
     : `<span class="shoe-status-empty" aria-hidden="true">—</span>`;
-  const shoeKnowledge = nextShoeCard ? `下一张牌点数未知，花色${nextShoeSuitVisible ? `为${suitPresentation(cardSuit(nextShoeCard)).label}` : "未知"}` : "没有下一张牌";
+  const shoeKnowledge = nextShoeCard ? `下一张牌点数${nextShoeRankVisible ? `为${cardRank(nextShoeCard)}` : "未知"}，花色${nextShoeSuitVisible ? `为${suitPresentation(cardSuit(nextShoeCard)).label}` : "未知"}` : "没有下一张牌";
   const shoeStatus = `<section class="shoe-status" aria-label="牌库：${shoeKnowledge}，剩余 ${shoeRemaining} 张"><span class="shoe-status-label">牌库</span><span class="shoe-status-next"><span class="shoe-status-next-label">next：</span>${shoeCard}</span><button class="shoe-info-button" type="button" data-shoe-info aria-label="查看牌库说明">i</button></section>`;
   const shoeInfoDialog = `<dialog id="shoe-info-dialog" class="modal shoe-info-modal" aria-labelledby="shoe-info-title"><button class="modal-close" type="button" data-shoe-info-close aria-label="关闭牌库说明">×</button><p class="eyebrow">牌桌 // 公共牌堆</p><h2 id="shoe-info-title">牌库</h2><p class="shoe-info-copy">UI中的next指的是下一次hit后发出的牌，你可以用各种手段尝试揭开它的面纱。<strong>牌堆总大小</strong>为52张扑克牌（即不带大小王的一副扑克牌）。开局时洗匀整副牌，此后每轮开始前，在牌堆剩余少于 12 张时，从弃牌堆回收所有牌，并重新洗匀。</p></dialog>`;
   const resolvedInfoBarValue = resolveCharacterInfoBarValue(character, state);

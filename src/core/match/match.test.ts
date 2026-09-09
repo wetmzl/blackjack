@@ -630,6 +630,7 @@ describe("skills", () => {
     expect(next.shoe.cards[5]).toBe(last);
     expect(next.shoe.cursor).toBe(5);
     expect(new Set(next.shoe.cards.map((entry) => entry.id)).size).toBe(next.shoe.cards.length);
+    expect(next.history).toContainEqual({ type: "DRAW_PILE_CARD_REVEALED", viewer: "player", cardId: last.id, rank: "2", suit: "clubs" });
     expect(next.abilities.rng).toEqual(beforeRng);
     expect(next.rng).toEqual(beforeMatchRng);
     expect(next.history).toContainEqual(expect.objectContaining({ type: "BUST", actor: "player" }));
@@ -818,6 +819,7 @@ describe("skills", () => {
     expect(replaced.player.hand.cards.some((entry) => entry.attributes.source === "derived")).toBe(false);
     expect(replaced.shoe.cards.every((entry) => entry.attributes.source === "shoe")).toBe(true);
     expect(replaced.shoe.cursor).toBe(1);
+    expect(replaced.history).not.toContainEqual(expect.objectContaining({ type: "DRAW_PILE_CARD_REVEALED" }));
 
     const endBase = withHands(createMatch("derived-round-end"), [card("10"), derived], [card("10"), card("7")]);
     const atRoundEnd = { ...endBase, round: { ...endBase.round, phase: "round-end" as const, currentActor: null } };
