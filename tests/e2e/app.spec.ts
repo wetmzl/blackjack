@@ -240,7 +240,7 @@ function dorothyInfoBarMatch(): MatchState {
   for (let index = 0; index < 10_000; index += 1) {
     const dealt = createMatch(`e2e-dorothy-info-${index}`, { opponentId: "dorothy", opponentAiSkills: dorothyCharacterData.aiSkills });
     const status = dealt.abilities.statuses.find((entry) => entry.statusDefinitionId === "dorothy-resonance-suit");
-    if (dealt.round.phase === "turns" && status) return dealt;
+    if (dealt.round.phase === "turns" && status && dealt.opponent.hand.cards[1]?.attributes.suit === status.parameters.suit) return dealt;
   }
   throw new Error("No deterministic Dorothy information-bar fixture found");
 }
@@ -690,6 +690,16 @@ test("多萝西的信息栏显示共振花色且牌面实时计入共振优势",
   await expect(infoBar.locator(".ai-info-suit > span")).toHaveText(symbols[suit]);
   await expect(infoBar.locator(".ai-info-suit small")).toHaveText(labels[suit]);
   await expect(page.locator(".opponent-zone .hand-score-modifier")).toHaveText(`+${opponentCount * 2}`);
+  for (const card of [...match.player.hand.cards, ...match.opponent.hand.cards]) {
+    const marker = page.locator(`[data-card-id="${card.id}"] .card-marker-resonance`);
+    await expect(marker).toHaveCount(card.attributes.suit === suit ? 1 : 0);
+  }
+  const hiddenResonance = match.opponent.hand.cards[1]!;
+  const hiddenResonanceCard = page.locator(`[data-card-id="${hiddenResonance.id}"]`);
+  await expect(hiddenResonanceCard).toHaveClass(/card-back/);
+  await expect(hiddenResonanceCard).toHaveAttribute("aria-label", "牌背，共振牌");
+  await expect(hiddenResonanceCard.locator(".card-marker-resonance")).toHaveText("◇");
+  await expect(hiddenResonanceCard).not.toContainText(hiddenResonance.attributes.rank);
   await infoBar.getByRole("button", { name: "查看共振牌说明" }).click();
   await expect(page.locator("#ai-info-dialog")).toContainText("双方每持有一张该花色手牌，各自获得2点点数优势");
 });
@@ -1270,7 +1280,7 @@ test("翎羽作为 B 级无机制角色显示档案并按需载入", async ({ pa
   await expect(page.locator("#dialogue-text")).not.toContainText("台词占位");
 });
 
-test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => {
+test("暗置衍生牌只用边框区分且不泄露牌面", async ({ page }) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
   const source = findTurnsMatch("derived-card-visibility");
@@ -1282,8 +1292,11 @@ test("暗置衍生牌暴露来源标记但不泄露牌面", async ({ page }) => 
   await installRuntimeSave(page, activeMatch);
   const hidden = page.locator(".opponent-zone .cards .card").nth(1);
   await expect(hidden).toHaveClass(/card-back/);
+  await expect(hidden).toHaveClass(/card-derived/);
+  await expect(hidden).toHaveCSS("border-style", "double");
   await expect(hidden).toHaveAttribute("data-card-source", "derived");
-  await expect(hidden).toHaveAttribute("aria-label", "牌背，衍生牌");
+  await expect(hidden).toHaveAttribute("aria-label", "牌背");
+  await expect(hidden.locator(".card-marker")).toHaveCount(0);
   await expect(hidden).not.toContainText("K");
   await expect(hidden).not.toContainText("♥");
 });

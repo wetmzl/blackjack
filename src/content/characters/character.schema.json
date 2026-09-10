@@ -92,6 +92,16 @@
         "label": { "type": "string", "minLength": 1 },
         "description": { "type": "string", "minLength": 1 },
         "format": { "enum": ["number", "percent"], "default": "number", "description": "数值显示格式；percent 将 0–1 的小数显示为百分比。" },
+        "matchingSuitMarker": {
+          "type": "object",
+          "description": "当信息栏解析为状态花色时，为双方所有匹配花色的手牌显示菱形角标；暗牌也显示，但不额外泄露牌面。",
+          "additionalProperties": false,
+          "required": ["type", "label"],
+          "properties": {
+            "type": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+            "label": { "type": "string", "minLength": 1 }
+          }
+        },
         "value": {
           "oneOf": [
             { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "number" }, "value": { "$ref": "#/$defs/infoBarScalar" } } },
@@ -105,6 +115,10 @@
         {
           "if": { "required": ["format"], "properties": { "format": { "const": "percent" } } },
           "then": { "properties": { "value": { "properties": { "type": { "const": "number" } } } } }
+        },
+        {
+          "if": { "required": ["matchingSuitMarker"] },
+          "then": { "properties": { "value": { "required": ["type", "source"], "properties": { "type": { "const": "suit" }, "source": { "const": "status-suit" } } } } }
         }
       ]
     },

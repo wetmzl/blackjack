@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createCard, createDerivedCard } from "../core/blackjack/card";
-import { cardDisplayMarkup, describeCard, describeCards, type CardMarker } from "./cards";
+import { cardDisplayMarkup, describeCard, describeCards, diamondCardMarker, type CardMarker } from "./cards";
 
 describe("card display descriptions", () => {
   it("renders all four compact knowledge states through the same renderer", () => {
@@ -46,6 +46,14 @@ describe("card display descriptions", () => {
     expect(cardDisplayMarkup(marked)).toContain("card-marker-intel");
   });
 
+  it("uses only the border treatment for derived table cards", () => {
+    const card = createDerivedCard("diamonds", "7", "derived-border-only", "fixture");
+    const markup = cardDisplayMarkup(describeCard(card, { surface: "front", showRank: true, showSuit: true }));
+    expect(markup).toContain("card-derived");
+    expect(markup).not.toContain("card-marker");
+    expect(markup).not.toContain("衍生牌");
+  });
+
   it("projects surface, rank and suit as independent dimensions", () => {
     const card = createCard("hearts", "8", "physical-8-heart");
     const display = describeCard(card, { surface: "back", showRank: true, showSuit: false });
@@ -59,9 +67,10 @@ describe("card display descriptions", () => {
     expect(markup).not.toContain("card-back-emblem");
   });
 
-  it("adds tag-driven and arbitrary corner markers through one renderer", () => {
+  it("adds explicit corner markers through one renderer", () => {
     const markers: CardMarker[] = [
       { type: "watch", position: "top-left", label: "监视标记", visual: { kind: "image", src: "/marker.png", alt: "监视" } },
+      diamondCardMarker("resonance", "共振牌"),
       { type: "intel", position: "bottom-left", label: "情报标记", visual: { kind: "css", className: "intel-pip" } },
       { type: "lock", position: "bottom-right", label: "锁定标记", visual: { kind: "text", text: "×" } }
     ];
@@ -74,6 +83,8 @@ describe("card display descriptions", () => {
     expect(markup).toContain("card-marker-top-right");
     expect(markup).toContain("card-marker-bottom-left");
     expect(markup).toContain("card-marker-bottom-right");
+    expect(markup).toContain("card-marker-resonance");
+    expect(markup).toContain("共振牌");
     expect(markup).toContain('src="/marker.png"');
     expect(markup).toContain("card-suit-visible");
     expect(markup).toContain("♠");

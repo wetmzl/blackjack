@@ -28,7 +28,7 @@ import { getAiTurnDelayMs } from "./presentation/ai-timing";
 import { abilityExpiredNotices, abilityTriggerNotice, pendingTriggerAbilityNotices, type AbilityNotice } from "./presentation/ability-notices";
 import { presentBodyMovedHaptic, presentInteractionHaptic, presentMatchHaptics, presentSkillSelectionHaptic } from "./presentation/haptics";
 import { roundResultText, triggerResultText } from "./presentation/round-notice";
-import { cardDisplayMarkup, describeCard, describeCards, suitPresentation } from "./presentation/cards";
+import { cardDisplayMarkup, describeCard, describeCards, diamondCardMarker, suitPresentation, type CardMarker } from "./presentation/cards";
 import { gameAudio } from "./audio/game-audio";
 import { presentMatchAudio, presentOpeningMatchAudio, syncMatchAudioState } from "./audio/match-audio";
 import { downloadResourcePack, ResourcePackDownloadError, type ResourcePackProgress } from "./resources/resource-pack";
@@ -212,6 +212,13 @@ function characterInfoBarMarkup(character: CharacterDefinition, value: ResolvedI
   const format = character.infoBar.format ?? "number";
   const accessibleValue = infoBarValueText(value, format);
   return `<section class="ai-info-bar" aria-label="${escapeHtml(character.infoBar.label)}：${escapeHtml(accessibleValue)}"><span class="ai-info-label">${escapeHtml(character.infoBar.label)}</span><output class="ai-info-value" aria-label="当前值：${escapeHtml(accessibleValue)}">${infoBarValueMarkup(value, format)}</output><button class="ai-info-button" type="button" data-ai-info aria-label="查看${escapeHtml(character.infoBar.label)}说明">i</button></section>`;
+}
+function matchingSuitCardMarkers(character: CharacterDefinition, state: MatchState, value: ResolvedInfoBarValue): Readonly<Record<string, readonly CardMarker[]>> | undefined {
+  const markerDefinition = character.infoBar?.matchingSuitMarker;
+  if (!markerDefinition || typeof value !== "string") return undefined;
+  const marker = diamondCardMarker(markerDefinition.type, markerDefinition.label);
+  const matchingCards = [...state.player.hand.cards, ...state.opponent.hand.cards].filter((card) => cardSuit(card) === value);
+  return Object.fromEntries(matchingCards.map((card) => [card.id, [marker]]));
 }
 function revealedOpponentCardIds(state: MatchState): ReadonlySet<string> {
   let start = -1;
@@ -1280,8 +1287,10 @@ function renderMatch(state: MatchState): void {
   const opponentScoreModifier = comparisonPreview.scores.opponent - comparisonPreview.baseScores.opponent;
   const revealedOpponentCards = revealedOpponentCardIds(state);
   const opponentFaceUpIds = new Set(state.opponent.hand.cards.filter((_card, index) => observation.opponent.cards[index] !== null).map((card) => card.id));
-  const opponentCards = describeCards(state.opponent.hand.cards, { revealAll: reveal, faceUpCardIds: opponentFaceUpIds, suitVisibleCardIds: revealedOpponentCards }).map(cardDisplayMarkup).join("");
-  const playerCards = describeCards(state.player.hand.cards, { revealAll: true }).map(cardDisplayMarkup).join("");
+  const resolvedInfoBarValue = resolveCharacterInfoBarValue(character, state);
+  const markersByCardId = matchingSuitCardMarkers(character, state, resolvedInfoBarValue);
+  const opponentCards = describeCards(state.opponent.hand.cards, { revealAll: reveal, faceUpCardIds: opponentFaceUpIds, suitVisibleCardIds: revealedOpponentCards, markersByCardId }).map(cardDisplayMarkup).join("");
+  const playerCards = describeCards(state.player.hand.cards, { revealAll: true, markersByCardId }).map(cardDisplayMarkup).join("");
   const skills = state.playerSkills.cards.map((card, index) => {
     const skill = getPlayerSkillDefinition(card.definitionId);
     if (!skill) return "";
@@ -1337,7 +1346,6 @@ function renderMatch(state: MatchState): void {
   const shoeKnowledge = nextShoeCard ? `下一张牌点数${nextShoeRankVisible ? `为${cardRank(nextShoeCard)}` : "未知"}，花色${nextShoeSuitVisible ? `为${suitPresentation(cardSuit(nextShoeCard)).label}` : "未知"}` : "没有下一张牌";
   const shoeStatus = `<section class="shoe-status" aria-label="牌库：${shoeKnowledge}，剩余 ${shoeRemaining} 张"><span class="shoe-status-label">牌库</span><span class="shoe-status-next"><span class="shoe-status-next-label">next：</span>${shoeCard}</span><button class="shoe-info-button" type="button" data-shoe-info aria-label="查看牌库说明">i</button></section>`;
   const shoeInfoDialog = `<dialog id="shoe-info-dialog" class="modal shoe-info-modal" aria-labelledby="shoe-info-title"><button class="modal-close" type="button" data-shoe-info-close aria-label="关闭牌库说明">×</button><p class="eyebrow">牌桌 // 公共牌堆</p><h2 id="shoe-info-title">牌库</h2><p class="shoe-info-copy">UI中的next指的是下一次hit后发出的牌，你可以用各种手段尝试揭开它的面纱。<strong>牌堆总大小</strong>为52张扑克牌（即不带大小王的一副扑克牌）。开局时洗匀整副牌，此后每轮开始前，在牌堆剩余少于 12 张时，从弃牌堆回收所有牌，并重新洗匀。</p></dialog>`;
-  const resolvedInfoBarValue = resolveCharacterInfoBarValue(character, state);
   const infoBar = characterInfoBarMarkup(character, resolvedInfoBarValue);
   const skillDrawerMarkup = `<aside class="skill-sidebar ${skillDrawerOpen ? "is-open" : ""}" aria-label="技能抽屉"><button class="skill-drawer-toggle" type="button" aria-expanded="${skillDrawerOpen}" aria-label="${skillDrawerOpen ? "收起" : "展开"}技能抽屉，共 ${totalSkills} 张"><span class="skill-drawer-arrow" aria-hidden="true">${skillDrawerOpen ? ">" : "<"}</span><span class="skill-drawer-badge"${skillDrawerOpen ? " hidden" : ""}>${totalSkills}</span></button><div class="skill-drawer-content">${skills || "<span class='empty-skills'>暂无技能卡</span>"}</div></aside>`;
   const drawOffer = state.playerSkills.drawOffer;
