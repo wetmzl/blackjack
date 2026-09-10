@@ -1,6 +1,6 @@
 # 提丰基础美术审查稿 v1
 
-状态：`relaxed` 母版与 trophy gallery 默认正面层已通过用户审核；除用户明确排除的 trophy 局部特写外，其余角色美术已经完成。资源已进入 `public/assets/characters/`，但提丰角色数据尚未注册。
+状态：`relaxed` 母版与 trophy gallery 默认正面层已通过用户审核；基础人物图与四组 trophy 局部特写均已完成。资源已进入 `public/assets/characters/`，但提丰角色数据尚未注册。
 
 ## 输入职责
 
@@ -29,7 +29,12 @@
 - `typhon-trophy-defeated.png`：1600×450 RGBA；人物完整横躺于横向工业收纳舱，舱体外透明。
 - `typhon-trophy-gallery-headshot.png`：1000×1400；档案式头肩像，完整保留双角、下巴和领口。
 - `typhon-trophy-gallery-full-subject.png`、`typhon-trophy-gallery-left-subject.png`、`typhon-trophy-gallery-prone-subject.png`、`typhon-trophy-gallery-right-subject.png`：1024×1536 RGBA 透明人物层；运行时统一叠加 `trophy-gallery-coffin.png`。
-- 本轮按用户要求不制作任何 `typhon-trophy-detail-*.png` 局部特写。
+- `typhon-trophy-detail-face.png`：1024×1024 头部特写；两只黑色手套从左右轻压脸颊，仅保留脸、角、头发和领口。
+- `typhon-trophy-detail-chest-costume.png`：1024×1024 胸前服装特写；集中展示银色项圈、黑色机能面料、交叉束带、环扣与洋红点缀。
+- `typhon-trophy-detail-thigh.png`：1024×1024 大腿服装特写；从既有全身透明层取样重排，展示健康肉感、非对称袜带、铜色扣件与长袜上缘。
+- `typhon-trophy-detail-boots.png`、`typhon-trophy-detail-boots-p1.png`：1024×1024 足部差分；人物均为仰躺，后侧小腿与脚跟落在软垫上。原态穿完整机能靴，差分脱靴并展示黑色踩脚袜的包覆、露趾与露跟结构。
+
+所有局部特写均锁定为 1:1 近摄，画面不得出现膝盖或膝盖骨；足部两张还必须保持同一仰躺机位，不得呈现站立或脚掌承重姿态。
 
 ## 派生提示词与处理
 
@@ -41,5 +46,9 @@
 - `trophy-defeated`：独立生成正上方横向收纳舱，头在右、足在左；最终等比缩放进入 1600×450 透明画布，没有横向拉伸人物或舱体。
 - `headshot`：独立生成 5:7 深色绗缝档案头肩构图，完整保留双角和领口。
 - 收藏左侧、俯卧、右侧姿势分别从默认正面层派生；俯卧时背部由服装和外套完整覆盖。人物层按不同比例做受控等比缩放并居中，使长发、角、外套、手和鞋全部留在共享陈列舱内。
+- `detail-face`：极近脸部构图，两只黑色手套只对脸颊做对称轻压，眼睛闭合，不扩展到胸部或四肢。
+- `detail-chest-costume`：服装结构近摄，以项圈、束带、环扣和面料为主体，不扩展到腿部。
+- `detail-thigh`：内置生成两次因输出审核被拒，最终从已验收的全身透明层截取短裤下缘至长袜上缘，并在深色方形展垫上等比重排；没有重绘身体或服设。
+- `detail-boots`：从脚端低角度表现仰躺足部，软垫连续出现在脚后与脚下，鞋底不承重；`p1` 只移除靴子并露出黑色踩脚袜，保持同一姿态、机位和裁切。
 
 所有生成稿使用内置 `imagegen`；透明资源保留对应的 `#00FF00` 绿幕源图。后处理仅包含色键提取、等比缩放、居中和规定尺寸裁切。图 2 的巨型弓具与外置机械结构不进入牌桌人物层或陈列舱人物层，服装本体、束带、环扣、铜色细节与鞋履保持连续。
