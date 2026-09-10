@@ -1,0 +1,211 @@
+{
+  "$schema": "../character.schema.json",
+  "assets": {
+    "relaxed": "/assets/characters/typhon-relaxed.png",
+    "conflicted": "/assets/characters/typhon-conflicted.png",
+    "mocking": "/assets/characters/typhon-mocking.png",
+    "threatened": "/assets/characters/typhon-threatened.png",
+    "staffRevolver": "/assets/characters/staff-revolver-7mm.png",
+    "unconscious": "/assets/characters/typhon-unconscious-reclined.png",
+    "defeatedSummary": "/assets/characters/typhon-defeated-summary-chair.png"
+  },
+  "profile": {
+    "description": "萨米猎人，萨卡兹族，感染者，身形娇小，却背着一张比自己还高的黑弓。你问她知不知道这里的规则——她说知道，然后就坐下了。她冷淡、直接、说话带有明显的口音，但你能隐隐约约感受到她作为猎人的气息，而今天她的猎物就是你。"
+  },
+  "trophyDossier": {
+    "title": "人物档案",
+    "recordLabel": "档案 // 11",
+    "openLabel": "档案",
+    "closeLabel": "收起",
+    "fields": [
+      { "id": "name", "label": "姓名", "value": "提丰" },
+      { "id": "race", "label": "种族", "value": "萨卡兹族" },
+      { "id": "gender", "label": "性别", "value": "女" },
+      { "id": "tier", "label": "评级", "value": "A" },
+      { "id": "weight", "label": "尸体重量", "value": "46kg。" },
+      { "id": "virginity", "label": "是否处女", "value": "是。" }
+    ],
+    "condition": {
+      "label": "尸体档案",
+      "description": "她的黑色角饰歪斜地挂在发箍上，表情没有恐惧，甚至没有明显的痛苦，只是微微皱着眉，像是死前还在思考什么问题，但最无法忽视的，是她胸口那对乳房。它们太大了。大到与她155厘米的身形、与她纤细的锁骨和窄小的骨架完全不相称。活着的时候，黑色紧身背心能勉强兜住它们的形状；而现在，失去主人的托举之后，它们终于不再被任何东西约束了。那对饱满的乳房仿佛布丁一般，歪歪扭扭地挤在一起。"
+    }
+  },
+  "matchSummary": {
+    "playerVictory": "子弹从她的左侧额角钻入，掀开了那块皮肤，她向后仰倒，黑色角饰撞在椅背上发出沉闷的碎裂声。她的深粉色眼睛半睁着，瞳孔已经散了，浅紫色的长发散落下来，遮住了她的伤口。对与她娇小身形完全不相称的饱满乳房失去了主人的托举，它们终于不再被任何东西约束了，重重地坠向两侧——左边那只几乎要从衣服里完全掉出来，右边那只被挤在腋窝和椅背之间，变形、压扁、又缓慢地弹回来一些，但再也回不到原来的位置了。",
+    "playerDefeat": "她坐在那里，看着自己面前那副牌，很久没有说话，但眼镜依然直勾勾地盯着你，似乎在等待着你来开口，不过这可能不是她故意装作冷酷，只是她有点不知道专门开口。",
+    "escaped": "提丰没有叫住你。她看着你的背影越来越远，安静地把牌放下，向发牌员讨要她被没收的巨弓。"
+  },
+  "trophyGallery": {
+    "headshot": "/assets/characters/typhon-trophy-gallery-headshot.png",
+    "fullBody": "/assets/characters/typhon-trophy-gallery-full-subject.png",
+    "poses": [
+      {
+        "id": "left",
+        "name": "左侧",
+        "image": "/assets/characters/typhon-trophy-gallery-left-subject.png"
+      },
+      {
+        "id": "prone",
+        "name": "俯卧",
+        "image": "/assets/characters/typhon-trophy-gallery-prone-subject.png"
+      },
+      {
+        "id": "right",
+        "name": "右侧",
+        "image": "/assets/characters/typhon-trophy-gallery-right-subject.png"
+      }
+    ],
+    "closeups": [
+      {
+        "id": "face",
+        "name": "兴趣点",
+        "x": 50,
+        "y": 17,
+        "image": "/assets/characters/typhon-trophy-detail-face.png",
+        "description": "她的脸很小，五官还有点孩子气，嘴唇微微张开，露出一点舌尖。你捏着她的下巴把她的脸转向灯光时，她的头顺从地转过来，像一只被猎人提起来的猎物。你捏了捏她肥嘟嘟的脸，年轻的胶原蛋白即使在死后也能提供一种软糯的质感。"
+      },
+      {
+        "id": "chest",
+        "name": "胸口",
+        "x": 50,
+        "y": 32,
+        "image": "/assets/characters/typhon-trophy-detail-chest-costume.png",
+        "description": "胸口：这是她身上最无法忽视的部分。黑色背心的胸口上部是半透明黑纱，带菱形开口——但那层纱根本包不住她的胸部，只是勉强兜住了形状。她的乳房几乎是弹出来的——饱满、沉重、白得刺眼，它们大得让她的锁骨看起来更单薄、更脆弱，大得让她的肩膀显得像一只还没长开的雏鸟。她的乳晕是深粉色的，比她的发色浅，比她的瞳色深。她的乳头挺立着——那是尸僵带来的结果，也可能是死亡时最后一丝肌肉痉挛留下的残余，但看上去像是它们还不知道主人已经死了，仍然在等着什么人来享用它们。"
+      },
+      {
+        "id": "waist-tail",
+        "name": "腰部与尾巴",
+        "x": 50,
+        "y": 52,
+        "image": "/assets/characters/typhon-trophy-detail-thigh.png",
+        "description": "腰部与尾巴：她的热裤是黑色的，很饱满。她左右大腿各有一系列腿环，加上吊带袜的，显得有点凌乱，但是勒得下面饱满肉感的大腿格外有魅力。"
+      },
+      {
+        "id": "feet",
+        "name": "足部特写（脱鞋前）",
+        "x": 50,
+        "y": 86,
+        "image": "/assets/characters/typhon-trophy-detail-boots.png",
+        "description": "足部特写（脱鞋前）：深灰色的厚底高跟短靴，鞋跟和厚底是浅灰色，看起来很有科技感，恐怕是她嘴里的“南方朋友”送的。这个设计很好地掩盖了主人尴尬的身高问题，就是不知道她有没有为了这个设计摔过跤。",
+        "variants": [
+          {
+            "image": "/assets/characters/typhon-trophy-detail-boots-p1.png",
+            "description": "足部特写（脱鞋后）：出乎意料的是，拨开厚重的靴子，里面居然是黑丝踩脚袜。虽然这一定程度上破坏了黑丝的完整风味，但是裸露出来的可爱圆润脚趾和葡萄一样，让人忍不住去品尝。"
+          }
+        ]
+      }
+    ]
+  },
+  "revolverPlacement": {
+    "top": 118,
+    "left": 116,
+    "mobileTop": 106,
+    "mobileLeft": 108
+  },
+  "ai": {
+    "P": 0,
+    "A": 1,
+    "B": 1,
+    "C": 1
+  },
+  "aiSkills": [],
+  "dialogue": {
+    "MATCH_START": [
+      "你打你的，不用管我。",
+      "这地方比萨米暖和多了，但似乎比萨米危险多了。",
+      "你看起来不像会赌的人。……我也不是。所以我们扯平了。"
+    ],
+    "PLAYER_HIT": [
+      "要牌。行。",
+      "你在赌。我看得出来。",
+      "下一张不一定是好的。",
+      "继续要的话，会离死亡更近呢。"
+    ],
+    "PLAYER_STAND": [
+      "停了。好，那该我上场了。",
+      "现在，我要开始追赶你了。",
+      "明智。还是胆小？无所谓，结果一样。"
+    ],
+    "OPPONENT_FIRST_HIT": [
+      "再来一张。"
+    ],
+    "OPPONENT_FIRST_STAND": [
+      "就这样。"
+    ],
+    "OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND": [
+      "追猎这种事，我做过很多年了。",
+      "这张不够，再一张。",
+      "我马上要追到你了。",
+      "这张、这张、这张。哼，我就要追上了。",
+      "你手上的点数我大概能猜到，所以我还得再走一步。",
+      "猎物跑得再快，也有跑累的时候。",
+      "再来。"
+    ],
+    "PLAYER_BLACKJACK": [
+      "21点。运气不错。",
+      "这轮我要面对的东西更重了。……行，我接了。",
+      "漂亮，还好我遇到过更糟的情况。"
+    ],
+    "OPPONENT_BLACKJACK": [
+      "……21点。",
+      "真想和麦麦分享这个时刻。"
+    ],
+    "PLAYER_BUST": [
+      "爆了。这一轮你输了。",
+      "贪心没好结果。下次注意。",
+      "我活下来了。谢谢你的失误。"
+    ],
+    "OPPONENT_BUST": [
+      "……追过头了。",
+      "计算失误。是我的问题。",
+      "行。面对轮盘吧。",
+      "不用催我。我不是猎物，我不会跑的。",
+      "——如果我就这么死在这，我不甘心。"
+    ],
+    "PLAYER_SURVIVED_TRIGGER": [
+      "空枪。运气不错。",
+      "继续。",
+      "没响。好。"
+    ],
+    "OPPONENT_SURVIVED_TRIGGER": [
+      "……咔哒。",
+      "还活着。好。",
+      "再来，我的狩猎还没有结束。"
+    ],
+    "PLAYER_WIN_ROUND": [
+      "你的点数更高。我接受。"
+    ],
+    "OPPONENT_WIN_ROUND": [
+      "点数是我大。……好。",
+      "我赢了这一轮，仅此而已。",
+      "你别看我。下一轮随时可能轮到我面对枪口。",
+      "我不是每次都能算对。刚才你也看到了。"
+    ],
+    "PUSH_ROUND": [
+      "平局。谁也没输，谁也没赢。"
+    ],
+    "PLAYER_TRIGGER_READY": [
+      "你闭眼也行，我会看着的。",
+      "要是你作弊了怎么办？毕竟我也没有用过铳，不知道会不会激发。"
+    ],
+    "OPPONENT_TRIGGER_READY": [
+      "……行。",
+      "请让我自己数三秒。",
+      "如果我死了——帮我告诉麦麦，让她别再往北走了。",
+      "……不，算了，她不会听的。",
+      "把我的弓交给艾尔启吧，它比我的命重要。"
+    ],
+    "PLAYER_TRIGGER_HIT": [
+      "……所以，我能问一个问题了。"
+    ],
+    "OPPONENT_TRIGGER_HIT": [
+      "……呃……不要……"
+    ],
+    "SPECIAL_TWENTY_ONE_PUSH": [
+      "两个21点。……这概率比遇到邪魔还低。"
+    ],
+    "SPECIAL_LOW_PUSH": [
+      "我们都怂了。……哼，明智的怂。"
+    ]
+  }
+}

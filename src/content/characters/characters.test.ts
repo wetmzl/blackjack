@@ -11,12 +11,13 @@ import platinumData from "./data/platinum.json";
 import lapplandData from "./data/lappland-the-decadenza.json";
 import hoOlheyakData from "./data/ho-olheyak.json";
 import dorothyData from "./data/dorothy.json";
+import typhonData from "./data/typhon.json";
 import { CharacterCatalogSchema, CharacterDataSchema, DIALOGUE_EVENT_CODES } from "./schema";
 import { getAbilityDefinition } from "../../core/abilities/registry";
 
 describe("data-driven character registry", () => {
   it("registers every attendee in the lightweight catalog", () => {
-    expect(CHARACTER_CATALOG.map((character) => character.id)).toEqual(["w", "texas", "irene", "cimei", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy"]);
+    expect(CHARACTER_CATALOG.map((character) => character.id)).toEqual(["w", "texas", "irene", "cimei", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy", "typhon"]);
     expect(new Set(CHARACTER_CATALOG.map((character) => character.id)).size).toBe(CHARACTER_CATALOG.length);
     expect(CHARACTER_METADATA_BY_ID.texas).toBe(CHARACTER_CATALOG[1]);
     expect(CHARACTER_METADATA_BY_ID.irene).toBe(CHARACTER_CATALOG[2]);
@@ -27,6 +28,7 @@ describe("data-driven character registry", () => {
     expect(CHARACTER_METADATA_BY_ID["lappland-the-decadenza"]).toBe(CHARACTER_CATALOG[7]);
     expect(CHARACTER_METADATA_BY_ID["ho-olheyak"]).toBe(CHARACTER_CATALOG[8]);
     expect(CHARACTER_METADATA_BY_ID.dorothy).toBe(CHARACTER_CATALOG[9]);
+    expect(CHARACTER_METADATA_BY_ID.typhon).toBe(CHARACTER_CATALOG[10]);
     expect(getCharacterMetadata(DEFAULT_CHARACTER_ID)?.id).toBe("plume");
     expect(getCharacterTags(CHARACTER_METADATA_BY_ID.w)).toEqual(expect.arrayContaining(["tier:s", "explosive", "chaotic"]));
     expect(Object.isFrozen(CHARACTER_METADATA_BY_ID.w.tags)).toBe(true);
@@ -47,6 +49,23 @@ describe("data-driven character registry", () => {
     expect(getCharacterTags(catalog.characters[0]!)).toContain("tier:ss");
   });
 
+  it("registers Typhon from the supplied copy with no skills yet", async () => {
+    const metadata = getCharacterMetadata("typhon");
+    expect(metadata).toEqual(expect.objectContaining({
+      name: "提丰",
+      subtitle: "她追踪了九年的猎物不在这个赌桌上——但这条线索值得她追到这里。",
+      tier: "A",
+      unlock: { type: "defeat-count", count: 5 }
+    }));
+    expect(typhonData.aiSkills).toEqual([]);
+    expect(typhonData.profile.description).toBe("萨米猎人，萨卡兹族，感染者，身形娇小，却背着一张比自己还高的黑弓。你问她知不知道这里的规则——她说知道，然后就坐下了。她冷淡、直接、说话带有明显的口音，但你能隐隐约约感受到她作为猎人的气息，而今天她的猎物就是你。");
+    expect(Object.keys(typhonData.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
+    expect(Object.values(typhonData.dialogue).flat().every((line) => !line.startsWith("“") && !line.endsWith("”"))).toBe(true);
+    expect(typhonData.dialogue.OPPONENT_FIRST_HIT).toEqual(["再来一张。"]);
+    expect(typhonData.dialogue.OPPONENT_FIRST_STAND).toEqual(["就这样。"]);
+    expect(await loadCharacter("typhon")).toEqual(expect.objectContaining({ id: "typhon", ...typhonData }));
+  });
+
   it("gives every character dedicated table, summary, and trophy artwork", () => {
     expect(CHARACTER_CATALOG.every((character) => !("ai" in character))).toBe(true);
     expect(CHARACTER_CATALOG.map((character) => character.previewImage)).toEqual([
@@ -59,7 +78,8 @@ describe("data-driven character registry", () => {
       "/assets/characters/platinum-relaxed.png",
       "/assets/characters/lappland-the-decadenza-relaxed.png",
       "/assets/characters/ho-olheyak-relaxed.png",
-      "/assets/characters/dorothy-relaxed.png"
+      "/assets/characters/dorothy-relaxed.png",
+      "/assets/characters/typhon-relaxed.png"
     ]);
     expect(CHARACTER_CATALOG.map((character) => character.trophyImage)).toEqual([
       "/assets/characters/w-trophy-defeated.png",
@@ -71,7 +91,8 @@ describe("data-driven character registry", () => {
       "/assets/characters/platinum-trophy-defeated.png",
       "/assets/characters/lappland-the-decadenza-trophy-defeated.png",
       "/assets/characters/ho-olheyak-trophy-defeated.png",
-      "/assets/characters/dorothy-trophy-defeated.png"
+      "/assets/characters/dorothy-trophy-defeated.png",
+      "/assets/characters/typhon-trophy-defeated.png"
     ]);
     expect(CHARACTER_CATALOG.map((character) => character.portraitScales)).toEqual([
       { selection: 1, table: 1 },
@@ -80,6 +101,7 @@ describe("data-driven character registry", () => {
       { selection: 1, table: 1 },
       { selection: 1, table: 1 },
       { selection: 1.3, table: 1.3 },
+      { selection: 1, table: 1 },
       { selection: 1, table: 1 },
       { selection: 1, table: 1 },
       { selection: 1, table: 1 },
@@ -436,6 +458,7 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse(platinumData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(lapplandData).success).toBe(true);
     expect(CharacterDataSchema.safeParse(dorothyData).success).toBe(true);
+    expect(CharacterDataSchema.safeParse(typhonData).success).toBe(true);
   });
 
   it("requires finite P/A/B/C AI threshold parameters", () => {
@@ -503,19 +526,20 @@ describe("data-driven character registry", () => {
       { id: "prone", name: "俯卧", image: "/assets/characters/w-trophy-gallery-prone-subject.png" },
       { id: "right", name: "右侧", image: "/assets/characters/w-trophy-gallery-right-subject.png" }
     ]);
-    expect([wData, texasData, ireneData, cimeiData, nianData, plumeData, platinumData, lapplandData].every((data) => data.trophyGallery.poses.length === 3)).toBe(true);
+    expect([wData, texasData, ireneData, cimeiData, nianData, plumeData, platinumData, lapplandData, typhonData].every((data) => data.trophyGallery.poses.length === 3)).toBe(true);
     expect(CharacterDataSchema.safeParse(wData).success).toBe(true);
     expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [...gallery.poses, gallery.poses[0]] } }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...wData, trophyGallery: { ...gallery, poses: [{ ...gallery.poses[0], unknown: true }] } }).success).toBe(false);
   });
 
   it("requires a complete data-driven administrative trophy dossier for every attendee", () => {
-    const characterData = [wData, texasData, ireneData, cimeiData, nianData, plumeData, platinumData, lapplandData, hoOlheyakData, dorothyData];
+    const characterData = [wData, texasData, ireneData, cimeiData, nianData, plumeData, platinumData, lapplandData, hoOlheyakData, dorothyData, typhonData];
     const expectedFieldIds = ["name", "race", "gender", "tier", "weight", "virginity"];
     expect(characterData.every((data) => CharacterDataSchema.safeParse(data).success)).toBe(true);
     expect(characterData.map((data) => data.trophyDossier.fields.map((field) => field.id))).toEqual(characterData.map(() => expectedFieldIds));
     expect(characterData.every((data) => data.trophyDossier.title === "人物档案")).toBe(true);
-    expect(characterData.every((data) => data.trophyDossier.condition.label === "尸体状况")).toBe(true);
+    expect(characterData.slice(0, -1).every((data) => data.trophyDossier.condition.label === "尸体状况")).toBe(true);
+    expect(typhonData.trophyDossier.condition.label).toBe("尸体档案");
     expect(characterData.every((data) => data.trophyDossier.condition.description.length > 0)).toBe(true);
     expect(characterData.map((data) => data.trophyDossier.fields.find((field) => field.id === "name")?.value)).toEqual(CHARACTER_CATALOG.map((character) => character.name));
     expect(characterData.map((data) => data.trophyDossier.fields.find((field) => field.id === "tier")?.value)).toEqual(CHARACTER_CATALOG.map((character) => character.tier));

@@ -113,6 +113,17 @@
       "previewImage": "/assets/characters/dorothy-relaxed.png",
       "trophyImage": "/assets/characters/dorothy-trophy-defeated.png",
       "dataFile": "dorothy.json"
+    },
+    {
+      "id": "typhon",
+      "name": "提丰",
+      "subtitle": "她追踪了九年的猎物不在这个赌桌上——但这条线索值得她追到这里。",
+      "tier": "A",
+      "tags": ["sami", "sarkaz", "hunter"],
+      "unlock": { "type": "defeat-count", "count": 5 },
+      "previewImage": "/assets/characters/typhon-relaxed.png",
+      "trophyImage": "/assets/characters/typhon-trophy-defeated.png",
+      "dataFile": "typhon.json"
     }
   ]
 }

@@ -34,9 +34,19 @@ describe("character unlock conditions", () => {
     expect(isCharacterUnlocked(texas, [defeat("w")])).toBe(false);
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-character", characterId: "irene" } }, [defeat("texas")])).toBe(false);
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-character", characterId: "irene" } }, [defeat("irene")])).toBe(true);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 50 } }, [defeat("texas"), defeat("irene")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 50 } }, [defeat("texas"), defeat("irene")])).toBe(false);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 50 } }, [defeat("texas"), defeat("irene"), defeat("platinum")])).toBe(true);
     expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [defeat("texas"), defeat("texas")])).toBe(false);
-    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [defeat("texas"), defeat("irene"), defeat("platinum")])).toBe(true);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [defeat("texas"), defeat("irene"), defeat("platinum")])).toBe(false);
+    expect(isCharacterUnlocked({ ...w, unlock: { type: "defeat-tag-percentage", tag: "tier:a", percentage: 75 } }, [defeat("texas"), defeat("irene"), defeat("platinum"), defeat("cimei")])).toBe(true);
+  });
+
+  it("unlocks Typhon only after five distinct attendees have been defeated", () => {
+    const typhon = CHARACTER_CATALOG.find((character) => character.id === "typhon")!;
+    const fourDefeats = [defeat("plume"), defeat("w"), defeat("texas"), defeat("irene")];
+    expect(typhon.unlock).toEqual({ type: "defeat-count", count: 5 });
+    expect(isCharacterUnlocked(typhon, [...fourDefeats, defeat("plume")])).toBe(false);
+    expect(isCharacterUnlocked(typhon, [...fourDefeats, defeat("nian")])).toBe(true);
   });
 
   it("deduplicates defeated attendees and keeps first victory order", () => {
