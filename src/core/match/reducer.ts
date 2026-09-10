@@ -13,7 +13,7 @@ import { getRoundStarter } from "../blackjack/round";
 import { advanceRoundAbilityTtls, createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances, isAbilityInstanceExpired } from "../abilities/runtime";
 import { getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
-import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, SkillCardInstance } from "../abilities/types";
+import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn, SkillCardInstance } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
 import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
@@ -157,9 +157,9 @@ function abilityServices(state: MatchState) {
     }
   };
 }
-function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly failed: boolean } {
+function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { turn?: PendingTurn; draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingTurn?: PendingTurn; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly failed: boolean } {
   try {
-    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, directInstanceId, ...abilityServices(state) });
+    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingTurn: pending.turn, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, directInstanceId, ...abilityServices(state) });
     let next = commitAbilityWorld(state, result.world);
     // Effects that grant Player Skill cards create their runtime instance in
     // the same transaction. Only legacy/newly-created card projections that
@@ -171,13 +171,39 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
     next = { ...next, abilities: { ...next.abilities, ...result.runtime, instances: [...result.runtime.instances, ...instances], sequence: Math.max(result.runtime.sequence, firstSequence + instances.length) } };
     next = { ...next, abilities: clearEventCounters(next.abilities, event.sourceEventId) };
     next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.playerSkills.cards) };
-    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, pendingComparison: result.pendingComparison, failed: false };
+    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingTurn: result.pendingTurn, pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, pendingComparison: result.pendingComparison, failed: false };
   } catch (error) {
     // A failed ability event is atomic. The caller may continue with the
     // unmodified pending event so the base game action remains safe.
-    if (error instanceof AbilityResolutionError && error.instanceId && error.definitionId) return { state: append(state, { type: "ABILITY_RESOLUTION_FAILED", instanceId: error.instanceId, definitionId: error.definitionId, ruleId: error.ruleId ?? "ability-resolution", reason: error.message }), ...pending, failed: true };
+    if (error instanceof AbilityResolutionError && error.instanceId && error.definitionId) return {
+      state: append(state, { type: "ABILITY_RESOLUTION_FAILED", instanceId: error.instanceId, definitionId: error.definitionId, ruleId: error.ruleId ?? "ability-resolution", reason: error.message }),
+      pendingTurn: pending.turn, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust,
+      pendingTrigger: pending.trigger, pendingComparison: pending.comparison, failed: true
+    };
     throw error;
   }
+}
+
+/** Opens the data-driven turn-start window and follows a successful skip
+ * without marking either participant as stood. Each actor can be skipped at
+ * most once in one handoff chain, preventing reciprocal rules from looping. */
+function beginTurn(state: MatchState, actor: Actor, skippedInChain: readonly Actor[] = []): MatchState {
+  const entered = setPhase(state, "turns", actor);
+  if (skippedInChain.includes(actor)) return entered;
+  const alternate: Actor = actor === "player" ? "opponent" : "player";
+  const pending: PendingTurn = {
+    id: `turn:${state.roundIndex}:${state.history.length}:${actor}`,
+    actor,
+    canSkip: !entered[alternate].stood && !entered[alternate].busted
+  };
+  const prepared = runAbilityEvent(entered, {
+    trigger: "before-turn", sourceEventId: pending.id, eventActor: actor, roundHitCounts: getRoundHitCounts(entered), pendingTurn: pending
+  }, { turn: pending });
+  const resolved = prepared.pendingTurn ?? pending;
+  if (!resolved.skipped) return prepared.state;
+  if (!resolved.skipSourceInstanceId) throw new Error("Skipped turn is missing its source ability instance");
+  const skipped = append(prepared.state, { type: "TURN_SKIPPED", actor, sourceInstanceId: resolved.skipSourceInstanceId });
+  return beginTurn(skipped, alternate, [...skippedInChain, actor]);
 }
 
 export interface ComparisonScorePreview {
@@ -288,9 +314,9 @@ function drawFor(state: MatchState, actor: Actor): MatchState {
   const withDrawPileNotice = broadcastDrawPileChange(afterDraw, beforeDraw, `draw-pile:${pending.id}`);
   let changed = expireOwnerActionLifecycle(normalizeAbilityHands(broadcastHandChanges(withDrawPileNotice, changedActors, `hand:${pending.id}`)), actor);
   if (changed.round.phase !== "turns") return changed;
-  if (changed[actor].stood) return setPhase(changed, "turns", actor === "player" ? "opponent" : "player");
+  if (changed[actor].stood) return beginTurn(changed, actor === "player" ? "opponent" : "player");
   const other = actor === "player" ? "opponent" : "player";
-  return setPhase(changed, "turns", changed[other].stood ? actor : other);
+  return beginTurn(changed, changed[other].stood ? actor : other);
 }
 
 function standFor(state: MatchState, actor: Actor): MatchState {
@@ -298,7 +324,7 @@ function standFor(state: MatchState, actor: Actor): MatchState {
   next = runAbilityEvent(next, { trigger: "after-stand", sourceEventId: `stand:${state.roundIndex}:${state.history.length}`, eventActor: actor, roundHitCounts: getRoundHitCounts(next) }, {}).state;
   next = expireOwnerActionLifecycle(next, actor);
   const other = actor === "player" ? "opponent" : "player";
-  return next[other].stood ? resolveComparison(next) : setPhase(next, "turns", other);
+  return next[other].stood ? resolveComparison(next) : beginTurn(next, other);
 }
 
 function activeSkillDrawDefinitions(state: MatchState) {
@@ -386,7 +412,7 @@ function resolveInitialBlackjack(state: MatchState): MatchState {
   // Initial ability-created 21s are not natural Blackjack. Enter the normal
   // turn pipeline; normalization still resolves ability-created busts, but an
   // exact 21 remains playable until its owner explicitly chooses Stand.
-  next = setPhase(next, "turns", state.round.starter);
+  next = beginTurn(next, state.round.starter);
   return normalizeAbilityHands(next);
 }
 
@@ -477,7 +503,7 @@ function play(state: MatchState, instanceId: string): MatchState {
     if (next.round.phase === "turns") {
       next = normalizeAbilityHands(next);
       if (next.round.phase !== "turns") return next;
-      if (next[instance.owner].stood) return setPhase(next, "turns", instance.owner === "player" ? "opponent" : "player");
+      if (next[instance.owner].stood) return beginTurn(next, instance.owner === "player" ? "opponent" : "player");
     }
     return next;
   } catch { return state; }

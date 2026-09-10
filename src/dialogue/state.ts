@@ -1,6 +1,7 @@
 import type { GameEvent, MatchState, RoundPhase } from "../core/match/types";
+import { SeededRng } from "../core/rng/seeded";
 import { roundOverrideDialogueEvent } from "./round-context";
-import type { DialogueEvent } from "./types";
+import { chooseDialogue, type CharacterDialogue, type DialogueEvent } from "./types";
 
 export interface ResolvedDialogueState {
   readonly event: DialogueEvent;
@@ -108,4 +109,13 @@ export function resolveDialogueState(state: MatchState): ResolvedDialogueState {
     case "round-end":
       return resolved("MATCH_START", phase, roundStartIndex);
   }
+}
+
+/** Keeps one deterministic line attached to one dialogue-state key. Events
+ * ignored by the state machine (including TURN_SKIPPED) cannot silently
+ * reroll the line while the visible dialogue is meant to remain unchanged. */
+export function resolveDialogueLine(state: MatchState, dialogue: CharacterDialogue): string | null {
+  const resolvedState = resolveDialogueState(state);
+  const rng = SeededRng.fromSnapshot(state.rng.dialogue).derive(resolvedState.key);
+  return chooseDialogue(dialogue, resolvedState.event, rng).line;
 }

@@ -69,6 +69,17 @@ and implement it in `effects.ts`, preferably delegating card and roulette
 operations to their adapters. Do not add a definition-ID or character-ID
 conditional to the engine or match reducer.
 
+Use the `before-turn` trigger for rules that need to intercept an actor before
+they receive a Hit/Stand decision. Pair `pending-turn-can-skip` with
+`skip-turn` for a true pass: it emits `TURN_SKIPPED`, hands control to the
+other actor, and deliberately does not emit Hit/Stand, set `stood`, or consume
+an `until-owner-action` lifecycle. The condition is false once the other actor
+has stood or busted, so a rule such as “skip until the rival stands” naturally
+falls through to a normal decision. Reciprocal skip rules are bounded to one
+skip per actor in a single handoff chain. The test-only hidden
+`turn-skip-mechanic` definition is the canonical unbound fixture; production
+characters should bind their own data definition instead of its ID.
+
 `after-stand` is emitted only when an actor explicitly chooses Stand; reaching
 21 does not mark the actor stood and does not emit it. A status with
 `until-owner-action` remains through ability and event resolution, then expires

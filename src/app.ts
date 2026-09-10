@@ -6,7 +6,6 @@ import type { MatchHistoryRecord } from "./core/match/history";
 import { buildObservation } from "./core/ai/observation";
 import { abilityWorld, createMatch, getActiveBustLimit, getLegalActions, getRoundHitCounts, previewComparisonScores, previewPendingTrigger } from "./core/match/reducer";
 import type { Action, GameEvent, MatchState } from "./core/match/types";
-import { SeededRng } from "./core/rng/seeded";
 import { getPlayerSkillDefinition, PLAYER_SKILL_DEFINITIONS } from "./core/skills/definitions";
 import { SKILL_TAG_METADATA, SKILL_TAGS, type SkillTag } from "./core/skills/types";
 import { playerSkillsUnlockedForVictory, unlockedPlayerSkillIdsForDefeats } from "./core/skills/skills";
@@ -14,8 +13,7 @@ import { TALENT_DEFINITIONS, unlockedTalentIdsForDefeats } from "./core/talents/
 import { getAbilityDefinition } from "./core/abilities/registry";
 import { isAbilityBlockedByStatus } from "./core/abilities/engine";
 import { resolveAbilityInfoValue, type ResolvedInfoBarValue } from "./core/abilities/info-bar";
-import { chooseDialogue } from "./dialogue/types";
-import { resolveDialogueState } from "./dialogue/state";
+import { resolveDialogueLine, resolveDialogueState } from "./dialogue/state";
 import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstDefeat, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForDefeat, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
 import { bootLoad, clearMatchHistory, resetSave, restoreActiveMatch } from "./persistence/boot";
 import { createAutosaveController, type AutosaveController } from "./persistence/autosave";
@@ -363,6 +361,7 @@ const EVENT_LABELS: Readonly<Record<GameEvent["type"], string>> = {
   ABILITY_PLAYED: "使用能力", ABILITY_TRIGGERED: "能力触发", ABILITY_EXPIRED: "能力耗尽", ABILITY_RESOLUTION_FAILED: "能力解析失败",
   STATUS_ADDED: "获得状态", STATUS_REMOVED: "状态移除", PENDING_EVENT_MODIFIED: "修改待结算事件", PENDING_EVENT_CANCELLED: "取消待结算事件",
   ROUND_STARTED: "本轮开始", CARD_DEALT: "发牌", INITIAL_BLACKJACK_CHECK: "检查黑杰克",
+  TURN_SKIPPED: "跳过回合",
   PLAYER_HIT: "策展人 Hit 要牌", OPPONENT_HIT: "对手 Hit 要牌", PLAYER_STOOD: "策展人 Stand 停牌", OPPONENT_STOOD: "对手 Stand 停牌",
   BLACKJACK: "黑杰克", BUST: "爆牌", ROUND_RESOLVED: "本轮结算", ROUND_RESULT_ACKNOWLEDGED: "已确认本轮结果",
   BULLET_ADDED: "装填子弹", TRIGGER_PULLED: "已扣下扳机", TRIGGER_SURVIVED: "空枪幸存", TRIGGER_RESULT_ACKNOWLEDGED: "已确认扳机结果",
@@ -586,10 +585,7 @@ function scheduleAiTurn(state: MatchState): void {
 }
 
 function currentDialogue(state: MatchState): string {
-  const latest = resolveDialogueState(state).event;
-  const rng = SeededRng.fromSnapshot(state.rng.dialogue);
-  for (let index = 0; index < state.history.length; index += 1) rng.next();
-  return chooseDialogue(currentCharacter.dialogue, latest, rng).line ?? "牌桌正在等你下注。";
+  return resolveDialogueLine(state, currentCharacter.dialogue) ?? "牌桌正在等你下注。";
 }
 function dialogueKey(state: MatchState): string { return resolveDialogueState(state).key; }
 function tablePortrait(state: MatchState, character: CharacterDefinition): string {

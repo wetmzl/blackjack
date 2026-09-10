@@ -146,6 +146,15 @@ describe("runtime save schema and validation", () => {
     expect(imported.activeMatch.history.at(-1)).toEqual(withReveal.history.at(-1));
   });
 
+  it("round-trips a skipped-turn event without treating it as Stand", () => {
+    const match = createMatch("skip-turn-event-roundtrip");
+    const skipped = { type: "TURN_SKIPPED" as const, actor: "opponent" as const, sourceInstanceId: "skip-turn-instance" };
+    const withSkip = { ...match, history: [...match.history, skipped] };
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(createRuntimeSave(withSkip, NOW))) as unknown);
+    expect(imported.activeMatch.history.at(-1)).toEqual(skipped);
+    expect(imported.activeMatch.opponent.stood).toBe(false);
+  });
+
   it("round-trips intelligence reports and direct gun-load results", () => {
     const match = createMatch("new-player-skill-events");
     const events = [

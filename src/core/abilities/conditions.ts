@@ -94,6 +94,11 @@ export function evaluateCondition(condition: Condition, context: ConditionContex
     case "draw-pile-card-exists": return context.world.shoe.cursor < context.world.shoe.cards.length;
     case "hand-last-card-splittable": { const hand = handFor(condition.target, context); return Boolean(hand && canSplitLastCard(hand)); }
     case "hand-is-twenty-one": { const hand = handFor(condition.target, context); return Boolean(hand && handTotal(hand) === 21); }
+    case "pending-turn-can-skip": {
+      const actor = resolveActor(condition.target, context);
+      const pending = context.event.pendingTurn;
+      return Boolean(actor && pending?.actor === actor && pending.canSkip && !pending.skipped);
+    }
     case "pending-bust-would-bust": {
       const hand = handFor(condition.target, context);
       const actor = resolveActor(condition.target, context);
