@@ -1,6 +1,6 @@
 # 麦哲伦美术资源提示词
 
-状态：除 `trophy-detail-*` 局部记录图及其细节描述外，其余标准美术资源已生成并完成后处理。生成模式为内置 `imagegen`；未使用 CLI/API 回退。
+状态：标准美术资源与四个 Trophy Gallery 局部记录点均已生成并完成后处理。生成模式为内置 `imagegen`；未使用 CLI/API 回退。
 
 ## 参考图职责
 
@@ -57,11 +57,36 @@ right：以 full 锁定身份和比例，只改为向画面右侧的失力侧卧
 
 四张人物层均为真实 RGBA，角色层不包含陈列舱、软垫、投影或 UI；审查时统一叠加 `trophy-gallery-coffin.png`。
 
+## Trophy Gallery 局部记录
+
+局部记录均为 1254×1254 不透明 PNG，沿用共享陈列舱的深色绗缝软垫、冷色顶光与近正上方档案镜头。人物身份、服装材质和静止状态必须与 `full` 合成审查图一致；兼容性文件名中的 `trophy` 不扩写剧情。
+
+```text
+face-dazed：面部与双眼近景。双眼比常态略微睁大，但眼睑和眉毛完全松弛；金色虹膜暗淡，双侧瞳孔轻微偏离且不向镜头汇聚，几乎没有高光，呈现空洞死水般的涣散目光。嘴唇松弛地小幅微张，形成略显呆萌的空白神态；不是眼神交流，也不是惊吓、悲伤或困倦。画面只出现一只戴哑光黑色检查手套的外部手，以拇指和手指轻微揉捏一侧面颊并产生可信的软组织凹陷，不遮挡双眼、鼻部或大部分面孔。保持棕色中短发、小辫子、浅金挑染与圆形银耳饰。
+
+chest-costume：从颈根到上腰的服装结构近景，面部和下半身不入画。外套保持穿着，完整记录深青外套、金属银白翻领、小扣件、钴蓝垂饰、黑色高领内裙，以及胸口半透明黑色网纱与下层不透明黑色面料的叠层、织纹和接缝。不得暴露内衣、乳头或夸张胸线。
+
+upper-body-without-jacket：脱掉深青外套、银白翻领、蓝色垂饰和荷叶袖之后的上半身近景。内层黑色连衣裙明确为露肩设计，领缘位于双肩以下，露出肩部与锁骨；裙身为不透明合体面料，保留克制的拼片和腰部结构。不得生成内衣、裸露或挑逗姿势。
+
+boots p0：两只原设黑色厚底短靴保持穿着，完整记录圆头、宽鞋口、绑带、扣件与圆形银色五金。画面只包含小腿下段、脚踝和双足，膝盖完全在画外。
+
+boots p1：脱下双靴后，双足仍由完整的黑色半透明丝袜覆盖；前掌与脚趾处具有明显加厚的黑色织物结构，脚趾轮廓只在布料下隐约可见。画面只出现一只戴哑光黑色检查手套的外部手，从侧面和下方轻微揉按其中一只被丝袜覆盖的前掌；另一只足部自然静置。严格只拍小腿下段、脚踝与足部，膝盖、裙摆和上半身不得入画。
+```
+
+输出文件：
+
+- `public/assets/characters/magallan-trophy-detail-face-dazed.png`
+- `public/assets/characters/magallan-trophy-detail-chest-costume.png`
+- `public/assets/characters/magallan-trophy-detail-upper-body-without-jacket.png`
+- `public/assets/characters/magallan-trophy-detail-boots.png`
+- `public/assets/characters/magallan-trophy-detail-boots-p1.png`
+
 ## 后处理与输出
 
 - 所有绿幕源图使用 `node tools/art/remove-chroma-key.mjs` 提取透明通道。
 - 横向收藏舱从透明源图等比缩放进 1600×450 画布，保留完整舱框。
 - 头肩像由 1060×1484 等比缩放为 1000×1400。
+- 五张局部记录由 1024×1024 生成源图等比缩放为 1254×1254；靴子兴趣点只有 p0 与 p1 两张，不保留额外差分。
 - Web 资源位于 `public/assets/characters/magallan-*.png`。
 - 绿幕源图、透明中间图和四张共享舱合成审查图位于 `art/source/` 与 `art/source/trophy-gallery/`。
-- 本批按用户要求不生成 `magallan-trophy-detail-*.png`，也不编写局部记录描述。
+- 局部记录的 1024×1024 生成源图位于 `art/source/magallan-trophy-detail-*-source.png`。
