@@ -511,7 +511,7 @@ test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, 
   expect(actionDock!.y).toBeGreaterThanOrEqual(playerLayout!.y + playerLayout!.height);
   expect(Math.abs((actionDock!.x + actionDock!.width) - (playerZone!.x + playerZone!.width))).toBeLessThanOrEqual(1);
   const devHud = page.locator("details.dev-hud");
-  if (await devHud.getAttribute("open") !== null) await devHud.locator("summary").click();
+  if (await devHud.isVisible() && await devHud.getAttribute("open") !== null) await devHud.locator("summary").click();
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 2)).toBe(true);
   await expect(page.locator(".table-shell")).not.toContainText("7mm 左轮");
   await expect(dialogue).toHaveAttribute("data-typing", "false", { timeout: 5_000 });
