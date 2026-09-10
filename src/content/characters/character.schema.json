@@ -96,7 +96,8 @@
           "oneOf": [
             { "type": "object", "additionalProperties": false, "required": ["type", "value"], "properties": { "type": { "const": "number" }, "value": { "$ref": "#/$defs/infoBarScalar" } } },
             { "type": "object", "additionalProperties": false, "required": ["type", "target", "card"], "properties": { "type": { "enum": ["card", "suit"] }, "target": { "$ref": "#/$defs/infoBarActor" }, "card": { "enum": ["last-card", "first-private-card"] } } },
-            { "type": "object", "additionalProperties": false, "required": ["type", "source", "statusDefinitionId"], "properties": { "type": { "enum": ["card", "suit"] }, "source": { "const": "status-card" }, "statusDefinitionId": { "type": "string", "minLength": 1 } } }
+            { "type": "object", "additionalProperties": false, "required": ["type", "source", "statusDefinitionId"], "properties": { "type": { "enum": ["card", "suit"] }, "source": { "const": "status-card" }, "statusDefinitionId": { "type": "string", "minLength": 1 } } },
+            { "type": "object", "additionalProperties": false, "required": ["type", "source", "target", "statusDefinitionId"], "properties": { "type": { "const": "suit" }, "source": { "const": "status-suit" }, "target": { "$ref": "#/$defs/infoBarActor" }, "statusDefinitionId": { "type": "string", "minLength": 1 } } }
           ]
         }
       },

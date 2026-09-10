@@ -31,6 +31,7 @@ export type NumberValue =
   | { readonly type: "hand-card-count"; readonly target: ActorSelector }
   | { readonly type: "hand-card-color-count"; readonly target: ActorSelector; readonly color: "red" | "black" }
   | { readonly type: "hand-card-suit-count"; readonly target: ActorSelector; readonly suit: Suit }
+  | { readonly type: "hand-card-status-suit-count"; readonly target: ActorSelector; readonly statusTarget: ActorSelector; readonly statusDefinitionId: string }
   | { readonly type: "event-hand-card-count"; readonly target: ActorSelector }
   | { readonly type: "round-hit-count"; readonly target: ActorSelector }
   | { readonly type: "status-stacks"; readonly target: ActorSelector; readonly statusDefinitionId: string }
@@ -53,7 +54,8 @@ export type AbilityInfoScalar = number | { readonly type: "constant"; readonly v
 export type AbilityInfoValue =
   | { readonly type: "number"; readonly value: AbilityInfoScalar }
   | { readonly type: "card" | "suit"; readonly target: AbilityInfoActor; readonly card: CardSelector }
-  | { readonly type: "card" | "suit"; readonly source: "status-card"; readonly statusDefinitionId: string };
+  | { readonly type: "card" | "suit"; readonly source: "status-card"; readonly statusDefinitionId: string }
+  | { readonly type: "suit"; readonly source: "status-suit"; readonly target: AbilityInfoActor; readonly statusDefinitionId: string };
 export type CardZoneSource = "remaining-draw-pile";
 export type RandomPick = "uniform-ability-rng";
 export type CardCandidate =
@@ -85,6 +87,7 @@ export type Condition =
   | { readonly type: "round-penalty-target-is"; readonly target: ActorSelector }
   | { readonly type: "event-ability-kind-is"; readonly kind: AbilitySourceKind }
   | { readonly type: "status-present"; readonly target: ActorSelector; readonly statusDefinitionId: string }
+  | { readonly type: "scalar-compare"; readonly left: ScalarValue; readonly operator: Compare; readonly right: ScalarValue }
   | { readonly type: "any"; readonly conditions: readonly Condition[] }
   | { readonly type: "not"; readonly condition: Condition };
 
@@ -99,6 +102,7 @@ export type Effect =
   | { readonly type: "reveal-hand-card-suit"; readonly target: ActorSelector; readonly card: "first-private-card" | "all-current-cards"; readonly viewer: ActorSelector }
   | { readonly type: "split-last-card-into-derived"; readonly target: ActorSelector }
   | { readonly type: "add-status"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly parameters?: Readonly<Record<string, string | number | boolean>> }
+  | { readonly type: "set-status-suit-to-hand-majority"; readonly target: ActorSelector; readonly handTarget: ActorSelector; readonly statusDefinitionId: string }
   | { readonly type: "set-status-stacks"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly amount: ScalarValue }
   | { readonly type: "remove-status"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly amount?: ScalarValue }
   | { readonly type: "replace-pending-draw"; readonly target: ActorSelector; readonly policy: DrawReplacementPolicy }

@@ -108,6 +108,94 @@ describe("new character mechanics", () => {
     expect(comparison.triggered).toContain("platinum-vision-opponent:apply-comparison-advantage");
   });
 
+  it("selects Dorothy's majority suit once per round and applies +2 per resonant card to both actors", () => {
+    const resonance = instance("dorothy-resonance-device");
+    const initialRuntime = { ...createAbilityRuntime(createRng("dorothy-resonance").snapshot()), instances: [resonance] };
+    const hands = world(
+      hand(createCard("hearts", "10"), createCard("clubs", "6")),
+      hand(createCard("hearts", "4"), createCard("hearts", "8"))
+    );
+    const assigned = resolveAbilityEvent({
+      world: hands,
+      runtime: initialRuntime,
+      event: { trigger: "after-hand-changed", sourceEventId: "dorothy-opening", eventActor: "opponent" }
+    });
+    expect(assigned.world.statuses).toContainEqual(expect.objectContaining({
+      statusDefinitionId: "dorothy-resonance-suit",
+      owner: "opponent",
+      stacks: 1,
+      duration: "round",
+      parameters: { suit: "hearts" }
+    }));
+    expect(assigned.triggered).toEqual(["dorothy-resonance-device-opponent:assign-resonance-suit"]);
+
+    const compared = resolveAbilityEvent({
+      world: assigned.world,
+      runtime: assigned.runtime,
+      event: { trigger: "before-round-resolution", sourceEventId: "dorothy-comparison", roundOutcome: { reason: "comparison", penaltyTarget: "player" } },
+      pendingComparison: { id: "dorothy-comparison", scores: { player: 16, opponent: 12 } }
+    });
+    expect(compared.pendingComparison?.scores).toEqual({ player: 18, opponent: 16 });
+    expect(compared.triggered).toContain("dorothy-resonance-device-opponent:apply-resonance-advantage");
+  });
+
+  it("uses the fixed suit order to resolve Dorothy's equal-count opening hands", () => {
+    const resonance = instance("dorothy-resonance-device");
+    const runtime = { ...createAbilityRuntime(createRng("dorothy-resonance-tie").snapshot()), instances: [resonance] };
+    const tied = resolveAbilityEvent({
+      world: world(undefined, hand(createCard("hearts", "8"), createCard("spades", "9"))),
+      runtime,
+      event: { trigger: "after-hand-changed", sourceEventId: "dorothy-tie", eventActor: "opponent" }
+    });
+    expect(tied.world.statuses[0]?.parameters.suit).toBe("spades");
+    const repeated = resolveAbilityEvent({
+      world: tied.world,
+      runtime: tied.runtime,
+      event: { trigger: "after-hand-changed", sourceEventId: "dorothy-hit", eventActor: "opponent" }
+    });
+    expect(repeated.triggered).toHaveLength(0);
+    expect(repeated.world.statuses[0]?.parameters.suit).toBe("spades");
+  });
+
+  it("loads one extra bullet for either resonant-card leader only when that leader wins", () => {
+    const resonance = instance("dorothy-resonance-device");
+    const trap = instance("dorothy-quicksand-trap");
+    const status = { statusDefinitionId: "dorothy-resonance-suit", owner: "opponent" as const, sourceInstanceId: resonance.instanceId, stacks: 1, duration: "round" as const, parameters: { suit: "hearts" }, createdAtSequence: 3 };
+    const runtime = { ...createAbilityRuntime(createRng("dorothy-quicksand").snapshot()), instances: [resonance, trap], statuses: [status], sequence: 3 };
+    const ownerLeading = { ...world(
+      hand(createCard("hearts", "10"), createCard("clubs", "7")),
+      hand(createCard("hearts", "4"), createCard("hearts", "8"))
+    ), statuses: [status] };
+    const ownerWin = resolveAbilityEvent({
+      world: ownerLeading,
+      runtime,
+      event: { trigger: "before-bullet-load", sourceEventId: "dorothy-owner-win", roundOutcome: { reason: "comparison", penaltyTarget: "player" } },
+      pendingLoad: { id: "dorothy-owner-win", actor: "player", amount: 1, reason: "comparison" }
+    });
+    expect(ownerWin.pendingLoad?.amount).toBe(2);
+    expect(ownerWin.triggered).toContain("dorothy-quicksand-trap-opponent:owner-leading-win-extra-load");
+
+    const rivalLeading = { ...ownerLeading, hands: { player: hand(createCard("hearts", "10"), createCard("hearts", "2")), opponent: hand(createCard("hearts", "8"), createCard("clubs", "9")) } };
+    const rivalWin = resolveAbilityEvent({
+      world: rivalLeading,
+      runtime,
+      event: { trigger: "before-bullet-load", sourceEventId: "dorothy-rival-win", roundOutcome: { reason: "blackjack", penaltyTarget: "opponent" } },
+      pendingLoad: { id: "dorothy-rival-win", actor: "opponent", amount: 2, reason: "blackjack" }
+    });
+    expect(rivalWin.pendingLoad?.amount).toBe(3);
+    expect(rivalWin.triggered).toContain("dorothy-quicksand-trap-opponent:rival-leading-win-extra-load");
+
+    const tied = { ...ownerLeading, hands: { player: hand(createCard("hearts", "10")), opponent: hand(createCard("hearts", "9")) } };
+    const tiedWin = resolveAbilityEvent({
+      world: tied,
+      runtime,
+      event: { trigger: "before-bullet-load", sourceEventId: "dorothy-tied", roundOutcome: { reason: "comparison", penaltyTarget: "player" } },
+      pendingLoad: { id: "dorothy-tied", actor: "player", amount: 1, reason: "comparison" }
+    });
+    expect(tiedWin.pendingLoad?.amount).toBe(1);
+    expect(tiedWin.triggered).not.toContain("dorothy-quicksand-trap-opponent:owner-leading-win-extra-load");
+  });
+
   it("uses the previous final display as Lappland's carnival index and applies the matching score bonus", () => {
     const index = instance("carnival-index");
     const runtime = { ...createAbilityRuntime(createRng("carnival-index").snapshot()), instances: [index], sequence: 1 };

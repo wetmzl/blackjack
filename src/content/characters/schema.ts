@@ -74,7 +74,8 @@ const infoBar = z.object({
   value: z.union([
     z.object({ type: z.literal("number"), value: infoBarScalar }).strict(),
     z.object({ type: z.enum(["card", "suit"]), target: infoBarActor, card: z.enum(["last-card", "first-private-card"]) }).strict(),
-    z.object({ type: z.enum(["card", "suit"]), source: z.literal("status-card"), statusDefinitionId: z.string().min(1) }).strict()
+    z.object({ type: z.enum(["card", "suit"]), source: z.literal("status-card"), statusDefinitionId: z.string().min(1) }).strict(),
+    z.object({ type: z.literal("suit"), source: z.literal("status-suit"), target: infoBarActor, statusDefinitionId: z.string().min(1) }).strict()
   ])
 }).strict().superRefine((bar, ctx) => {
   if (bar.format === "percent" && bar.value.type !== "number") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["format"], message: "百分比格式只适用于数值信息" });

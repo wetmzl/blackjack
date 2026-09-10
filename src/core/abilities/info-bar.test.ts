@@ -8,6 +8,7 @@ import ireneData from "../../content/characters/data/irene.json";
 import platinumData from "../../content/characters/data/platinum.json";
 import lapplandData from "../../content/characters/data/lappland-the-decadenza.json";
 import hoOlheyakData from "../../content/characters/data/ho-olheyak.json";
+import dorothyData from "../../content/characters/data/dorothy.json";
 import { createCard } from "../blackjack/card";
 
 const world: AbilityWorld = {
@@ -60,6 +61,16 @@ describe("character information bar", () => {
       statuses: [{ statusDefinitionId: "ho-olheyak-memory-card", owner: "opponent" as const, sourceInstanceId: "ho-olheyak", stacks: 1, duration: "match" as const, parameters: { rank: "4", suit: "hearts", source: "shoe" }, createdAtSequence: 1 }]
     };
     expect(resolveAbilityInfoValue(value, remembered, "opponent", { sourceActive: true })).toMatchObject({ attributes: { rank: "4", suit: "hearts", source: "derived" }, tags: ["derived", "generated-by:ho-olheyak"] });
+    expect(resolveAbilityInfoValue(value, world, "opponent", { sourceActive: true })).toBeNull();
+  });
+
+  it("projects Dorothy's round resonance suit from status parameters", () => {
+    const value = dorothyData.infoBar!.value as AbilityInfoValue;
+    const resonating = {
+      ...world,
+      statuses: [{ statusDefinitionId: "dorothy-resonance-suit", owner: "opponent" as const, sourceInstanceId: "dorothy-resonance", stacks: 1, duration: "round" as const, parameters: { suit: "clubs" }, createdAtSequence: 1 }]
+    };
+    expect(resolveAbilityInfoValue(value, resonating, "opponent", { sourceActive: true })).toBe("clubs");
     expect(resolveAbilityInfoValue(value, world, "opponent", { sourceActive: true })).toBeNull();
   });
 

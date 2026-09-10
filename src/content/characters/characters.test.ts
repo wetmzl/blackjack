@@ -337,11 +337,14 @@ describe("data-driven character registry", () => {
       { definitionId: "carnival-index", enabled: true, parameters: {} },
       { definitionId: "carnival-heats-up", enabled: true, parameters: {} }
     ]);
-    expect(dorothyData.aiSkills).toEqual([]);
-    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...nian.aiSkills, ...plume.aiSkills, ...platinum.aiSkills, ...lappland.aiSkills]
+    expect(dorothyData.aiSkills).toEqual([
+      { definitionId: "dorothy-resonance-device", enabled: true, parameters: {} },
+      { definitionId: "dorothy-quicksand-trap", enabled: true, parameters: {} }
+    ]);
+    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...nian.aiSkills, ...plume.aiSkills, ...platinum.aiSkills, ...lappland.aiSkills, ...dorothyData.aiSkills]
       .filter((binding) => binding.enabled)
       .map((binding) => getAbilityDefinition(binding.definitionId));
-    expect(formalMechanics).toHaveLength(9);
+    expect(formalMechanics).toHaveLength(11);
     expect(formalMechanics.every((ability) => Boolean(ability?.profileLore?.trim()))).toBe(true);
     expect("MATCH_WIN" in w.dialogue).toBe(false);
     expect("MATCH_LOSS" in w.dialogue).toBe(false);

@@ -271,18 +271,18 @@ export type RuntimeSave = Omit<z.infer<typeof RuntimeSaveSchema>, "activeMatch">
 export type SaveKind = "long-term" | "runtime";
 
 export class SaveValidationError extends Error {
-  constructor(readonly kind: SaveKind, message: string) { super(message); this.name = "SaveValidationError"; }
+  constructor(readonly kind: SaveKind, message: string, readonly input?: unknown) { super(message); this.name = "SaveValidationError"; }
 }
 
 export function validateLongTermSave(input: unknown): LongTermSave {
   const parsed = LongTermSaveSchema.safeParse(input);
-  if (!parsed.success) throw new SaveValidationError("long-term", `Invalid long-term save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`);
+  if (!parsed.success) throw new SaveValidationError("long-term", `Invalid long-term save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`, input);
   return parsed.data as LongTermSave;
 }
 
 export function validateRuntimeSave(input: unknown): RuntimeSave {
   const parsed = RuntimeSaveSchema.safeParse(input);
-  if (!parsed.success) throw new SaveValidationError("runtime", `Invalid runtime save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`);
+  if (!parsed.success) throw new SaveValidationError("runtime", `Invalid runtime save data: ${parsed.error.issues[0]?.path.join(".") || "root"} ${parsed.error.issues[0]?.message ?? "unknown error"}`, input);
   return parsed.data as RuntimeSave;
 }
 

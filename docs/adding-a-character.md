@@ -126,6 +126,7 @@
 4. 用 `value` 声明投影内容：
    - `number`：可读取 `gun-bullets`、`hand-total`、`hand-card-count`、`round-hit-count`、`status-stacks`，并用 `add`、`subtract`、`multiply`、`min`、`max` 组合；也可直接使用数字或 `constant`。
    - `suit` / `card`：从 `last-card` 或 `first-private-card` 读取花色或整张牌。
+   - 能力把公开花色保存在状态参数时，使用 `{ "type": "suit", "source": "status-suit", "target": "owner", "statusDefinitionId": "..." }`；状态不存在或花色无效时显示暂无。
    - `owner` 始终指该与会者，`rival` 始终指策展人。`round-hit-count` 从当前轮最新 `ROUND_STARTED` 之后计数。
    - 跨轮记忆牌使用 `{ "type": "card", "source": "status-card", "statusDefinitionId": "..." }`；该状态应由能力原语保存完整 rank、suit、source 与原始 cardId。信息栏复用统一牌面 renderer（例如“♥ 4”），状态尚未建立时显示暂无。
 5. 数值默认原样显示；概率使用顶层 `"format": "percent"`，底座值保持 0–1，例如 `0.66` 显示为 `66%`。

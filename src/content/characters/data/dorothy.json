@@ -59,6 +59,17 @@
     "playerDefeat": "她赢了。\n\n她安静地坐在那里，看了很久自己面前的牌，又看了看你。片刻后，她抬手将一缕滑落的金发拢到耳后，从口袋里翻出一条巧克力棒，剥开锡纸，朝你晃了晃：“要吃一半吗？我请客。刚才我们都很紧张，你恐怕也饿了吧。”\n你没有回应她，只是一直盯着她，直到她走出门去。你看到她在门廊停了一下，手指轻轻按着胸口。的确，她差一点就死在这里了。",
     "escaped": "多萝西没有叫住你。她看着你的背影越来越远，安静地摘下了自己头上的钟形帽，放在身侧的椅子上。\n\n她把帽子和那张黑杰克留下的旧牌一起收好，然后礼貌地向发牌员点点头。也许她应该庆幸在这条时间上，死神不会早早收割她年轻的灵魂，虽然她从来不珍惜自己的生命。"
   },
+  "infoBar": {
+    "sourceAbilityId": "dorothy-resonance-device",
+    "label": "共振牌",
+    "description": "显示多萝西本轮指定的共振花色。每轮开始时，她选择自己初始手牌中数量最多的花色；点数比较时，双方每持有一张该花色手牌，各自获得2点点数优势。",
+    "value": {
+      "type": "suit",
+      "source": "status-suit",
+      "target": "owner",
+      "statusDefinitionId": "dorothy-resonance-suit"
+    }
+  },
   "trophyGallery": {
     "headshot": "/assets/characters/dorothy-trophy-gallery-headshot.png",
     "fullBody": "/assets/characters/dorothy-trophy-gallery-full-subject.png",
@@ -140,7 +151,10 @@
     "B": 1,
     "C": 1
   },
-  "aiSkills": [],
+  "aiSkills": [
+    { "definitionId": "dorothy-resonance-device", "enabled": true, "parameters": {} },
+    { "definitionId": "dorothy-quicksand-trap", "enabled": true, "parameters": {} }
+  ],
   "dialogue": {
     "MATCH_START": [
       "嗯……两张牌。代表未知的一张，和代表已知的一张，很有意思的规则呢。",

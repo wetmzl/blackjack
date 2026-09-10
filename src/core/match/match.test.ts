@@ -312,6 +312,34 @@ describe("createMatch and legal actions", () => {
     expect(ready.history.some((event) => event.type === "ABILITY_TRIGGERED" && event.definitionId === "platinum-vision" && event.ruleId === "apply-comparison-advantage")).toBe(false);
   });
 
+  it("composes Dorothy's resonance score with the symmetric Quicksand load", () => {
+    const configured = createMatch("dorothy-resonance-resolution", {
+      opponentId: "dorothy",
+      opponentAiSkills: [
+        { definitionId: "dorothy-resonance-device", enabled: true, parameters: {} },
+        { definitionId: "dorothy-quicksand-trap", enabled: true, parameters: {} }
+      ]
+    });
+    const status = configured.abilities.statuses.find((entry) => entry.statusDefinitionId === "dorothy-resonance-suit")!;
+    const ready = withHands({
+      ...configured,
+      abilities: {
+        ...configured.abilities,
+        statuses: configured.abilities.statuses.map((entry) => entry === status ? { ...entry, parameters: { suit: "hearts" } } : entry)
+      }
+    }, [card("10", "hearts"), card("8", "hearts")], [card("10", "hearts"), card("7", "clubs")]);
+
+    const resolved = resolveRound(ready, { winner: "player", reason: "comparison", penaltyTarget: "opponent", bulletsAdded: 1 });
+    expect(resolved.round.outcome).toEqual(expect.objectContaining({
+      winner: "player",
+      penaltyTarget: "opponent",
+      bulletsAdded: 2,
+      comparisonScores: { player: 22, opponent: 19 }
+    }));
+    expect(resolved.roulette.opponent.bullets).toBe(2);
+    expect(resolved.history).toContainEqual(expect.objectContaining({ type: "ABILITY_TRIGGERED", definitionId: "dorothy-quicksand-trap", ruleId: "rival-leading-win-extra-load" }));
+  });
+
   it("Nian's Tin Scorch grants one comparison point per red card on the table", () => {
     const configured = createMatch("nian-tin-scorch", {
       opponentId: "nian",

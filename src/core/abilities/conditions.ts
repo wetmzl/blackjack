@@ -1,4 +1,4 @@
-import type { Hand } from "../blackjack/types";
+import { SUITS, type Hand, type Suit } from "../blackjack/types";
 import { cardHasTag, cardRank, cardSource, cardSuit } from "../blackjack/card";
 import { canSplitLastCard, findCardCandidates, handCardCount, handTotal } from "./card-zone-adapter";
 import { gunBullets, gunIsFull } from "./roulette-adapter";
@@ -39,6 +39,15 @@ export function resolveScalar(value: ScalarValue, context: ConditionContext): nu
   if (numeric.type === "hand-card-count") return handCardCount(context.world.hands[actor]);
   if (numeric.type === "hand-card-color-count") return context.world.hands[actor].cards.filter((card) => (cardSuit(card) === "hearts" || cardSuit(card) === "diamonds") === (numeric.color === "red")).length;
   if (numeric.type === "hand-card-suit-count") return context.world.hands[actor].cards.filter((card) => cardSuit(card) === numeric.suit).length;
+  if (numeric.type === "hand-card-status-suit-count") {
+    const statusActor = resolveActor(numeric.statusTarget, context);
+    const suit = statusActor
+      ? context.world.statuses.find((status) => status.owner === statusActor && status.statusDefinitionId === numeric.statusDefinitionId && status.stacks > 0)?.parameters.suit
+      : undefined;
+    return typeof suit === "string" && SUITS.includes(suit as Suit)
+      ? context.world.hands[actor].cards.filter((card) => cardSuit(card) === suit).length
+      : 0;
+  }
   if (numeric.type === "event-hand-card-count") return context.event.initialHandCardCounts?.[actor] ?? handCardCount(context.world.hands[actor]);
   if (numeric.type === "status-stacks") return context.world.statuses.find((status) => status.owner === actor && status.statusDefinitionId === numeric.statusDefinitionId)?.stacks ?? 0;
   return context.event.roundHitCounts?.[actor] ?? 0;
@@ -102,6 +111,7 @@ export function evaluateCondition(condition: Condition, context: ConditionContex
     case "round-penalty-target-is": return context.event.roundOutcome?.penaltyTarget === resolveActor(condition.target, context);
     case "event-ability-kind-is": return context.event.playedAbilityKind === condition.kind;
     case "status-present": { const actor = resolveActor(condition.target, context); return Boolean(actor && context.world.statuses.some((status) => status.owner === actor && status.statusDefinitionId === condition.statusDefinitionId && status.stacks > 0)); }
+    case "scalar-compare": return compare(resolveScalar(condition.left, context), condition.operator, resolveScalar(condition.right, context));
     case "any": return condition.conditions.some((entry) => evaluateCondition(entry, context));
     case "not": return !evaluateCondition(condition.condition, context);
   }

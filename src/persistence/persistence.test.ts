@@ -3,11 +3,13 @@ import { createMatch, gameReducer, getLegalActions } from "../core/match/reducer
 import { acknowledgeMatchResult, bootLoad, clearMatchHistory, createDefaultSave, createRuntimeSave, resetSave, restoreActiveMatch } from "./boot";
 import { createAutosaveController } from "./autosave";
 import { exportSaveJson, importSave } from "./json";
+import { canMigrateLongTermSave, migrateLongTermSave } from "./migrations";
 import { MemorySaveRepository } from "./memory-repository";
 import {
   assertMatchStateForSave,
   CURRENT_LONG_TERM_SCHEMA_VERSION,
   CURRENT_RUNTIME_SCHEMA_VERSION,
+  LONG_TERM_SAVE_FORMAT,
   SaveValidationError,
   validateLongTermSave,
   validateRuntimeSave,
@@ -58,6 +60,43 @@ describe("long-term save schema and JSON boundary", () => {
     expect(() => validateLongTermSave({ ...save, format: "other-game" })).toThrow(SaveValidationError);
     expect(() => validateLongTermSave({ ...save, activeMatch: createMatch("old-combined") })).toThrow(SaveValidationError);
     expect(() => validateLongTermSave({ ...save, skipTutorial: undefined })).toThrow(/skipTutorial/);
+  });
+
+  it("migrates a version 8 long-term save through the standalone migration chain", () => {
+    const current = createDefaultSave(NOW);
+    const legacy = {
+      format: current.format,
+      schemaVersion: 8,
+      gameVersion: current.gameVersion,
+      createdAt: current.createdAt,
+      updatedAt: current.updatedAt,
+      profile: {
+        id: current.profile.id,
+        displayName: current.profile.displayName,
+        matchesPlayed: 4,
+        wins: 2,
+        talentIds: ["early-preparation"]
+      },
+      settings: current.settings,
+      skipTutorial: true,
+      history: current.history,
+      defeats: current.defeats
+    };
+
+    expect(canMigrateLongTermSave(legacy)).toBe(true);
+    expect(migrateLongTermSave(legacy)).toEqual({
+      ...current,
+      profile: { ...current.profile, matchesPlayed: 4, wins: 2, selectedSkillTags: [] },
+      skipTutorial: true
+    });
+    expect(canMigrateLongTermSave({ ...legacy, schemaVersion: 7 })).toBe(false);
+    expect(canMigrateLongTermSave({ ...legacy, schemaVersion: CURRENT_LONG_TERM_SCHEMA_VERSION + 1 })).toBe(false);
+  });
+
+  it("keeps failed imports available for migration or raw export", async () => {
+    const incompatible = { format: LONG_TERM_SAVE_FORMAT, schemaVersion: 8 };
+    await expect(importSave(JSON.stringify(incompatible))).rejects.toMatchObject({ kind: "long-term", input: incompatible });
+    await expect(importSave("{broken-json")).rejects.toMatchObject({ kind: "long-term", input: "{broken-json" });
   });
 
   it("requires unique defeat facts and validates selected skill tags", () => {
@@ -302,7 +341,7 @@ describe("boot and repositories", () => {
     expect(reset.tutorialProgress).toEqual({ completedIds: [] });
   });
 
-  it("does not migrate or overwrite an incompatible long-term save", async () => {
+  it("does not migrate or overwrite an incompatible long-term save before the player chooses", async () => {
     const writes: LongTermSave[] = [];
     const repository = new MemorySaveRepository();
     repository.loadLongTerm = async () => { throw new SaveValidationError("long-term", "outdated long-term save"); };

@@ -1,0 +1,65 @@
+{
+  "id": "dorothy-quicksand-trap",
+  "name": "流沙陷阱",
+  "description": "对双方同时生效：一方持有的共振牌数量严格领先，并赢得本轮时，输家额外装填1发子弹。共振牌数量相同时不生效。",
+  "triggerNotice": "共振牌领先者获胜，对手额外装填1发子弹。",
+  "profileLore": "看似平整的沙盘会在胜负揭晓后突然塌陷。领先者只是站得更稳，落后者却得带着一发新子弹继续往下沉。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "gunslinger",
+  "activation": { "type": "automatic" },
+  "rules": [
+    {
+      "id": "owner-leading-win-extra-load",
+      "trigger": "before-bullet-load",
+      "conditions": [
+        { "type": "round-penalty-target-is", "target": "rival" },
+        {
+          "type": "scalar-compare",
+          "left": {
+            "type": "hand-card-status-suit-count",
+            "target": "owner",
+            "statusTarget": "owner",
+            "statusDefinitionId": "dorothy-resonance-suit"
+          },
+          "operator": "gt",
+          "right": {
+            "type": "hand-card-status-suit-count",
+            "target": "rival",
+            "statusTarget": "owner",
+            "statusDefinitionId": "dorothy-resonance-suit"
+          }
+        }
+      ],
+      "effects": [
+        { "type": "add-to-pending-load", "target": "rival", "amount": 1 }
+      ]
+    },
+    {
+      "id": "rival-leading-win-extra-load",
+      "trigger": "before-bullet-load",
+      "conditions": [
+        { "type": "round-penalty-target-is", "target": "owner" },
+        {
+          "type": "scalar-compare",
+          "left": {
+            "type": "hand-card-status-suit-count",
+            "target": "rival",
+            "statusTarget": "owner",
+            "statusDefinitionId": "dorothy-resonance-suit"
+          },
+          "operator": "gt",
+          "right": {
+            "type": "hand-card-status-suit-count",
+            "target": "owner",
+            "statusTarget": "owner",
+            "statusDefinitionId": "dorothy-resonance-suit"
+          }
+        }
+      ],
+      "effects": [
+        { "type": "add-to-pending-load", "target": "owner", "amount": 1 }
+      ]
+    }
+  ],
+  "tags": ["roulette", "load-control", "suit", "ai-skill"]
+}
