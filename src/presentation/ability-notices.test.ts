@@ -52,6 +52,16 @@ describe("ability trigger notices", () => {
     expect(abilityTriggerNotice([event, revealed], "德克萨斯")[0]?.text).toBe("策展人发动「猎手直觉」：牌堆顶下一张牌的花色是方块");
   });
 
+  it("announces Dorothy's selected resonance suit from committed status", () => {
+    const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "dorothy-resonance", definitionId: "dorothy-resonance-device", ruleId: "assign-resonance-suit", owner: "opponent" };
+    const after = {
+      abilities: {
+        statuses: [{ statusDefinitionId: "dorothy-resonance-suit", owner: "opponent", sourceInstanceId: "dorothy-resonance", stacks: 1, duration: "round", parameters: { suit: "diamonds" }, createdAtSequence: 1 }]
+      }
+    } as unknown as MatchState;
+    expect(abilityTriggerNotice([event], "多萝西", after)[0]?.text).toBe("多萝西发动「共振装置」：指定花色为方块");
+  });
+
   it("reports only the hand-total relation for Situation Assessment", () => {
     const event: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "situation", definitionId: "situation-assessment", ruleId: "compare-base-totals", owner: "player" };
     const result: GameEvent = { type: "ABILITY_RESULT", instanceId: "situation", definitionId: "situation-assessment", owner: "player", result: { type: "hand-total-compared", actor: "player", relation: "lower" } };

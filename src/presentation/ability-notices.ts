@@ -54,6 +54,10 @@ function effectResultNotice(
     const revealed = [...events].reverse().find((candidate): candidate is Extract<GameEvent, { type: "DRAW_PILE_CARD_SUIT_REVEALED" }> => candidate.type === "DRAW_PILE_CARD_SUIT_REVEALED" && candidate.viewer === event.owner);
     if (revealed) return `牌堆顶下一张牌的花色是${suitLabel(revealed.suit)}`;
   }
+  if (effect.type === "set-status-suit-to-hand-majority" && after) {
+    const suit = after.abilities.statuses.find((status) => status.sourceInstanceId === event.instanceId && status.statusDefinitionId === effect.statusDefinitionId)?.parameters.suit;
+    if (suit === "hearts" || suit === "diamonds" || suit === "clubs" || suit === "spades") return `指定花色为${suitLabel(suit)}`;
+  }
   if (effect.type === "cancel-pending-trigger") return "本次免于扣扳机";
   if (effect.type === "add-to-pending-bust-limit" && after) {
     const bust = [...events].reverse().find((candidate): candidate is Extract<GameEvent, { type: "BUST" }> => candidate.type === "BUST");

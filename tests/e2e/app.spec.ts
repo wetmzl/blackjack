@@ -18,6 +18,7 @@ const wCharacterData = JSON.parse(readFileSync(new URL("../../src/content/charac
 const ireneCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/irene.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
 const lapplandCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/lappland-the-decadenza.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
 const hoOlheyakCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/ho-olheyak.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
+const dorothyCharacterData = JSON.parse(readFileSync(new URL("../../src/content/characters/data/dorothy.json", import.meta.url), "utf8")) as { aiSkills: AbilityBinding[] };
 const wDialogue = wCharacterData.dialogue;
 
 function findTurnsMatch(prefix: string) {
@@ -233,6 +234,15 @@ function hoOlheyakInfoBarMatch(suit: "hearts" | "spades" = "hearts"): MatchState
     };
   }
   throw new Error("No deterministic Ho-olheyak information-bar fixture found");
+}
+
+function dorothyInfoBarMatch(): MatchState {
+  for (let index = 0; index < 10_000; index += 1) {
+    const dealt = createMatch(`e2e-dorothy-info-${index}`, { opponentId: "dorothy", opponentAiSkills: dorothyCharacterData.aiSkills });
+    const status = dealt.abilities.statuses.find((entry) => entry.statusDefinitionId === "dorothy-resonance-suit");
+    if (dealt.round.phase === "turns" && status) return dealt;
+  }
+  throw new Error("No deterministic Dorothy information-bar fixture found");
 }
 
 function playerWinSummary(opponentId = "w"): MatchState {
@@ -646,6 +656,26 @@ test("霍尔海雅的信息栏以花色在前并按红黑牌色显示记忆牌",
   const blackCard = page.locator(".ai-info-bar .ai-info-card.black");
   await expect(blackCard.locator("em")).toHaveText("♠");
   await expect(blackCard).toHaveCSS("color", "rgb(21, 26, 30)");
+});
+
+test("多萝西的信息栏显示共振花色且牌面实时计入共振优势", async ({ page }) => {
+  const match = dorothyInfoBarMatch();
+  const status = match.abilities.statuses.find((entry) => entry.statusDefinitionId === "dorothy-resonance-suit")!;
+  const suit = status.parameters.suit as "spades" | "hearts" | "diamonds" | "clubs";
+  const labels = { spades: "黑桃", hearts: "红桃", diamonds: "方块", clubs: "梅花" } as const;
+  const symbols = { spades: "♠", hearts: "♥", diamonds: "♦", clubs: "♣" } as const;
+  const opponentCount = match.opponent.hand.cards.filter((card) => card.attributes.suit === suit).length;
+  expect(opponentCount).toBe(Math.max(...Object.keys(labels).map((candidate) => match.opponent.hand.cards.filter((card) => card.attributes.suit === candidate).length)));
+  await page.goto("/");
+  await installRuntimeSave(page, match);
+
+  const infoBar = page.locator(".ai-info-bar");
+  await expect(infoBar).toContainText("共振牌");
+  await expect(infoBar.locator(".ai-info-suit > span")).toHaveText(symbols[suit]);
+  await expect(infoBar.locator(".ai-info-suit small")).toHaveText(labels[suit]);
+  await expect(page.locator(".opponent-zone .hand-score-modifier")).toHaveText(`+${opponentCount * 2}`);
+  await infoBar.getByRole("button", { name: "查看共振牌说明" }).click();
+  await expect(page.locator("#ai-info-dialog")).toContainText("双方每持有一张该花色手牌，各自获得2点点数优势");
 });
 
 test("牌堆状态栏使用未知 compact 牌并随实体牌堆顶更新", async ({ page }) => {

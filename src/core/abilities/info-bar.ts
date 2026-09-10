@@ -39,7 +39,7 @@ function resolveNumber(value: AbilityInfoScalar, world: AbilityWorld, owner: "pl
   return context.roundHitCounts?.[actor] ?? 0;
 }
 
-function selectedCard(value: Extract<AbilityInfoValue, { target: AbilityInfoActor }>, world: AbilityWorld, owner: "player" | "opponent"): Card | null {
+function selectedCard(value: { readonly target: AbilityInfoActor; readonly card: "last-card" | "first-private-card" }, world: AbilityWorld, owner: "player" | "opponent"): Card | null {
   const actor = actorFor(value.target, owner);
   const cards = world.hands[actor].cards;
   return value.card === "first-private-card" ? cards[1] ?? null : cards.at(-1) ?? null;
@@ -49,6 +49,11 @@ function selectedCard(value: Extract<AbilityInfoValue, { target: AbilityInfoActo
 export function resolveAbilityInfoValue(value: AbilityInfoValue, world: AbilityWorld, owner: "player" | "opponent" = "opponent", context: AbilityInfoResolutionContext = {}): ResolvedInfoBarValue {
   if (context.sourceActive === false) return value.type === "number" ? 0 : null;
   if (value.type === "number") return resolveNumber(value.value, world, owner, context);
+  if ("source" in value && value.source === "status-suit") {
+    const actor = actorFor(value.target, owner);
+    const suit = world.statuses.find((entry) => entry.owner === actor && entry.statusDefinitionId === value.statusDefinitionId && entry.stacks > 0)?.parameters.suit;
+    return typeof suit === "string" && SUITS.includes(suit as Suit) ? suit as Suit : null;
+  }
   if ("source" in value && value.source === "status-card") {
     const status = world.statuses.find((entry) => entry.owner === owner && entry.statusDefinitionId === value.statusDefinitionId && entry.stacks > 0);
     const rank = status?.parameters.rank;

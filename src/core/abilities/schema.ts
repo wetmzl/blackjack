@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AbilityBinding, AbilityDefinition, Condition, ScalarValue } from "./types";
 
 const actorSelector = z.enum(["owner", "rival", "event-actor", "penalty-target"]);
-const scalar: z.ZodType<ScalarValue> = z.lazy(() => z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.enum(["gun-bullets", "hand-total", "round-final-score", "hand-card-count", "event-hand-card-count", "round-hit-count"]), target: actorSelector }).strict(), z.object({ type: z.literal("hand-card-color-count"), target: actorSelector, color: z.enum(["red", "black"]) }).strict(), z.object({ type: z.literal("hand-card-suit-count"), target: actorSelector, suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(), z.object({ type: z.literal("status-stacks"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(), z.object({ type: z.enum(["add", "subtract", "multiply", "power"]), left: scalar, right: scalar }).strict()])) as z.ZodType<ScalarValue>;
+const scalar: z.ZodType<ScalarValue> = z.lazy(() => z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.enum(["gun-bullets", "hand-total", "round-final-score", "hand-card-count", "event-hand-card-count", "round-hit-count"]), target: actorSelector }).strict(), z.object({ type: z.literal("hand-card-color-count"), target: actorSelector, color: z.enum(["red", "black"]) }).strict(), z.object({ type: z.literal("hand-card-suit-count"), target: actorSelector, suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(), z.object({ type: z.literal("hand-card-status-suit-count"), target: actorSelector, statusTarget: actorSelector, statusDefinitionId: z.string().min(1) }).strict(), z.object({ type: z.literal("status-stacks"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(), z.object({ type: z.enum(["add", "subtract", "multiply", "power"]), left: scalar, right: scalar }).strict()])) as z.ZodType<ScalarValue>;
 const compare = z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]);
 const trigger = z.enum(["on-match-created", "on-ability-gained", "on-ability-played", "after-ability-played", "before-card-draw", "after-card-draw", "after-draw-pile-changed", "after-hand-changed", "after-stand", "before-bust-check", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
 const candidate = z.union([
@@ -45,6 +45,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("round-penalty-target-is"), target: actorSelector }).strict(),
   z.object({ type: z.literal("event-ability-kind-is"), kind: z.enum(["player-skill", "ai-skill", "talent"]) }).strict(),
   z.object({ type: z.literal("status-present"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(),
+  z.object({ type: z.literal("scalar-compare"), left: scalar, operator: compare, right: scalar }).strict(),
   z.object({ type: z.literal("any"), conditions: z.array(condition) }).strict(),
   z.object({ type: z.literal("not"), condition }).strict()
 ]));
@@ -59,6 +60,7 @@ const effect = z.union([
   z.object({ type: z.literal("reveal-hand-card-suit"), target: actorSelector, card: z.enum(["first-private-card", "all-current-cards"]), viewer: actorSelector }).strict(),
   z.object({ type: z.literal("split-last-card-into-derived"), target: actorSelector }).strict(),
   z.object({ type: z.literal("add-status"), target: actorSelector, statusDefinitionId: z.string().min(1), parameters: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).optional() }).strict(),
+  z.object({ type: z.literal("set-status-suit-to-hand-majority"), target: actorSelector, handTarget: actorSelector, statusDefinitionId: z.string().min(1) }).strict(),
   z.object({ type: z.literal("set-status-stacks"), target: actorSelector, statusDefinitionId: z.string().min(1), amount: scalar }).strict(),
   z.object({ type: z.literal("remove-status"), target: actorSelector, statusDefinitionId: z.string().min(1), amount: scalar.optional() }).strict(),
   z.object({ type: z.literal("replace-pending-draw"), target: actorSelector, policy: z.object({ type: z.literal("exact-resulting-total"), total: scalar, fallback: z.literal("create-derived-card") }).strict() }).strict(),

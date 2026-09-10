@@ -134,6 +134,30 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       events.push(resultEvent(context, { type: "status-stacks-updated", actor, statusDefinitionId: effect.statusDefinitionId, stacks: status.stacks, delta: 1 }));
       break;
     }
+    case "set-status-suit-to-hand-majority": {
+      const handActor = resolveActor(effect.handTarget, context);
+      if (!handActor) throw new Error("Majority-suit hand target is unavailable");
+      const definition = context.registry?.statusesById[effect.statusDefinitionId] ?? getStatusDefinition(effect.statusDefinitionId);
+      if (!definition) throw new Error(`Unknown status definition: ${effect.statusDefinitionId}`);
+      const cards = world.hands[handActor].cards;
+      if (cards.length === 0) throw new Error("Cannot select a majority suit from an empty hand");
+      const counts = new Map(SUITS.map((suit) => [suit, cards.filter((card) => cardSuit(card) === suit).length]));
+      const suit = SUITS.reduce((best, candidate) => counts.get(candidate)! > counts.get(best)! ? candidate : best);
+      const existing = statusFor(world, actor, effect.statusDefinitionId);
+      const status = {
+        statusDefinitionId: effect.statusDefinitionId,
+        owner: actor,
+        sourceInstanceId: existing?.sourceInstanceId ?? context.ability.instanceId,
+        stacks: 1,
+        duration: definition.defaultDuration,
+        parameters: { suit },
+        createdAtSequence: existing?.createdAtSequence ?? runtime.sequence + 1
+      } as const;
+      world = { ...world, statuses: [...world.statuses.filter((entry) => entry !== existing), status] };
+      runtime = { ...runtime, statuses: world.statuses, sequence: existing ? runtime.sequence : runtime.sequence + 1 };
+      events.push({ type: "STATUS_ADDED", statusDefinitionId: effect.statusDefinitionId, owner: actor, sourceInstanceId: status.sourceInstanceId });
+      break;
+    }
     case "set-status-stacks": {
       const definition = context.registry?.statusesById[effect.statusDefinitionId] ?? getStatusDefinition(effect.statusDefinitionId);
       if (!definition) throw new Error(`Unknown status definition: ${effect.statusDefinitionId}`);

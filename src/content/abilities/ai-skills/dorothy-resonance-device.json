@@ -1,0 +1,67 @@
+{
+  "id": "dorothy-resonance-device",
+  "name": "共振装置",
+  "description": "每轮开始时，多萝西将自己初始手牌中数量最多的花色指定为共振花色；数量并列时依次优先黑桃、红桃、方块、梅花。点数比较时，双方每持有一张共振牌，就各自获得2点点数优势。",
+  "triggerNotice": "双方每张共振牌获得2点点数优势。",
+  "profileLore": "她把一枚枚微型共振器摆上赌桌，温柔地称它们为实验样本。赌场更喜欢另一个说法：会替合适花色悄悄抬高筹码的作弊工具。",
+  "sourceKind": "ai-skill",
+  "primaryDomain": "gambler",
+  "activation": { "type": "automatic" },
+  "rules": [
+    {
+      "id": "assign-resonance-suit",
+      "trigger": "after-hand-changed",
+      "conditions": [
+        { "type": "actor-is", "actor": "owner" }
+      ],
+      "effects": [
+        {
+          "type": "set-status-suit-to-hand-majority",
+          "target": "owner",
+          "handTarget": "owner",
+          "statusDefinitionId": "dorothy-resonance-suit"
+        }
+      ],
+      "limit": { "perRound": 1 }
+    },
+    {
+      "id": "apply-resonance-advantage",
+      "trigger": "before-round-resolution",
+      "conditions": [
+        { "type": "round-reason-is", "value": "comparison" },
+        { "type": "status-present", "target": "owner", "statusDefinitionId": "dorothy-resonance-suit" }
+      ],
+      "effects": [
+        {
+          "type": "add-to-pending-comparison-score",
+          "target": "owner",
+          "amount": {
+            "type": "multiply",
+            "left": {
+              "type": "hand-card-status-suit-count",
+              "target": "owner",
+              "statusTarget": "owner",
+              "statusDefinitionId": "dorothy-resonance-suit"
+            },
+            "right": 2
+          }
+        },
+        {
+          "type": "add-to-pending-comparison-score",
+          "target": "rival",
+          "amount": {
+            "type": "multiply",
+            "left": {
+              "type": "hand-card-status-suit-count",
+              "target": "rival",
+              "statusTarget": "owner",
+              "statusDefinitionId": "dorothy-resonance-suit"
+            },
+            "right": 2
+          }
+        }
+      ]
+    }
+  ],
+  "tags": ["blackjack", "hand-value", "suit", "ai-skill"]
+}

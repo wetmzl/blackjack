@@ -182,6 +182,14 @@ state, events, counters, TTL, or RNG.
 `set-status-stacks` replaces a match-status stack count with a nonnegative,
 integer scalar result (zero removes the status), allowing a data-driven
 mechanic to carry one public numeric threshold between rounds.
+`set-status-suit-to-hand-majority` stores the most common suit in a chosen hand
+as a status parameter. Ties follow the canonical `SUITS` order so the result is
+replay-safe without consuming RNG. Read that selection with
+`hand-card-status-suit-count`; use `scalar-compare` when two dynamically
+computed counts must be compared before applying an effect. Initial hands are
+already complete when their `after-hand-changed` broadcasts run, so an
+owner-filtered rule with a `perRound: 1` limit can select a suit exactly once at
+the start of every round.
 
 `on-ability-gained` targets only the newly created ability instance. It is the
 entry point for a passive Player Skill that must publish information as soon as
