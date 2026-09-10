@@ -72,6 +72,7 @@ const infoBarScalar: z.ZodType<unknown> = z.lazy(() => z.union([
 ]));
 const infoBar = z.object({
   sourceAbilityId: z.string().min(1), label: z.string().min(1), description: z.string().min(1), format: z.enum(["number", "percent"]).optional(),
+  matchingSuitMarker: z.object({ type: z.string().regex(/^[a-z0-9][a-z0-9-]*$/), label: z.string().min(1) }).strict().optional(),
   value: z.union([
     z.object({ type: z.literal("number"), value: infoBarScalar }).strict(),
     z.object({ type: z.enum(["card", "suit"]), target: infoBarActor, card: z.enum(["last-card", "first-private-card"]) }).strict(),
@@ -80,6 +81,9 @@ const infoBar = z.object({
   ])
 }).strict().superRefine((bar, ctx) => {
   if (bar.format === "percent" && bar.value.type !== "number") ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["format"], message: "百分比格式只适用于数值信息" });
+  if (bar.matchingSuitMarker && !(bar.value.type === "suit" && "source" in bar.value && bar.value.source === "status-suit")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["matchingSuitMarker"], message: "匹配花色角标只适用于状态花色信息栏" });
+  }
 });
 const dialogueShape = Object.fromEntries(DIALOGUE_EVENT_CODES.map((code) => [code, dialoguePool])) as Record<DialogueEvent, typeof dialoguePool>;
 const dialogue = z.object(dialogueShape).strict();

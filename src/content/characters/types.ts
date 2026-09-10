@@ -89,6 +89,8 @@ export interface CharacterInfoBar {
   readonly description: string;
   readonly format?: "number" | "percent";
   readonly value: AbilityInfoValue;
+  /** Optional diamond corner art applied to every hand card matching a resolved suit value. */
+  readonly matchingSuitMarker?: { readonly type: string; readonly label: string };
 }
 
 export interface TrophyCloseupVariant {

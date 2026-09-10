@@ -1,4 +1,4 @@
-import { cardHasTag, cardSource, cardSuit, cardRank } from "../core/blackjack/card";
+import { cardSource, cardSuit, cardRank } from "../core/blackjack/card";
 import type { Card, Rank, Suit } from "../core/blackjack/types";
 
 export type CardSurface = "front" | "back";
@@ -43,22 +43,16 @@ export interface HandCardKnowledge {
   readonly variant?: CardDisplayDescription["variant"];
 }
 
-const DERIVED_MARKER: CardMarker = {
-  type: "derived",
-  position: "top-right",
-  label: "衍生牌",
-  visual: { kind: "text", text: "◇" }
-};
-
-/** Tag-driven decoration registry. New card treatments do not alter the renderer. */
-const TAG_MARKERS: readonly { readonly tag: string; readonly marker: CardMarker }[] = [
-  { tag: "derived", marker: DERIVED_MARKER }
-];
+export function diamondCardMarker(type: string, label: string): CardMarker {
+  return {
+    type,
+    position: "top-right",
+    label,
+    visual: { kind: "text", text: "◇" }
+  };
+}
 
 export function describeCard(card: Card, visibility: CardVisibility): CardDisplayDescription {
-  const tagMarkers = visibility.variant === "compact"
-    ? []
-    : TAG_MARKERS.filter(({ tag }) => cardHasTag(card, tag)).map(({ marker }) => marker);
   return {
     cardId: card.id,
     source: cardSource(card),
@@ -66,7 +60,7 @@ export function describeCard(card: Card, visibility: CardVisibility): CardDispla
     surface: visibility.surface,
     rank: visibility.showRank ? cardRank(card) : null,
     suit: visibility.showSuit ? cardSuit(card) : null,
-    markers: [...tagMarkers, ...(visibility.markers ?? [])],
+    markers: [...(visibility.markers ?? [])],
     variant: visibility.variant
   };
 }

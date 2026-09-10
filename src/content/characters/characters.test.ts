@@ -368,6 +368,7 @@ describe("data-driven character registry", () => {
       { definitionId: "dorothy-resonance-device", enabled: true, parameters: {} },
       { definitionId: "dorothy-quicksand-trap", enabled: true, parameters: {} }
     ]);
+    expect(dorothyData.infoBar.matchingSuitMarker).toEqual({ type: "resonance", label: "共振牌" });
     const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...cimei.aiSkills, ...nian.aiSkills, ...plume.aiSkills, ...platinum.aiSkills, ...lappland.aiSkills, ...dorothyData.aiSkills]
       .filter((binding) => binding.enabled)
       .map((binding) => getAbilityDefinition(binding.definitionId));
@@ -465,6 +466,8 @@ describe("data-driven character registry", () => {
     expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "action-advice-mechanic", enabled: true, parameters: { minimumHandSize: 11 } }] }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: { unknown: true } }] }).success).toBe(false);
     expect(CharacterDataSchema.safeParse({ ...bindingFixture, aiSkills: [{ definitionId: "owner-load-penalty", enabled: true, parameters: {}, extra: true }] }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...dorothyData, infoBar: { ...dorothyData.infoBar, matchingSuitMarker: { type: "bad marker", label: "坏标记" } } }).success).toBe(false);
+    expect(CharacterDataSchema.safeParse({ ...wData, infoBar: { ...wData.infoBar, matchingSuitMarker: { type: "resonance", label: "错误花色标记" } } }).success).toBe(false);
   });
 
   it("supports any number of bounded, uniquely identified trophy closeups and per-point variants", () => {

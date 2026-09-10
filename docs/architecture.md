@@ -63,7 +63,7 @@ AI 只通过 `src/core/ai/observation.ts` 的过滤投影读取状态。牌的�
 
 ## 角色内容
 
-`src/content/characters/catalog.json` 只保存大厅、战利品和历史索引所需的元数据与安全 `dataFile`。`catalog.ts` 校验并冻结目录；`loader.ts` 通过 `import.meta.glob("./data/*.json")` 按需加载完整角色并缓存结果。
+`src/content/characters/catalog.json` 只保存大厅、战利品和历史索引所需的元数据与安全 `dataFile`。`catalog.ts` 校验并冻结目录；`loader.ts` 通过 `import.meta.glob("./data/*.json")` 按需加载完整角色并缓存结果。角色信息栏可通过 `matchingSuitMarker` 声明匹配花色牌的菱形角标；表现层根据已解析的状态花色为双方手牌按实体 ID 附加标记，暗牌只暴露标记语义，不额外暴露点数或牌面花色。
 
 目录元数据包含自定义 `tags`；角色 tier 由 `getCharacterTags` 暴露为 `tier:s`、`tier:a` 等查询标签。`unlock` 使用通用条件引擎，支持击败任意角色、击败指定数量的不同角色、击败带标签角色、击败指定角色和按标签击败百分比。
 

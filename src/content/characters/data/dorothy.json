@@ -63,6 +63,7 @@
     "sourceAbilityId": "dorothy-resonance-device",
     "label": "共振牌",
     "description": "显示多萝西本轮指定的共振花色。每轮开始时，她选择自己初始手牌中数量最多的花色；点数比较时，双方每持有一张该花色手牌，各自获得2点点数优势。",
+    "matchingSuitMarker": { "type": "resonance", "label": "共振牌" },
     "value": {
       "type": "suit",
       "source": "status-suit",
