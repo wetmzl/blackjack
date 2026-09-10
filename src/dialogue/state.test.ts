@@ -3,8 +3,8 @@ import { createCard } from "../core/blackjack/card";
 import { createMatch } from "../core/match/reducer";
 import type { Card, Rank, Suit } from "../core/blackjack/types";
 import type { GameEvent, MatchState, RoundOutcome, RoundPhase } from "../core/match/types";
-import { DIALOGUE_EVENT_CODES } from "./types";
-import { resolveDialogueState } from "./state";
+import { DIALOGUE_EVENT_CODES, type CharacterDialogue } from "./types";
+import { resolveDialogueLine, resolveDialogueState } from "./state";
 
 const card = (rank: Rank, suit: Suit = "spades") => createCard(suit, rank);
 
@@ -64,6 +64,7 @@ const comparison = (winner: "player" | "opponent"): RoundOutcome => ({
   penaltyTarget: winner === "player" ? "opponent" : "player",
   bulletsAdded: 1
 });
+const testDialogue = Object.fromEntries(DIALOGUE_EVENT_CODES.map((event) => [event, [`${event}-甲`, `${event}-乙`]])) as unknown as CharacterDialogue;
 
 describe("finite dialogue state resolver", () => {
   it("keeps Blackjack pools distinct from generic round-win pools", () => {
@@ -110,6 +111,25 @@ describe("finite dialogue state resolver", () => {
     expect(resolveDialogueState(firstHit).event).toBe("OPPONENT_FIRST_HIT");
     expect(resolveDialogueState(firstStand).event).toBe("OPPONENT_FIRST_STAND");
     expect(resolveDialogueState(repeatedHit).event).toBe("OPPONENT_REPEAT_HIT_AFTER_PLAYER_STAND");
+  });
+
+  it("keeps the opening or latest player-action dialogue unchanged across a skipped turn", () => {
+    const opening = withActions();
+    const openingSkipped = {
+      ...opening,
+      history: [...opening.history, { type: "TURN_SKIPPED", actor: "opponent", sourceInstanceId: "skip-opening" } as const]
+    };
+    expect(resolveDialogueState(openingSkipped)).toEqual(resolveDialogueState(opening));
+    expect(resolveDialogueLine(openingSkipped, testDialogue)).toBe(resolveDialogueLine(opening, testDialogue));
+
+    const hit = withActions({ type: "PLAYER_HIT", value: 15 });
+    const hitThenSkipped = {
+      ...hit,
+      history: [...hit.history, { type: "TURN_SKIPPED", actor: "opponent", sourceInstanceId: "skip-after-hit" } as const]
+    };
+    expect(resolveDialogueState(hitThenSkipped)).toEqual(resolveDialogueState(hit));
+    expect(resolveDialogueState(hitThenSkipped).event).toBe("PLAYER_HIT");
+    expect(resolveDialogueLine(hitThenSkipped, testDialogue)).toBe(resolveDialogueLine(hit, testDialogue));
   });
 
   it("returns exactly one registered pool for every match phase", () => {

@@ -4,7 +4,7 @@ import type { AbilityBinding, AbilityDefinition, Condition, ScalarValue } from "
 const actorSelector = z.enum(["owner", "rival", "event-actor", "penalty-target"]);
 const scalar: z.ZodType<ScalarValue> = z.lazy(() => z.union([z.number().finite(), z.object({ type: z.literal("constant"), value: z.number().finite() }).strict(), z.object({ type: z.literal("parameter"), key: z.string().min(1) }).strict(), z.object({ type: z.enum(["gun-bullets", "hand-total", "round-final-score", "hand-card-count", "event-hand-card-count", "round-hit-count"]), target: actorSelector }).strict(), z.object({ type: z.literal("hand-card-color-count"), target: actorSelector, color: z.enum(["red", "black"]) }).strict(), z.object({ type: z.literal("hand-card-suit-count"), target: actorSelector, suit: z.enum(["spades", "hearts", "diamonds", "clubs"]) }).strict(), z.object({ type: z.literal("hand-card-status-suit-count"), target: actorSelector, statusTarget: actorSelector, statusDefinitionId: z.string().min(1) }).strict(), z.object({ type: z.literal("status-stacks"), target: actorSelector, statusDefinitionId: z.string().min(1) }).strict(), z.object({ type: z.enum(["add", "subtract", "multiply", "power"]), left: scalar, right: scalar }).strict()])) as z.ZodType<ScalarValue>;
 const compare = z.enum(["eq", "neq", "lt", "lte", "gt", "gte"]);
-const trigger = z.enum(["on-match-created", "on-ability-gained", "on-ability-played", "after-ability-played", "before-card-draw", "after-card-draw", "after-draw-pile-changed", "after-hand-changed", "after-stand", "before-bust-check", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
+const trigger = z.enum(["on-match-created", "on-ability-gained", "on-ability-played", "after-ability-played", "before-turn", "before-card-draw", "after-card-draw", "after-draw-pile-changed", "after-hand-changed", "after-stand", "before-bust-check", "before-round-resolution", "before-bullet-load", "after-bullet-load", "before-trigger-pull", "after-trigger-result", "on-round-end"]);
 const candidate = z.union([
   z.object({ type: z.literal("resulting-hand-total-at-most"), value: scalar }).strict(),
   z.object({ type: z.literal("resulting-hand-total-exactly"), value: scalar }).strict()
@@ -37,6 +37,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("hand-card-has-tag"), target: actorSelector, card: z.enum(["last-card", "first-private-card"]), tag: z.string().min(1) }).strict(),
   z.object({ type: z.literal("card-candidate-exists"), target: actorSelector, card: z.literal("last-card"), source: z.literal("remaining-draw-pile"), candidate }).strict(),
   z.object({ type: z.literal("hand-is-twenty-one"), target: actorSelector }).strict(),
+  z.object({ type: z.literal("pending-turn-can-skip"), target: actorSelector }).strict(),
   z.object({ type: z.literal("pending-bust-would-bust"), target: actorSelector }).strict(),
   z.object({ type: z.literal("status-card-rank-is"), target: actorSelector, statusDefinitionId: z.string().min(1), rank: z.enum(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]) }).strict(),
   z.object({ type: z.literal("gun-bullets"), target: actorSelector, operator: compare, value: scalar }).strict(),
@@ -50,6 +51,7 @@ const condition: z.ZodType<Condition> = z.lazy(() => z.union([
   z.object({ type: z.literal("not"), condition }).strict()
 ]));
 const effect = z.union([
+  z.object({ type: z.literal("skip-turn"), target: actorSelector }).strict(),
   z.object({ type: z.literal("add-skill-draws"), target: actorSelector, amount: scalar }).strict(),
   z.object({ type: z.literal("publish-action-advice"), target: actorSelector, policy: z.literal("current-optimal-hit-stand") }).strict(),
   z.object({ type: z.literal("reveal-draw-pile-top-suit"), viewer: actorSelector }).strict(),

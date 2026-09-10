@@ -82,6 +82,7 @@ export type GameEvent =
   | { readonly type: "ROUND_STARTED"; readonly roundIndex: number }
   | { readonly type: "CARD_DEALT"; readonly actor: Actor; readonly card: Card; readonly private: boolean }
   | { readonly type: "INITIAL_BLACKJACK_CHECK"; readonly player: boolean; readonly opponent: boolean }
+  | { readonly type: "TURN_SKIPPED"; readonly actor: Actor; readonly sourceInstanceId: string }
   | { readonly type: "PLAYER_HIT" | "OPPONENT_HIT"; readonly value: number }
   | { readonly type: "PLAYER_STOOD" | "OPPONENT_STOOD" }
   | { readonly type: "BLACKJACK"; readonly actor: Actor }

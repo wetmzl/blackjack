@@ -91,11 +91,11 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 - `runtime.ts` 管理实例、状态、计数、生命周期和能力随机流。
 - card/roulette adapter 为受控状态变更提供窄接口。
 
-能力使用 `owner` / `rival` 等相对语义，不写死玩家、与会者或角色。待抽牌、待装填和待扣扳机通过受控 pending event 修改；单条能力解析失败时保持原子性，基础行动仍可安全继续。
+能力使用 `owner` / `rival` 等相对语义，不写死玩家、与会者或角色。待回合、待抽牌、待装填和待扣扳机通过受控 pending event 修改；单条能力解析失败时保持原子性，基础行动仍可安全继续。`before-turn` 打开待回合窗口，`pending-turn-can-skip` 只在另一方仍可行动时成立，`skip-turn` 记录 `TURN_SKIPPED` 后交出决策权，不写入 Hit/Stand 事实或 `stood`。一次连续交接中每名角色最多被跳过一次，避免双方规则互相触发形成死循环。
 
 被动 Player Skill 与被动 AI Skill 的 Definition 必须声明按回合或按成功触发次数计算的有限 TTL。实例化时把初始值写入运行时；规则成功提交后才扣触发 TTL，`on-round-end` 完成后才扣回合 TTL。归零实例不再进入普通规则收集，玩家实例同时移除对应真实卡牌并释放库存位；该实例创建的状态同步过期，随后可安全回收来源实例。Talent 和主动卡不使用 TTL。
 
-显式 Stand 会广播 `after-stand`。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
+显式 Stand 会广播 `after-stand`；`TURN_SKIPPED` 不会广播该事件。`until-owner-action` 状态在目标下一次完成 Hit 或 Stand 后失效，并最迟在本轮结束时清理；跳过不算一次 owner action。状态的 `owner` 是受影响者，可以与来源能力实例的拥有者不同。主动技能牌统一使用 `active-skill-card` 标签，因此标签封锁不会影响被动技能或无卡角色行动。
 
 表现层以 `ABILITY_TRIGGERED` 为技能发动事实，为每条可见事件生成独立技能通知气泡，显示发动者、技能名和规则级 `triggerNotice`；规则未声明时依次回退到定义级 `triggerNotice` 和 `description`。`before-trigger-pull` 的哑火修正是唯一的提前展示场景：进入心跳等待窗口时，以不提交 TTL、计数器或 RNG 的确定性预览计算最终概率并显示一次，实际扣扳机批次不重复提示。同批 `CARD_SUIT_REVEALED` 与 after 状态仍可用于补充行动建议和实际花色等结果数据。气泡按消息来源配色：策展人技能为金色、AI 技能为青色；技能耗尽、技能禁用和全屏异常统一视为系统通知并使用红色，不占用牌桌中央结果栏。通知按最新在上堆叠，最多同时保留 5 条，各自显示 2.5 秒后渐隐移除，不改变领域状态。仅 Player Skill 与 AI Skill 的发动事件进入气泡；Talent 以及仅用于内部状态清理的 `notify: false` 规则不提示。状态封锁查询复用能力引擎的标签判定；只有这一类不可用技能保留点击告警，其他非法 Action 不由 UI 自行解释或放行。
 
