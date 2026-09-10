@@ -19,7 +19,8 @@ import { resolveDialogueState } from "./dialogue/state";
 import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstDefeat, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForDefeat, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
 import { bootLoad, clearMatchHistory, resetSave, restoreActiveMatch } from "./persistence/boot";
 import { createAutosaveController, type AutosaveController } from "./persistence/autosave";
-import { downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
+import { downloadRawSave, downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
+import { canMigrateLongTermSave, migrateLongTermSave } from "./persistence/migrations";
 import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
 import { SaveValidationError, type CharacterDefeatRecord, type LongTermSave } from "./persistence/schema";
@@ -73,6 +74,7 @@ type LobbyLayer = "menu" | "characters";
 let lobbyLayer: LobbyLayer = "menu";
 let guestSelectionIds: string[] = [];
 let defeatedGuestObserver: IntersectionObserver | null = null;
+let pendingImportedSave: unknown;
 const DEFEATED_GUEST_BATCH_SIZE = 3;
 const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 const TROPHY_GALLERY_COFFIN_IMAGE = "/assets/characters/trophy-gallery-coffin.png";
@@ -739,7 +741,7 @@ async function startResourcePackDownload(button: HTMLButtonElement): Promise<voi
 }
 
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-tag-info-dialog" class="modal skill-tag-info-dialog" aria-labelledby="skill-tag-info-title"><button class="modal-close" data-close aria-label="关闭流派说明">×</button><p class="eyebrow">流派说明</p><h2 id="skill-tag-info-title"></h2><p id="skill-tag-info-copy"></p></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-tag-info-dialog" class="modal skill-tag-info-dialog" aria-labelledby="skill-tag-info-title"><button class="modal-close" data-close aria-label="关闭流派说明">×</button><p class="eyebrow">流派说明</p><h2 id="skill-tag-info-title"></h2><p id="skill-tag-info-copy"></p></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog><dialog id="save-migration" class="modal" aria-labelledby="save-migration-title"><button class="modal-close" data-close aria-label="关闭迁移提示">×</button><p class="eyebrow">存档版本不合牌桌规矩</p><h2 id="save-migration-title">导入失败</h2><p id="save-migration-copy"></p><div class="save-actions"><button class="primary-button" data-migrate-import>迁移并导入</button><button class="secondary-button" data-export-import>导出原始存档</button><button class="secondary-button" data-close>暂不处理</button></div><p class="status-line" data-migration-status></p></dialog>`;
 }
 
 function randomUnit(): number {
@@ -874,6 +876,8 @@ function renderLobby(layer: LobbyLayer = "menu"): void {
   root.querySelector<HTMLButtonElement>("[data-export]")?.addEventListener("click", () => void exportSave());
   root.querySelector<HTMLButtonElement>("[data-import]")?.addEventListener("click", () => void requestImport());
   root.querySelector<HTMLInputElement>("#save-file")?.addEventListener("change", importFile);
+  root.querySelector<HTMLButtonElement>("[data-migrate-import]")?.addEventListener("click", () => void migrateImportedSave());
+  root.querySelector<HTMLButtonElement>("[data-export-import]")?.addEventListener("click", () => void exportFailedImport());
   root.querySelector<HTMLButtonElement>("[data-reset]")?.addEventListener("click", () => { if (!confirmResetCurrentData()) return; void resetCurrentData(); });
   root.querySelector<HTMLButtonElement>("[data-download-resources]")?.addEventListener("click", (event) => void startResourcePackDownload(event.currentTarget as HTMLButtonElement));
 }
@@ -1146,9 +1150,40 @@ function unlockConditionLabel(condition: CharacterUnlockCondition | undefined): 
 }
 async function updateSettings(event: Event): Promise<void> { const input = event.target as HTMLInputElement; const setting = input.dataset.setting === "reducedMotion" ? "reducedMotion" : "soundEnabled"; save = { ...save, settings: { ...save.settings, [setting]: input.checked }, updatedAt: new Date().toISOString() }; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); if (setting === "soundEnabled") { gameAudio.unlock(); gameAudio.configure(input.checked); } const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = "设置已保存。"; await repository.saveLongTerm(save); }
 async function exportSave(): Promise<void> { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); try { const method = await downloadSave(autosave?.getSave() ?? save); if (status) status.textContent = method === "file-system-access" ? "存档已写入。" : "已开始下载存档。"; } catch (error) { if (status) status.textContent = uiError(error, "导出失败。"); } }
-async function applyImportedSave(next: LongTermSave): Promise<void> { try { save = next; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); await repository.saveLongTerm(save); renderLobby(lobbyLayer); } catch (error) { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); } }
-function importFile(event: Event): void { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; void importSave(file).then(applyImportedSave).catch((error: unknown) => { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); }); }
-async function requestImport(): Promise<void> { try { await applyImportedSave(await openSaveWithFileSystemAccess()); } catch (error) { if (error instanceof Error && error.message.includes("unavailable")) root.querySelector<HTMLInputElement>("#save-file")?.click(); else { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = uiError(error, "导入失败。"); } } }
+async function applyImportedSave(next: LongTermSave): Promise<void> { save = next; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); await repository.saveLongTerm(save); pendingImportedSave = undefined; renderLobby(lobbyLayer); }
+function showImportMigrationPrompt(error: SaveValidationError): void {
+  pendingImportedSave = error.input;
+  const supported = canMigrateLongTermSave(pendingImportedSave);
+  const dialog = root.querySelector<HTMLDialogElement>("#save-migration");
+  const copy = dialog?.querySelector<HTMLParagraphElement>("#save-migration-copy");
+  const migrateButton = dialog?.querySelector<HTMLButtonElement>("[data-migrate-import]");
+  const status = root.querySelector<HTMLParagraphElement>("#lobby-status");
+  if (copy) copy.textContent = supported
+    ? "检测到旧版长期存档。可以先导出原件留底，再按当前版本的迁移链转换并导入。"
+    : "这份文件无法识别，或目前没有完整迁移路径。原件仍可导出留底，迁移按钮暂不可用。";
+  if (migrateButton) migrateButton.disabled = !supported;
+  if (status) status.textContent = "导入失败：请在迁移提示中选择后续处理。";
+  dialog?.showModal();
+}
+function handleImportFailure(error: unknown): void {
+  if (error instanceof SaveValidationError && error.kind === "long-term") { showImportMigrationPrompt(error); return; }
+  const status = root.querySelector<HTMLParagraphElement>("#lobby-status");
+  if (status) status.textContent = uiError(error, "导入失败。");
+}
+async function migrateImportedSave(): Promise<void> {
+  const status = root.querySelector<HTMLElement>("[data-migration-status]");
+  try { await applyImportedSave(migrateLongTermSave(pendingImportedSave)); }
+  catch (error) { if (status) status.textContent = uiError(error, "迁移失败，原存档未被覆盖。"); }
+}
+async function exportFailedImport(): Promise<void> {
+  const status = root.querySelector<HTMLElement>("[data-migration-status]");
+  try {
+    const method = await downloadRawSave(pendingImportedSave);
+    if (status) status.textContent = method === "file-system-access" ? "原始存档已写入。" : "已开始下载原始存档。";
+  } catch (error) { if (status) status.textContent = uiError(error, "原始存档导出失败。"); }
+}
+function importFile(event: Event): void { const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return; void importSave(file).then(applyImportedSave).catch(handleImportFailure).finally(() => { input.value = ""; }); }
+async function requestImport(): Promise<void> { try { await applyImportedSave(await openSaveWithFileSystemAccess()); } catch (error) { if (error instanceof Error && error.message.includes("unavailable")) root.querySelector<HTMLInputElement>("#save-file")?.click(); else handleImportFailure(error); } }
 async function startMatch(characterId = selectedCharacterId): Promise<void> {
   if (characterLoadInFlight) return;
   skillDrawerOpen = false;
@@ -1430,13 +1465,17 @@ function renderError(error: unknown): void {
   detachFullscreenListener();
   const incompatibleLongTerm = error instanceof SaveValidationError && error.kind === "long-term";
   const incompatibleRuntime = error instanceof SaveValidationError && error.kind === "runtime";
+  const invalidLongTermInput = incompatibleLongTerm ? error.input : undefined;
+  const migrationAvailable = incompatibleLongTerm && canMigrateLongTermSave(invalidLongTermInput);
   const action = incompatibleLongTerm
-    ? `<button class="danger-button" data-reset-invalid-save>删除长期存档并重新开始</button><button class="secondary-button" data-retry>重新检查</button>`
+    ? `<div class="error-actions"><button class="danger-button" data-reset-invalid-save>删除长期存档并重新开始</button><button class="primary-button" data-migrate-invalid-save ${migrationAvailable ? "" : "disabled"}>迁移长期存档</button><button class="secondary-button" data-export-invalid-save ${invalidLongTermInput === undefined ? "disabled" : ""}>导出原始存档</button><button class="secondary-button" data-retry>重新检查</button></div><p class="status-line" data-error-status></p>`
     : incompatibleRuntime
       ? `<button class="primary-button" data-reset-invalid-runtime>舍弃未完成牌局</button><button class="secondary-button" data-retry>重新检查</button>`
     : `<button class="primary-button" data-retry>重试</button>`;
   const message = incompatibleLongTerm
-    ? "当前版本不兼容这份长期存档。只有手动删除并确认后，才会清除战绩与解锁。"
+    ? migrationAvailable
+      ? "当前版本不兼容这份长期存档。你可以迁移后继续，也可以先导出原件留底；只有手动删除并确认后，才会清除战绩与解锁。"
+      : "当前版本不兼容这份长期存档，且没有完整迁移路径。你仍可导出原件留底，或手动删除并确认清除战绩与解锁。"
     : incompatibleRuntime
       ? "未完成牌局与当前版本不兼容。舍弃它不会影响长期战绩与解锁。"
       : uiError(error, "游戏无法启动。");
@@ -1446,6 +1485,18 @@ function renderError(error: unknown): void {
   root.querySelector("[data-reset-invalid-save]")?.addEventListener("click", () => {
     if (!confirmResetCurrentData()) return;
     void repository.deleteLongTerm().then(() => boot()).catch(renderError);
+  });
+  root.querySelector("[data-migrate-invalid-save]")?.addEventListener("click", () => {
+    const status = root.querySelector<HTMLElement>("[data-error-status]");
+    void repository.saveLongTerm(migrateLongTermSave(invalidLongTermInput)).then(() => boot()).catch((migrationError: unknown) => {
+      if (status) status.textContent = uiError(migrationError, "迁移失败，原存档未被覆盖。");
+    });
+  });
+  root.querySelector("[data-export-invalid-save]")?.addEventListener("click", () => {
+    const status = root.querySelector<HTMLElement>("[data-error-status]");
+    void downloadRawSave(invalidLongTermInput).then((method) => {
+      if (status) status.textContent = method === "file-system-access" ? "原始存档已写入。" : "已开始下载原始存档。";
+    }).catch((exportError: unknown) => { if (status) status.textContent = uiError(exportError, "原始存档导出失败。"); });
   });
   root.querySelector("[data-reset-invalid-runtime]")?.addEventListener("click", () => void repository.deleteRuntime().then(() => boot()).catch(renderError));
 }

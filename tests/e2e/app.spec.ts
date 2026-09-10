@@ -385,6 +385,22 @@ async function installLongTermSave(page: Page, save: ReturnType<typeof createDef
   await page.reload();
 }
 
+function version8LongTermSave(matchesPlayed = 0) {
+  const current = createDefaultSave("2026-08-30T00:00:00.000Z");
+  return {
+    format: current.format,
+    schemaVersion: 8,
+    gameVersion: current.gameVersion,
+    createdAt: current.createdAt,
+    updatedAt: current.updatedAt,
+    profile: { id: current.profile.id, displayName: current.profile.displayName, matchesPlayed, wins: 1, talentIds: ["early-preparation"] },
+    settings: current.settings,
+    skipTutorial: true,
+    history: current.history,
+    defeats: current.defeats
+  };
+}
+
 test("移动端大厅、结果停顿、逃离与确认返回", async ({ page }, testInfo) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "绝命之夜" })).toBeVisible();
@@ -1260,6 +1276,28 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 7");
 });
 
+test("导入失败时提示迁移，旧版长期档可迁移后导入", async ({ page }) => {
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "v8.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(version8LongTermSave(6))) });
+  const migration = page.locator("#save-migration");
+  await expect(migration).toBeVisible();
+  await expect(migration).toContainText("检测到旧版长期存档");
+  await expect(migration.locator("[data-migrate-import]")).toBeEnabled();
+  await expect(migration.locator("[data-export-import]")).toBeEnabled();
+  await migration.locator("[data-migrate-import]").click();
+  await enterCharacterSelection(page);
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 6");
+
+  await page.locator("[data-lobby-home]").click();
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "broken.json", mimeType: "application/json", buffer: Buffer.from("{broken-json") });
+  await expect(migration).toBeVisible();
+  await expect(migration).toContainText("无法识别");
+  await expect(migration.locator("[data-migrate-import]")).toBeDisabled();
+  await expect(migration.locator("[data-export-import]")).toBeEnabled();
+});
+
 test("可用按钮提供极轻震动并服从减少动态效果设置", async ({ page }) => {
   await page.addInitScript(() => {
     const target = window as typeof window & { __hapticPatterns: Array<number | number[]> };
@@ -1486,13 +1524,38 @@ test("技能流派最多选择两个并持久化，天赋按击败进度解锁",
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("不兼容长期存档必须手动点击并确认删除", async ({ page }) => {
+test("旧版长期存档可先导出原件再手动迁移", async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined, configurable: true }));
+  const legacy = version8LongTermSave(9);
+  await page.goto("/");
+  await expect(page.locator("main.lobby-shell")).toBeVisible();
+  await putSaveRecord(page, "long-term", legacy);
+  await page.reload();
+  const error = page.locator("main.error-shell");
+  await expect(error).toBeVisible();
+  await expect(error.locator("[data-reset-invalid-save]")).toBeEnabled();
+  await expect(error.locator("[data-migrate-invalid-save]")).toBeEnabled();
+  await expect(error.locator("[data-export-invalid-save]")).toBeEnabled();
+  const [download] = await Promise.all([page.waitForEvent("download"), error.locator("[data-export-invalid-save]").click()]);
+  expect(download.suggestedFilename()).toBe("house-of-chances-unmigrated-save.json");
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  expect((JSON.parse(readFileSync(downloadPath!, "utf8")) as { schemaVersion: number }).schemaVersion).toBe(8);
+  await error.locator("[data-migrate-invalid-save]").click();
+  await expect(page.locator("main.lobby-shell")).toBeVisible();
+  await enterCharacterSelection(page);
+  await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 9");
+});
+
+test("没有迁移路径的不兼容长期存档仍须确认删除", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("main.lobby-shell")).toBeVisible();
   await putSaveRecord(page, "long-term", { marker: "outdated-save", schemaVersion: 99 });
   await page.reload();
   await expect(page.locator("main.error-shell")).toBeVisible();
   await expect(page.locator("main.error-shell")).toContainText("长期存档");
+  await expect(page.locator("[data-migrate-invalid-save]")).toBeDisabled();
+  await expect(page.locator("[data-export-invalid-save]")).toBeEnabled();
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toContain("不会删除未完成牌局");
     await dialog.accept();

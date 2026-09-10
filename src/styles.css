@@ -544,6 +544,8 @@ h2 { font-size: 1.5rem; }
 .character-unlock-panel { border-color: #c69d62; background: #30291dd9; }
 .character-unlock-panel > .eyebrow { color: var(--amber); }
 .summary-shell .primary-button, .error-shell .primary-button { width: 100%; margin-top: 20px; }
+.error-actions { display: grid; width: 100%; max-width: 360px; gap: 8px; margin-top: 20px; }
+.error-actions .primary-button, .error-actions .secondary-button, .error-actions .danger-button { width: 100%; margin-top: 0; }
 .summary-shell .summary-actions { width: 100%; margin-top: 20px; }
 .summary-shell .summary-actions .primary-button, .summary-shell .summary-actions .secondary-button { width: auto; margin-top: 0; }
 .loading-shell { gap: 14px; color: var(--muted); font-size: .78rem; }
