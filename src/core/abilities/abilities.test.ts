@@ -48,8 +48,8 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers three disjoint ability domains as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(39);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(20);
+    expect(ABILITY_DEFINITIONS).toHaveLength(42);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(23);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(18);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });

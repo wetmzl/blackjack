@@ -1,0 +1,15 @@
+{
+  "id": "pegasus-vision-advantage",
+  "defaultDuration": "match",
+  "rules": [{
+    "id": "apply-pegasus-vision-advantage",
+    "trigger": "before-round-resolution",
+    "notify": false,
+    "conditions": [{ "type": "round-reason-is", "value": "comparison" }],
+    "effects": [{
+      "type": "add-to-pending-comparison-score",
+      "target": "owner",
+      "amount": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "pegasus-vision-advantage" }
+    }]
+  }]
+}

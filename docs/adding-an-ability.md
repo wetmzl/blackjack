@@ -169,7 +169,15 @@ comparison-score preview shown by the table.
 checks a specified standard rank against a different card sharing its suit.
 `add-derived-card-for-exact-total`
 always creates a deterministic ability-RNG-derived card without touching the
-physical shoe. Match-status stack counts are also available as scalar values,
+physical shoe.
+`copy-last-hand-card-as-derived` similarly creates a new derived entity with
+the last hand card's rank and suit while leaving both the source card and the
+physical shoe unchanged.
+`transfer-last-physical-hand-card` instead moves the existing final physical
+card from one actor's hand to another actor's hand. It preserves the card ID,
+keeps `source: shoe`, does not clone the card, and leaves the shoe ledger
+unchanged; a missing or derived source card makes the effect fail atomically.
+Match-status stack counts are also available as scalar values,
 and `add-to-pending-comparison-score` can adjust an actor's score only while a
 normal point comparison is being resolved, including when both unmodified
 scores are equal. Each base score is the hand's highest total under that

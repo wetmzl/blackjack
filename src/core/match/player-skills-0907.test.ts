@@ -27,13 +27,22 @@ function fixture(definitionId: string, hand: Card[], shoe: Card[] = [card("2", "
 }
 
 describe("0907 declarative Player Skills", () => {
-  it("keeps all seven new skills as initial active card definitions", () => {
-    for (const id of ["compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]) {
+  it("keeps the six unrewarded skills as initial active card definitions", () => {
+    for (const id of ["compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "before-the-shuffle"]) {
       const definition = getAbilityDefinition(id);
       expect(definition).toMatchObject({ sourceKind: "player-skill", activation: { type: "action", windows: ["owner-turn"], consume: "card" }, drop: { enabled: true, baseWeight: 1 } });
       expect(definition?.sourceKind === "player-skill" ? definition.unlock : undefined).toBeUndefined();
       expect(definition?.tags).toContain("active-skill-card");
     }
+  });
+
+  it("registers the two character rewards as active cards with strict copy-effect data", () => {
+    expect(getAbilityDefinition("carnival")).toMatchObject({ sourceKind: "player-skill", unlock: { opponentId: "lappland-the-decadenza" } });
+    const memory = getAbilityDefinition("quetzal-memory")!;
+    expect(memory).toMatchObject({ sourceKind: "player-skill", primaryDomain: "gambler", unlock: { opponentId: "ho-olheyak" }, activation: { type: "action", windows: ["owner-turn"], consume: "card" } });
+    const effect = memory.rules[0]!.effects[0]!;
+    expect(effect).toEqual({ type: "copy-last-hand-card-as-derived", target: "owner" });
+    expect(AbilityDefinitionSchema.safeParse({ ...memory, rules: [{ ...memory.rules[0], effects: [{ ...effect, extra: true }] }] }).success).toBe(false);
   });
 
   it("strictly validates power and complete mapped-rank expressions", () => {
@@ -53,6 +62,27 @@ describe("0907 declarative Player Skills", () => {
     const repeatA = gameReducer(fixture("compound-interest", [card("3"), card("4")]), { type: "PLAY_ABILITY", instanceId: "skill-compound-interest" });
     const repeatB = gameReducer(fixture("compound-interest", [card("3"), card("4")]), { type: "PLAY_ABILITY", instanceId: "skill-compound-interest" });
     expect(repeatA.player.hand.cards.at(-1)).toEqual(repeatB.player.hand.cards.at(-1));
+  });
+
+  it("copies the last hand card as a deterministic derived card without touching the shoe", () => {
+    const source = [card("2", "clubs"), card("3", "diamonds")];
+    const initial = fixture("quetzal-memory", [card("3", "hearts"), card("4", "spades")], source);
+    const original = initial.player.hand.cards.at(-1)!;
+    const next = gameReducer(initial, { type: "PLAY_ABILITY", instanceId: "skill-quetzal-memory" });
+    const copied = next.player.hand.cards.at(-1)!;
+    expect(next.player.hand.cards).toHaveLength(3);
+    expect(next.player.hand.cards[1]).toBe(original);
+    expect(copied).toMatchObject({ attributes: { source: "derived", rank: "4", suit: "spades" }, tags: ["derived", "generated-by:quetzal-memory"] });
+    expect(copied.id).not.toBe(original.id);
+    expect(next.shoe).toEqual(initial.shoe);
+    expect(next.history).toContainEqual(expect.objectContaining({ type: "ABILITY_RESULT", definitionId: "quetzal-memory", result: { type: "derived-card-added", actor: "player", rank: "4", suit: "spades" } }));
+    expect(gameReducer(fixture("quetzal-memory", [card("3", "hearts"), card("4", "spades")], source), { type: "PLAY_ABILITY", instanceId: "skill-quetzal-memory" }).player.hand.cards.at(-1)).toEqual(copied);
+  });
+
+  it("leaves Quetzal Memory unconsumed when no hand card can be copied", () => {
+    const empty = fixture("quetzal-memory", []);
+    expect(gameReducer(empty, { type: "PLAY_ABILITY", instanceId: "skill-quetzal-memory" })).toBe(empty);
+    expect(empty.playerSkills.cards).toHaveLength(1);
   });
 
   it.each([[2, "A"], [3, "2"], [4, "4"], [5, "8"]] as const)("Sissa produces 2^n for %i hand cards", (count, rank) => {
