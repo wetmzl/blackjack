@@ -99,6 +99,7 @@ export type Effect =
   | { readonly type: "publish-hand-total-comparison"; readonly target: ActorSelector }
   | { readonly type: "replace-hand-card"; readonly target: ActorSelector; readonly card: CardSelector; readonly source: CardZoneSource; readonly candidate: CardCandidate; readonly pick: RandomPick }
   | { readonly type: "swap-last-hand-card-with-draw-pile-top"; readonly target: ActorSelector }
+  | { readonly type: "transfer-last-physical-hand-card"; readonly from: ActorSelector; readonly target: ActorSelector }
   | { readonly type: "reveal-hand-card-suit"; readonly target: ActorSelector; readonly card: "first-private-card" | "all-current-cards"; readonly viewer: ActorSelector }
   | { readonly type: "split-last-card-into-derived"; readonly target: ActorSelector }
   | { readonly type: "add-status"; readonly target: ActorSelector; readonly statusDefinitionId: string; readonly parameters?: Readonly<Record<string, string | number | boolean>> }
@@ -110,6 +111,7 @@ export type Effect =
   | { readonly type: "replace-bust-hand-card-with-memory-card"; readonly target: ActorSelector; readonly statusDefinitionId: string }
   | { readonly type: "add-derived-card-for-exact-total"; readonly target: ActorSelector; readonly total: ScalarValue }
   | { readonly type: "add-derived-card"; readonly target: ActorSelector; readonly rank: DerivedCardRankExpression; readonly suit: DerivedCardSuitExpression }
+  | { readonly type: "copy-last-hand-card-as-derived"; readonly target: ActorSelector }
   | { readonly type: "replace-hand-card-with-derived"; readonly target: ActorSelector; readonly card: "last-card"; readonly rank: DerivedCardRankExpression; readonly suit: DerivedCardSuitExpression }
   | { readonly type: "add-hand-card-tag" | "remove-hand-card-tag"; readonly target: ActorSelector; readonly card: CardSelector; readonly tag: string }
   | { readonly type: "rotate-draw-pile-top-to-bottom" }

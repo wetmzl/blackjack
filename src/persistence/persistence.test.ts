@@ -333,7 +333,7 @@ describe("boot and repositories", () => {
     expect(reset.schemaVersion).toBe(CURRENT_LONG_TERM_SCHEMA_VERSION);
     expect(reset.profile.matchesPlayed).toBe(0);
     expect(reset.profile.wins).toBe(0);
-    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "critical-judgment", "situation-assessment", "live-ammunition-bet", "prepaid-premium", "heart-hunter", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
+    expect(unlockedPlayerSkillIdsForDefeats(reset.defeats)).toEqual(["hunter-instinct", "critical-judgment", "situation-assessment", "live-ammunition-bet", "prepaid-premium", "heart-hunter", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "before-the-shuffle", "sleight-of-hand"]);
     expect(reset.profile.selectedSkillTags).toEqual([]);
     expect(reset.history).toEqual([]);
     expect(reset.defeats).toEqual([]);

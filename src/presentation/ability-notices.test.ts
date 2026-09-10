@@ -111,6 +111,17 @@ describe("ability trigger notices", () => {
     const card: GameEvent = { type: "ABILITY_RESULT", instanceId: "compound", definitionId: "compound-interest", owner: "player", result: { type: "derived-card-added", actor: "player", rank: "3", suit: "hearts" } };
     expect(abilityTriggerNotice([compound, card], "W")[0]?.text).toContain("获得一张3点衍生牌");
 
+    const memory: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "memory", definitionId: "quetzal-memory", ruleId: "copy-last-card", owner: "player" };
+    const copied: GameEvent = { type: "ABILITY_RESULT", instanceId: "memory", definitionId: "quetzal-memory", owner: "player", result: { type: "derived-card-added", actor: "player", rank: "4", suit: "spades" } };
+    expect(abilityTriggerNotice([memory, copied], "霍尔海雅")[0]?.text).toContain("策展人发动「羽蛇的记忆」：获得一张4点衍生牌");
+
+    const vision: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "vision", definitionId: "pegasus-vision", ruleId: "gain-rival-stand-advantage", owner: "player" };
+    const visionPoint: GameEvent = { type: "ABILITY_RESULT", instanceId: "vision", definitionId: "pegasus-vision", owner: "player", result: { type: "status-stacks-updated", actor: "player", statusDefinitionId: "pegasus-vision-advantage", stacks: 1, delta: 1 } };
+    expect(abilityTriggerNotice([vision, visionPoint], "白金")[0]?.text).toContain("策展人发动「天马视域」：获得1点点数优势");
+
+    const theft: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "theft", definitionId: "sleight-of-hand", ruleId: "steal-rival-last-card", owner: "player" };
+    expect(abilityTriggerNotice([theft], "W")[0]?.text).toContain("策展人发动「顺手牵羊」：偷走了对手最后一张实体手牌");
+
     const sissa: GameEvent = { type: "ABILITY_TRIGGERED", instanceId: "sissa", definitionId: "sissas-table", ruleId: "add-overflow-advantage", owner: "player" };
     const sissaCard: GameEvent = { type: "ABILITY_RESULT", instanceId: "sissa", definitionId: "sissas-table", owner: "player", result: { type: "derived-card-added", actor: "player", rank: "K", suit: "spades" } };
     const overflow: GameEvent = { type: "ABILITY_RESULT", instanceId: "sissa", definitionId: "sissas-table", owner: "player", result: { type: "status-stacks-updated", actor: "player", statusDefinitionId: "player-point-advantage", stacks: 6, delta: 6 } };

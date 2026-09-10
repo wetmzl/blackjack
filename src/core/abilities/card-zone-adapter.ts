@@ -1,5 +1,5 @@
 import { addCard, createHand, handValue } from "../blackjack/hand";
-import { cardRank, cardValue, createCard, createDerivedCard, createDerivedCardId, isDerivedCard } from "../blackjack/card";
+import { cardRank, cardValue, createCard, createDerivedCard, createDerivedCardId, isDerivedCard, isPhysicalCard } from "../blackjack/card";
 import { RANKS, SUITS, type Card, type Hand, type PhysicalCard, type ShoeState } from "../blackjack/types";
 import type { SeededRng } from "../rng/seeded";
 
@@ -20,6 +20,18 @@ export function swapLastHandCardWithDrawPileTop(shoe: ShoeState, hand: Hand): { 
   shoeCards[outgoingIndex] = top;
   shoeCards[shoe.cursor] = outgoing;
   return { hand: createHand(cards), shoe: { ...shoe, cards: shoeCards } };
+}
+
+/** Moves one existing physical card between hands without cloning it or
+ * changing the shoe ledger that owns its discard/reshuffle lifecycle. */
+export function transferLastPhysicalHandCard(source: Hand, target: Hand): { readonly source: Hand; readonly target: Hand; readonly card: PhysicalCard } | undefined {
+  const card = source.cards.at(-1);
+  if (!card || !isPhysicalCard(card)) return undefined;
+  return {
+    source: createHand(source.cards.slice(0, -1)),
+    target: createHand([...target.cards, card]),
+    card
+  };
 }
 
 const SPLIT_RANKS = RANKS.map((rank) => ({ rank, value: cardValue(rank) }));

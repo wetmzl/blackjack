@@ -1,0 +1,26 @@
+{
+  "id": "quetzal-memory",
+  "name": "羽蛇的记忆",
+  "description": "获得一张与最后一张手牌点数、花色相同的衍生牌。",
+  "usage": "让最后一张手牌再从记忆里爬出来一次。",
+  "triggerNotice": "复制最后一张手牌，获得一张同点数、同花色的衍生牌。",
+  "profileLore": "历史从不真正重演——除非有人把它剥制成标本，再若无其事地摆回牌桌。",
+  "sourceKind": "player-skill",
+  "primaryDomain": "gambler",
+  "tags": ["blackjack", "card-copy", "memory-card", "player-skill", "active-skill-card"],
+  "skillTags": ["gambler"],
+  "drop": { "enabled": true, "baseWeight": 1 },
+  "stackable": false,
+  "unlock": { "opponentId": "ho-olheyak", "label": "首次击败霍尔海雅" },
+  "activation": {
+    "type": "action",
+    "windows": ["owner-turn"],
+    "consume": "card",
+    "availability": [{ "type": "hand-card-count", "target": "owner", "operator": "gt", "value": 0 }]
+  },
+  "rules": [{
+    "id": "copy-last-card",
+    "trigger": "on-ability-played",
+    "effects": [{ "type": "copy-last-hand-card-as-derived", "target": "owner" }]
+  }]
+}

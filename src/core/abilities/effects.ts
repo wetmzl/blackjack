@@ -1,6 +1,6 @@
 import type { SeededRng } from "../rng/seeded";
 import { addGunBullets, addToPendingLoad, multiplyPendingLoad, setPendingLoad } from "./roulette-adapter";
-import { createDerivedCardForExactTotal, drawExactResultingTotal, handTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop } from "./card-zone-adapter";
+import { createDerivedCardForExactTotal, drawExactResultingTotal, handTotal, replaceLastHandCard, splitLastCardIntoDerived, swapLastHandCardWithDrawPileTop, transferLastPhysicalHandCard } from "./card-zone-adapter";
 import { addCardTag, cardRank, cardSource, cardSuit, createDerivedCard, createDerivedCardId, isDerivedCard, removeCardTag } from "../blackjack/card";
 import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
 import { getAbilityDefinition, getStatusDefinition, instantiateAbility, type AbilityRegistry } from "./registry";
@@ -105,6 +105,17 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
         events.push({ type: "DRAW_PILE_CARD_REVEALED", viewer: actor, cardId: outgoing.id, rank: cardRank(outgoing), suit: cardSuit(outgoing) });
       }
       changed(effect.type);
+      break;
+    }
+    case "transfer-last-physical-hand-card": {
+      const sourceActor = resolveActor(effect.from, context);
+      if (!sourceActor || sourceActor === actor) throw new Error("Physical card transfer requires two distinct hands");
+      const result = transferLastPhysicalHandCard(world.hands[sourceActor], world.hands[actor]);
+      if (!result) throw new Error("Last physical hand card is unavailable");
+      world = {
+        ...world,
+        hands: { ...world.hands, [sourceActor]: result.source, [actor]: result.target }
+      };
       break;
     }
     case "reveal-hand-card-suit": {
@@ -257,6 +268,17 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { d
       const suit = resolveDerivedSuit(effect.suit, context);
       const card = createDerivedCard(suit, rank, createDerivedCardId(context.rng), context.ability.definitionId);
       world = withHands(world, actor, { cards: [...world.hands[actor].cards, card] });
+      events.push(resultEvent(context, { type: "derived-card-added", actor, rank, suit }));
+      break;
+    }
+    case "copy-last-hand-card-as-derived": {
+      const hand = world.hands[actor];
+      const source = hand.cards.at(-1);
+      if (!source) throw new Error("Card copy source is unavailable");
+      const rank = cardRank(source);
+      const suit = cardSuit(source);
+      const card = createDerivedCard(suit, rank, createDerivedCardId(context.rng), context.ability.definitionId);
+      world = withHands(world, actor, { cards: [...hand.cards, card] });
       events.push(resultEvent(context, { type: "derived-card-added", actor, rank, suit }));
       break;
     }

@@ -1442,14 +1442,17 @@ test("技能管理展示严格装备状态，清档确认可取消或重置", as
   const catalog = page.locator("#skill-catalog");
   await expect(catalog).toBeVisible();
   await expect(catalog.locator(".skill-catalog-group")).toHaveCount(4);
-  await expect(catalog.locator(".loadout-skill")).toHaveCount(19);
+  await expect(catalog.locator(".loadout-skill")).toHaveCount(22);
   await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(0);
-  await expect(catalog.locator('[data-primary-skill-tag="gambler"] .loadout-skill')).toHaveCount(6);
-  await expect(catalog.locator('[data-primary-skill-tag="cheater"] .loadout-skill')).toHaveCount(4);
+  await expect(catalog.locator('[data-primary-skill-tag="gambler"] .loadout-skill')).toHaveCount(8);
+  await expect(catalog.locator('[data-primary-skill-tag="cheater"] .loadout-skill')).toHaveCount(5);
   await expect(catalog.locator('[data-primary-skill-tag="intelligence-officer"] .loadout-skill')).toHaveCount(4);
   await expect(catalog.locator('[data-primary-skill-tag="gunslinger"] .loadout-skill')).toHaveCount(5);
   for (const group of await catalog.locator(".skill-catalog-group").all()) await group.locator(":scope > summary").click();
-  await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(19);
+  await expect(catalog.locator(".loadout-skill:visible")).toHaveCount(22);
+  const sleightOfHand = catalog.locator(".loadout-skill").filter({ hasText: "顺手牵羊" });
+  await expect(sleightOfHand).not.toHaveClass(/locked/);
+  await expect(sleightOfHand).toContainText("不会生成衍生牌");
   await expect(catalog).not.toContainText("罗德岛万人迷");
   await expect(catalog.locator(".profile-ability[open]")).toHaveCount(0);
   await catalog.locator(".profile-ability").first().locator("summary").click();
@@ -1695,6 +1698,48 @@ test("玩家胜利结算使用独立椅子全身图且不存在中央空黑块",
   const nightQueen = page.locator("#skill-catalog .loadout-skill").filter({ hasText: "暗夜女王" });
   await expect(nightQueen).not.toHaveClass(/locked/);
   await expect(nightQueen).toContainText("已解锁，可在牌局中掉落");
+});
+
+test("击败拉普兰德、霍尔海雅与白金会解锁各自的玩家技能", async ({ page }) => {
+  const imported = createDefaultSave("2026-09-10T00:00:00.000Z");
+  imported.settings.reducedMotion = true;
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "victory-skill-rewards.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+
+  await installRuntimeSave(page, playerWinSummary("lappland-the-decadenza"));
+  const lapplandReward = page.locator(".unlock-panel:not(.character-unlock-panel)");
+  await expect(lapplandReward).toContainText("新技能已解锁");
+  await expect(lapplandReward).toContainText("狂欢节");
+  await expect(lapplandReward).toContainText("首次击败拉普兰德");
+  await page.getByRole("button", { name: "返回大厅" }).click();
+  await expect(page.locator("main.lobby-menu-shell")).toBeVisible();
+
+  await installRuntimeSave(page, playerWinSummary("ho-olheyak"));
+  const hoOlheyakReward = page.locator(".unlock-panel:not(.character-unlock-panel)");
+  await expect(hoOlheyakReward).toContainText("羽蛇的记忆");
+  await expect(hoOlheyakReward).toContainText("与最后一张手牌点数、花色相同");
+  await expect(hoOlheyakReward).toContainText("首次击败霍尔海雅");
+  await page.getByRole("button", { name: "返回大厅" }).click();
+  await expect(page.locator("main.lobby-menu-shell")).toBeVisible();
+
+  await installRuntimeSave(page, playerWinSummary("platinum"));
+  const platinumReward = page.locator(".unlock-panel:not(.character-unlock-panel)");
+  await expect(platinumReward).toContainText("天马视域");
+  await expect(platinumReward).toContainText("持续5轮");
+  await expect(platinumReward).toContainText("首次击败白金");
+  await page.getByRole("button", { name: "返回大厅" }).click();
+  await expect(page.locator("main.lobby-menu-shell")).toBeVisible();
+
+  await page.getByRole("button", { name: "技能与天赋" }).click();
+  await page.locator("#skills").getByRole("button", { name: "技能大全" }).click();
+  await page.locator('#skill-catalog [data-primary-skill-tag="gambler"] > summary').click();
+  await page.locator('#skill-catalog [data-primary-skill-tag="cheater"] > summary').click();
+  for (const name of ["羽蛇的记忆", "狂欢节", "天马视域"]) {
+    const skill = page.locator("#skill-catalog .loadout-skill").filter({ hasText: name });
+    await expect(skill).not.toHaveClass(/locked/);
+    await expect(skill).toContainText("已解锁，可在牌局中掉落");
+  }
 });
 
 test("玩家落败结算可回溯并与同一名与会者重开", async ({ page }) => {

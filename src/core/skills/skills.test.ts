@@ -57,7 +57,10 @@ describe("separate ability domains", () => {
       "a-single-coin": ["gambler"],
       "mimic-eggplant": ["cheater"],
       carnival: ["cheater"],
-      "before-the-shuffle": ["cheater"]
+      "before-the-shuffle": ["cheater"],
+      "quetzal-memory": ["gambler"],
+      "pegasus-vision": ["gambler"],
+      "sleight-of-hand": ["cheater"]
     });
     const base = getAbilityDefinition("switcheroo")!;
     expect(AbilityDefinitionSchema.safeParse({ ...base, skillTags: undefined }).success).toBe(false);
@@ -74,7 +77,7 @@ describe("separate ability domains", () => {
     const skill = getAbilityDefinition("hunter-instinct")!;
     expect(AbilityDefinitionSchema.safeParse({ ...skill, primaryDomain: "information" }).success).toBe(false);
     expect(AbilityDefinitionSchema.safeParse({ ...skill, primaryDomain: "gambler" }).success).toBe(false);
-    expect(INITIAL_PLAYER_SKILL_IDS).toEqual(["hunter-instinct", "critical-judgment", "situation-assessment", "live-ammunition-bet", "prepaid-premium", "heart-hunter", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "carnival", "before-the-shuffle"]);
+    expect(INITIAL_PLAYER_SKILL_IDS).toEqual(["hunter-instinct", "critical-judgment", "situation-assessment", "live-ammunition-bet", "prepaid-premium", "heart-hunter", "switcheroo", "scent-of-a-woman", "compound-interest", "counterclockwise-clock", "sissas-table", "a-single-coin", "mimic-eggplant", "before-the-shuffle", "sleight-of-hand"]);
   });
 });
 
@@ -218,5 +221,19 @@ describe("Player Skill unlocks", () => {
     expect(unlockedPlayerSkillIdsForDefeats([{ opponentId: "texas", timestamp: "2026-01-01T00:00:00.000Z" }])).toContain("blueberry-and-dark-chocolate");
     expect(playerSkillsUnlockedForVictory("w", "player")).toEqual(["night-queen"]);
     expect(playerSkillsUnlockedForVictory("w", "opponent")).toEqual([]);
+  });
+
+  it("unlocks character reward skills from their matching first-defeat facts", () => {
+    expect(INITIAL_PLAYER_SKILL_IDS).not.toContain("carnival");
+    expect(INITIAL_PLAYER_SKILL_IDS).not.toContain("quetzal-memory");
+    expect(INITIAL_PLAYER_SKILL_IDS).not.toContain("pegasus-vision");
+    expect(playerSkillsUnlockedForVictory("lappland-the-decadenza", "player")).toEqual(["carnival"]);
+    expect(playerSkillsUnlockedForVictory("ho-olheyak", "player")).toEqual(["quetzal-memory"]);
+    expect(playerSkillsUnlockedForVictory("platinum", "player")).toEqual(["pegasus-vision"]);
+    expect(unlockedPlayerSkillIdsForDefeats([
+      { opponentId: "lappland-the-decadenza", timestamp: "2026-01-01T00:00:00.000Z" },
+      { opponentId: "ho-olheyak", timestamp: "2026-01-02T00:00:00.000Z" },
+      { opponentId: "platinum", timestamp: "2026-01-03T00:00:00.000Z" }
+    ])).toEqual([...INITIAL_PLAYER_SKILL_IDS, "carnival", "quetzal-memory", "pegasus-vision"]);
   });
 });

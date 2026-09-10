@@ -330,6 +330,30 @@ describe("new character mechanics", () => {
     expect(createAbilityRegistry([], [], ABILITY_CATALOG_VERSION).catalogVersion).toBe(ABILITY_CATALOG_VERSION);
   });
 
+  it("transfers a physical last card owner-relatively for either actor without cloning it", () => {
+    const definition = {
+      id: "physical-card-transfer-fixture", name: "transfer", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater",
+      activation: { type: "automatic" }, tags: ["test-fixture"], rules: [{ id: "transfer", trigger: "on-match-created", effects: [{ type: "transfer-last-physical-hand-card", from: "rival", target: "owner" }] }]
+    } as const;
+    const registry = createAbilityRegistry([definition]);
+    for (const owner of ["player", "opponent"] as const) {
+      const rival = owner === "player" ? "opponent" : "player";
+      const first = createCard("clubs", "3", `transfer-first-${owner}`);
+      const stolen = createCard("hearts", "4", `transfer-stolen-${owner}`);
+      const ownerCard = createCard("spades", "5", `transfer-owner-${owner}`);
+      const hands = world(
+        owner === "player" ? hand(ownerCard) : hand(first, stolen),
+        owner === "opponent" ? hand(ownerCard) : hand(first, stolen)
+      );
+      const ability = { ...instance(definition.id, owner), instanceId: `transfer-${owner}` };
+      const runtime = { ...createAbilityRuntime(createRng(`transfer-${owner}`).snapshot(), registry.catalogVersion), instances: [ability] };
+      const result = resolveAbilityEvent({ world: hands, runtime, registry, event: { trigger: "on-match-created", sourceEventId: `transfer-${owner}` } });
+      expect(result.world.hands[owner].cards).toEqual([ownerCard, stolen]);
+      expect(result.world.hands[rival].cards).toEqual([first]);
+      expect(result.world.hands[owner].cards.at(-1)).toBe(stolen);
+    }
+  });
+
   it("strictly rejects extra fields on new primitives and keeps impossible derived effects atomic", () => {
     const base = {
       id: "strict-new-primitive", name: "strict", description: "strict", sourceKind: "ai-skill", primaryDomain: "cheater",

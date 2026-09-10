@@ -11,6 +11,7 @@
   "skillTags": ["cheater"],
   "drop": { "enabled": true, "baseWeight": 1 },
   "stackable": false,
+  "unlock": { "opponentId": "lappland-the-decadenza", "label": "首次击败拉普兰德" },
   "activation": { "type": "action", "windows": ["owner-turn"], "consume": "card" },
   "rules": [{ "id": "raise-shared-bust-limit", "trigger": "on-ability-played", "effects": [{ "type": "set-status-stacks", "target": "owner", "statusDefinitionId": "carnival-bust-bonus", "amount": { "type": "add", "left": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "carnival-bust-bonus" }, "right": 1 } }] }]
 }

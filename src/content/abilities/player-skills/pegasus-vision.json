@@ -1,0 +1,44 @@
+{
+  "id": "pegasus-vision",
+  "name": "天马视域",
+  "description": "持续5轮。对手一轮内没有选择 Hit 并 Stand 时，获得1点可累加的点数优势；对手一旦 Hit，清空仅由本技能获得的全部点数优势。",
+  "triggerNotice": "对手未选择 Hit，获得1点点数优势。",
+  "profileLore": "她把犹豫看成一条笔直的射线。每一次停手都让准星更稳，直到猎物终于动了一下。",
+  "sourceKind": "player-skill",
+  "primaryDomain": "gambler",
+  "tags": ["blackjack", "hand-value", "point-advantage", "passive", "player-skill"],
+  "skillTags": ["gambler"],
+  "drop": { "enabled": true, "baseWeight": 1 },
+  "stackable": true,
+  "unlock": { "opponentId": "platinum", "label": "首次击败白金" },
+  "activation": { "type": "passive" },
+  "ttl": { "type": "rounds", "amount": 5 },
+  "rules": [
+    {
+      "id": "gain-rival-stand-advantage",
+      "trigger": "after-stand",
+      "conditions": [
+        { "type": "actor-is", "actor": "rival" },
+        { "type": "round-hit-count", "target": "rival", "operator": "eq", "value": 0 }
+      ],
+      "effects": [{ "type": "add-status", "target": "owner", "statusDefinitionId": "pegasus-vision-advantage" }]
+    },
+    {
+      "id": "clear-rival-hit-advantage",
+      "trigger": "after-hand-changed",
+      "notify": false,
+      "conditions": [
+        { "type": "actor-is", "actor": "rival" },
+        { "type": "round-hit-count", "target": "rival", "operator": "gt", "value": 0 },
+        { "type": "status-present", "target": "owner", "statusDefinitionId": "pegasus-vision-advantage" }
+      ],
+      "effects": [{
+        "type": "remove-status",
+        "target": "owner",
+        "statusDefinitionId": "pegasus-vision-advantage",
+        "amount": { "type": "status-stacks", "target": "owner", "statusDefinitionId": "pegasus-vision-advantage" }
+      }],
+      "limit": { "perRound": 1 }
+    }
+  ]
+}
