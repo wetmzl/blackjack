@@ -1100,6 +1100,30 @@ test("刺玫在击败三名不同对手后解锁并可进入牌桌", async ({ pa
   await expect.poll(() => page.locator(".character-portrait").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
 });
 
+test("提丰在击败五名不同对手后解锁且角色技能保持为空", async ({ page }) => {
+  const imported = saveWithDefeats("plume", "irene", "texas", "w");
+  imported.settings.reducedMotion = true;
+  const activeMatch = playerWinSummary("nian");
+  await page.goto("/");
+  await openLobbySettings(page);
+  await page.locator("#save-file").setInputFiles({ name: "typhon-unlock.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  await installRuntimeSave(page, activeMatch);
+
+  const unlockPanel = page.locator(".character-unlock-panel");
+  await expect(unlockPanel).toContainText("提丰");
+  await expect(unlockPanel).toContainText("击败 5 名不同与会者");
+  await page.getByRole("button", { name: "返回大厅" }).click();
+  await enterCharacterSelection(page);
+  await ensureGuestCandidate(page, "typhon");
+  await inviteCharacter(page, "typhon");
+  await expect(page.locator("#profile")).toContainText("萨米猎人，萨卡兹族，感染者");
+  await expect(page.locator("#profile .profile-abilities")).toHaveCount(0);
+  await page.locator("#profile [data-profile-start]").click();
+  await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
+  await expect(page.locator(".character-portrait")).toHaveAttribute("src", /typhon-relaxed\.png/);
+  await expect.poll(() => page.locator(".character-portrait").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
+});
+
 test("首次胜利会显示第一阶段角色解锁，刷新候场时确保换人", async ({ page }, testInfo) => {
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.settings.reducedMotion = true;
@@ -2290,7 +2314,7 @@ test("战利品陈列室只显示首次击败藏品，并可进入和清理独�
 
 test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({ page }) => {
   await page.goto("/");
-  await installLongTermSave(page, saveWithDefeats("w", "texas", "irene", "cimei", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy"));
+  await installLongTermSave(page, saveWithDefeats("w", "texas", "irene", "cimei", "nian", "plume", "platinum", "lappland-the-decadenza", "ho-olheyak", "dorothy", "typhon"));
   await page.locator("[data-open-trophies]").click();
 
   const cases = [
@@ -2304,7 +2328,8 @@ test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({
     { slug: "platinum", name: "白金", point: "feet", p0: "platinum-trophy-detail-feet.png", p1: "platinum-trophy-detail-feet-p1.png", description: "失去装备遮挡的轮廓" },
     { slug: "lappland-the-decadenza", name: "拉普兰德", point: "feet", p0: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png", p1: "lappland-the-decadenza-trophy-detail-feet-white-socks.png", description: "白色罗纹短袜与黑色软垫" },
     { slug: "ho-olheyak", name: "霍尔海雅", point: "shoes", p0: "ho-olheyak-trophy-detail-shoes.png", p1: "ho-olheyak-trophy-detail-shoes-p1.png", description: "褪去精致的包装后" },
-    { slug: "dorothy", name: "多萝西", point: "feet", p0: "dorothy-trophy-detail-boots-p0.png", p1: "dorothy-trophy-detail-boots-p1-white-socks.png", description: "剥下高筒靴" }
+    { slug: "dorothy", name: "多萝西", point: "feet", p0: "dorothy-trophy-detail-boots-p0.png", p1: "dorothy-trophy-detail-boots-p1-white-socks.png", description: "剥下高筒靴" },
+    { slug: "typhon", name: "提丰", point: "feet", p0: "typhon-trophy-detail-boots.png", p1: "typhon-trophy-detail-boots-p1.png", description: "黑丝踩脚袜" }
   ] as const;
 
   for (const entry of cases) {
@@ -2335,6 +2360,7 @@ test("多图兴趣点点击局部立绘时循环对应图片与描述", async ({
 });
 
 test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人物层", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   await page.addInitScript(() => {
     const target = window as typeof window & { __hapticPatterns: Array<number | number[]> };
     target.__hapticPatterns = [];
@@ -2355,7 +2381,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-plume", timestamp: "2026-08-31T20:10:00.000Z", opponentId: "plume", winner: "player", escaped: false, finalRoulette: { player: { bullets: 3, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 1, opponent: 0 }, blackjacks: { player: 1, opponent: 0 } },
     { id: "gallery-lappland", timestamp: "2026-09-01T20:10:00.000Z", opponentId: "lappland-the-decadenza", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
     { id: "gallery-cimei", timestamp: "2026-09-02T20:10:00.000Z", opponentId: "cimei", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
-    { id: "gallery-dorothy", timestamp: "2026-09-03T20:10:00.000Z", opponentId: "dorothy", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
+    { id: "gallery-dorothy", timestamp: "2026-09-03T20:10:00.000Z", opponentId: "dorothy", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } },
+    { id: "gallery-typhon", timestamp: "2026-09-04T20:10:00.000Z", opponentId: "typhon", winner: "player", escaped: false, finalRoulette: { player: { bullets: 2, capacity: 6 }, opponent: { bullets: 6, capacity: 6 } }, busts: { player: 0, opponent: 1 }, blackjacks: { player: 0, opponent: 0 } }
   ];
   imported.defeats = [
     { opponentId: "w", timestamp: "2026-08-27T20:10:00.000Z" },
@@ -2365,7 +2392,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { opponentId: "plume", timestamp: "2026-08-31T20:10:00.000Z" },
     { opponentId: "lappland-the-decadenza", timestamp: "2026-09-01T20:10:00.000Z" },
     { opponentId: "cimei", timestamp: "2026-09-02T20:10:00.000Z" },
-    { opponentId: "dorothy", timestamp: "2026-09-03T20:10:00.000Z" }
+    { opponentId: "dorothy", timestamp: "2026-09-03T20:10:00.000Z" },
+    { opponentId: "typhon", timestamp: "2026-09-04T20:10:00.000Z" }
   ];
   const cases = [
     { id: "gallery-w", slug: "w", name: "W", tier: "S", closeupCount: 4, closeupId: "skirt-costume", closeupName: "黑红裙装", closeupAsset: "w-trophy-detail-skirt.png" },
@@ -2375,7 +2403,8 @@ test("全部角色可通过左右滑动与两侧箭头循环翻转四方向人�
     { id: "gallery-plume", slug: "plume", name: "翎羽", tier: "B", closeupCount: 4, closeupId: "boots", closeupName: "平置短靴", closeupAsset: "plume-trophy-detail-boots.png" },
     { id: "gallery-lappland", slug: "lappland-the-decadenza", name: "拉普兰德", tier: "S", closeupCount: 4, closeupId: "feet", closeupName: "长靴与短袜", closeupAsset: "lappland-the-decadenza-trophy-detail-feet-boots-p0.png" },
     { id: "gallery-cimei", slug: "cimei", name: "刺玫", tier: "A", closeupCount: 4, closeupId: "bodice", closeupName: "白礼服束带", closeupAsset: "cimei-trophy-detail-bodice.png" },
-    { id: "gallery-dorothy", slug: "dorothy", name: "多萝西", tier: "S", closeupCount: 5, closeupId: "face-inspected", closeupName: "面部摆弄特写", closeupAsset: "dorothy-trophy-detail-face-inspected.png" }
+    { id: "gallery-dorothy", slug: "dorothy", name: "多萝西", tier: "S", closeupCount: 5, closeupId: "face-inspected", closeupName: "面部摆弄特写", closeupAsset: "dorothy-trophy-detail-face-inspected.png" },
+    { id: "gallery-typhon", slug: "typhon", name: "提丰", tier: "A", closeupCount: 4, closeupId: "waist-tail", closeupName: "腰部与尾巴", closeupAsset: "typhon-trophy-detail-thigh.png" }
   ] as const;
 
   await page.goto("/");
