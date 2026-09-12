@@ -93,6 +93,12 @@ curl --fail --silent --show-error --location --output /dev/null \
 
 预期状态为 `200`。
 
+### Web Analytics
+
+生产站点 `blackjack-9bp.pages.dev` 已在 Cloudflare Web Analytics 中注册，并使用 `index.html` 中的官方 beacon 手动采集基础访问与页面性能指标。站点令牌是发送公开统计数据所需的客户端标识，不是 Cloudflare API 凭据；账户 ID 与 API Token 仍只能保存在本机 `.env.local` 或 CI 加密 Secret 中。
+
+部署后可在浏览器开发者工具中确认 `https://static.cloudflareinsights.com/beacon.min.js` 成功加载，并在 Cloudflare 控制台的 **Web Analytics** 页面查看 Page views、Visits、Core Web Vitals 等基础指标。Cloudflare 的数据面板可能需要几分钟才出现首批数据。
+
 ## 托管 CI
 
 在 CI 提供商的加密 Secret 中配置 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`，不要在 runner 创建 `.env.local`。干净 runner 的发布步骤为：
