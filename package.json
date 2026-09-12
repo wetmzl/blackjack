@@ -11,7 +11,7 @@
     "dialogue:admin": "node tools/dialogue-admin/server.mjs",
     "test:dialogue-admin": "vitest run tools/dialogue-admin/server.test.mjs",
     "test:watch": "vitest",
-    "preview": "vite preview",
+    "preview": "node scripts/preview.mjs",
     "systemd:install": "bash systemd/install.sh",
     "deploy": "bash scripts/deploy.sh",
     "deploy:pages": "bash scripts/deploy-pages.sh"

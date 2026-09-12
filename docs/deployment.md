@@ -16,6 +16,51 @@ npm run build
 npm run test:e2e
 ```
 
+## Android Chrome 本地预览
+
+项目使用以下三个预览档位。尺寸均为 CSS 像素；浏览器 UA 中的 Chrome 主版本会在启动时同步到本机 Google Chrome。
+
+| 预设 | CSS 视口 | 屏幕 | DPR | Android UA 身份 | 用途 |
+| --- | --- | --- | --- | --- | --- |
+| `project-390` | 390×844 | 390×844 | 2.625 | Android 14 / Pixel 7 / Mobile Chrome | 项目默认主验收基线 |
+| `project-320` | 320×720 | 320×720 | 2.625 | Android 14 / Pixel 7 / Mobile Chrome | 窄屏与矮屏边界验收 |
+| `pixel-7` | 412×839 | 412×915 | 2.625 | Android 14 / Pixel 7 / Mobile Chrome | 现实设备尺寸补充 |
+
+390×844 和 320×720 是产品验收窗口，不对应某一台具体手机；Pixel 7 数据来自当前 Playwright 设备描述。实际 UA 形如 `Mozilla/5.0 (Linux; Android 14; Pixel 7) ... Chrome/<本机主版本>.0.0.0 Mobile Safari/537.36`。
+
+构建最新 `dist/`、启动本地 `vite preview`，并用系统 Google Chrome 自动打开 390×844 Android 触屏预览：
+
+```bash
+npm run preview chrome
+```
+
+切换到其他预设：
+
+```bash
+npm run preview chrome -- --device=project-320
+npm run preview chrome -- --device=pixel-7
+```
+
+可选预设为 `project-390`、`project-320` 和 `pixel-7`。脚本会从当前系统 Chrome 读取主版本号，并将对应设备描述中的 Android Mobile UA 同步到该版本；同时启用移动端布局、触控事件和 DPR。Chrome 使用 Playwright 的独立临时会话，不会改动日常浏览器资料。
+
+默认每次先运行生产构建，确保预览的是当前源码生成的 `dist/`。已有可信构建时可跳过：
+
+```bash
+npm run preview chrome -- --no-build
+```
+
+停止本仓库脚本启动的全部普通或 Chrome 预览会话：
+
+```bash
+npm run preview stop
+```
+
+命令只会终止登记在本仓库 `.preview-processes/` 中、且进程身份仍匹配的预览管理进程和 Vite 子进程；过期记录会被清理，不会按进程名批量误杀其他项目。
+
+Chrome 预览使用临时浏览器资料：同一次预览中刷新页面会保留 IndexedDB 存档，但停止后再次运行不会继承上一次预览的存档。需要跨会话保留时，请先用游戏内导出功能保存长期档，再在新会话中导入。
+
+其余参数继续传给 Vite，例如 `--port=4180`。不带 `chrome` 时，`npm run preview` 仍保持原行为，只启动 Vite 生产预览服务器。
+
 ## Cloudflare Pages 生产发布
 
 - Pages 项目：`blackjack`
