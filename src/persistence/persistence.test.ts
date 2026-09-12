@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { createMatch, gameReducer, getLegalActions } from "../core/match/reducer";
 import { acknowledgeMatchResult, bootLoad, clearMatchHistory, createDefaultSave, createRuntimeSave, resetSave, restoreActiveMatch } from "./boot";
 import { createAutosaveController } from "./autosave";
-import { exportSaveJson, importSave } from "./json";
+import { embedSaveInPng, exportSaveJson, extractSaveJsonFromPng, importSave } from "./json";
 import { canMigrateLongTermSave, migrateLongTermSave } from "./migrations";
 import { MemorySaveRepository } from "./memory-repository";
 import {
@@ -39,6 +40,19 @@ describe("long-term save schema and JSON boundary", () => {
     expect(imported.skipTutorial).toBe(false);
     expect(imported.tutorialProgress).toEqual({ completedIds: [] });
     expect(imported).not.toHaveProperty("activeMatch");
+  });
+
+  it("round-trips durable data embedded in a viewable trophy PNG", async () => {
+    const save = createDefaultSave(NOW);
+    save.profile.matchesPlayed = 9;
+    const cover = new Uint8Array(readFileSync(new URL("../../public/assets/characters/w-trophy-gallery-headshot.png", import.meta.url)));
+    const firstExport = embedSaveInPng(cover, save);
+    const secondExport = embedSaveInPng(firstExport, save);
+
+    expect(secondExport.subarray(0, 8)).toEqual(cover.subarray(0, 8));
+    expect(secondExport.length).toBe(firstExport.length);
+    await expect(importSave(extractSaveJsonFromPng(secondExport))).resolves.toEqual(save);
+    expect(() => extractSaveJsonFromPng(cover)).toThrow(/没有可导入的存档/);
   });
 
   it("loads saves created before tutorial progress and accepts unknown future tutorial ids", () => {

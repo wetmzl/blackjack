@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { createDefaultSave, createRuntimeSave } from "../../src/persistence/boot";
+import { embedSaveInPng, extractSaveJsonFromPng } from "../../src/persistence/json";
 import { createMatch, gameReducer } from "../../src/core/match/reducer";
 import type { MatchHistoryRecord } from "../../src/core/match/history";
 import type { MatchState } from "../../src/core/match/types";
@@ -1326,7 +1327,7 @@ test("暗置衍生牌只用边框区分且不泄露牌面", async ({ page }) => 
   await expect(hidden).not.toContainText("♥");
 });
 
-test("设置原地保存并走中文导入导出", async ({ page }) => {
+test("设置原地保存并通过图片或 JSON 导入导出", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(globalThis, "showSaveFilePicker", { value: undefined, configurable: true }));
   await page.goto("/");
   await openLobbySettings(page);
@@ -1336,17 +1337,33 @@ test("设置原地保存并走中文导入导出", async ({ page }) => {
   await expect(settings).toBeVisible();
   await expect(page.locator("body")).toHaveClass(/reduced-motion/);
   const [download] = await Promise.all([page.waitForEvent("download"), settings.locator("[data-export]").click()]);
-  expect(download.suggestedFilename()).toBe("house-of-chances-save.json");
+  expect(download.suggestedFilename()).toBe("house-of-chances-save.png");
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
-  const exported = JSON.parse(readFileSync(downloadPath!, "utf8")) as Record<string, unknown>;
+  const exported = JSON.parse(extractSaveJsonFromPng(new Uint8Array(readFileSync(downloadPath!)))) as Record<string, unknown>;
   expect(exported.skipTutorial).toBe(false);
   expect(exported.activeMatch).toBeUndefined();
+  await settings.locator("[data-export-format]").selectOption("json");
+  const [jsonDownload] = await Promise.all([page.waitForEvent("download"), settings.locator("[data-export]").click()]);
+  expect(jsonDownload.suggestedFilename()).toBe("house-of-chances-save.json");
   const imported = createDefaultSave("2026-08-30T00:00:00.000Z");
   imported.profile.matchesPlayed = 7;
-  await settings.locator("#save-file").setInputFiles({ name: "存档.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(imported)) });
+  imported.defeats.push(
+    { opponentId: "w", timestamp: "2026-08-30T01:00:00.000Z" },
+    { opponentId: "plume", timestamp: "2026-08-30T02:00:00.000Z" }
+  );
+  const cover = new Uint8Array(readFileSync(new URL("../../public/assets/characters/w-trophy-gallery-headshot.png", import.meta.url)));
+  const imageSave = embedSaveInPng(cover, imported);
+  await settings.locator("#save-file").setInputFiles({ name: "相册存档.png", mimeType: "image/png", buffer: Buffer.from(imageSave) });
   await enterCharacterSelection(page);
   await expect(page.locator(".quiet-record")).toContainText("策展人记录 // 7");
+  await page.locator("[data-lobby-home]").click();
+  await openLobbySettings(page);
+  const [latestCoverRequest] = await Promise.all([
+    page.waitForRequest((request) => request.url().endsWith("/assets/characters/plume-trophy-gallery-headshot.png")),
+    page.locator("#settings [data-export]").click()
+  ]);
+  expect(latestCoverRequest.url()).toContain("plume-trophy-gallery-headshot.png");
 });
 
 test("导入失败时提示迁移，旧版长期档可迁移后导入", async ({ page }) => {

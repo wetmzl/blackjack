@@ -17,7 +17,7 @@ import { resolveDialogueLine, resolveDialogueState } from "./dialogue/state";
 import { CHARACTER_CATALOG, DEFAULT_CHARACTER_ID, defeatedCharacterIdsByFirstDefeat, getCharacterMetadata, isCharacterUnlocked, loadCharacter, newlyUnlockedForDefeat, type CharacterDefinition, type CharacterTrophyGallery, type TrophyCloseupPoint, type CharacterUnlockCondition } from "./content/characters";
 import { bootLoad, clearMatchHistory, resetSave, restoreActiveMatch } from "./persistence/boot";
 import { createAutosaveController, type AutosaveController } from "./persistence/autosave";
-import { downloadRawSave, downloadSave, importSave, openSaveWithFileSystemAccess } from "./persistence/json";
+import { downloadRawSave, downloadSaveImage, downloadSaveJson, importSave } from "./persistence/json";
 import { canMigrateLongTermSave, migrateLongTermSave } from "./persistence/migrations";
 import { IndexedDbSaveRepository } from "./persistence/dexie-repository";
 import { requestPersistentStorage } from "./persistence/storage";
@@ -76,6 +76,7 @@ let pendingImportedSave: unknown;
 const DEFEATED_GUEST_BATCH_SIZE = 3;
 const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 const TROPHY_GALLERY_COFFIN_IMAGE = "/assets/characters/trophy-gallery-coffin.png";
+const SAVE_IMAGE_FALLBACK_CHARACTER_ID = "w";
 const RESET_CONFIRM_MESSAGE = "删除长期存档将清除战绩、历史、角色与技能解锁及设置，但不会删除未完成牌局。确定继续吗？";
 const RESET_RUNTIME_CONFIRM_MESSAGE = "未完成牌局与当前版本不兼容。确认后将只舍弃这局牌，长期战绩与解锁不会受到影响。";
 const CLEAR_HISTORY_CONFIRM_MESSAGE = "清理全部对局记录？战利品、角色与技能解锁不会受到影响。";
@@ -744,7 +745,7 @@ async function startResourcePackDownload(button: HTMLButtonElement): Promise<voi
 }
 
 function lobbyDialogsMarkup(): string {
-  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-tag-info-dialog" class="modal skill-tag-info-dialog" aria-labelledby="skill-tag-info-title"><button class="modal-close" data-close aria-label="关闭流派说明">×</button><p class="eyebrow">流派说明</p><h2 id="skill-tag-info-title"></h2><p id="skill-tag-info-copy"></p></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>导入存档</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog><dialog id="save-migration" class="modal" aria-labelledby="save-migration-title"><button class="modal-close" data-close aria-label="关闭迁移提示">×</button><p class="eyebrow">存档版本不合牌桌规矩</p><h2 id="save-migration-title">导入失败</h2><p id="save-migration-copy"></p><div class="save-actions"><button class="primary-button" data-migrate-import>迁移并导入</button><button class="secondary-button" data-export-import>导出原始存档</button><button class="secondary-button" data-close>暂不处理</button></div><p class="status-line" data-migration-status></p></dialog>`;
+  return `<dialog id="rules" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">终焉赌局 // 公开规则</p><h2>玩法说明</h2><p>目标是在不超过当前爆牌上限的前提下取得更高点数。用 Hit 要牌，准备好后用 Stand 停牌；达到 21 点不会自动停牌。</p><p>每轮结果会增加抽卡次数：策展人以黑杰克获胜增加 2 次，普通胜利、失败与平局增加 1 次。轮到策展人行动时可点击“抽取技能”，从固定 3 张候选中选择 1 张；局内最多持有 10 张主动或被动技能牌。</p><p>败者的左轮会被装入子弹。与会者由发牌员瞄准头部；策展人的枪口朝向天花板。与会者若赢下整局，可以向策展人索取一个愿望。</p></dialog><dialog id="skills" class="modal skills-modal" aria-labelledby="skills-title"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skills-title">技能与天赋</h2><div id="skill-content"></div></dialog><dialog id="skill-tag-info-dialog" class="modal skill-tag-info-dialog" aria-labelledby="skill-tag-info-title"><button class="modal-close" data-close aria-label="关闭流派说明">×</button><p class="eyebrow">流派说明</p><h2 id="skill-tag-info-title"></h2><p id="skill-tag-info-copy"></p></dialog><dialog id="skill-catalog" class="modal skill-catalog-modal" aria-labelledby="skill-catalog-title"><button class="modal-close" data-close aria-label="关闭技能大全">×</button><p class="eyebrow">策展人的收藏</p><h2 id="skill-catalog-title">技能大全</h2><p class="loadout-count">当前版本的全部技能与解锁状态。</p><div id="skill-catalog-content" class="loadout-list"></div></dialog><dialog id="profile" class="modal profile-modal"><button class="modal-close" data-close aria-label="关闭">×</button><div id="profile-content"></div></dialog><dialog id="settings" class="modal"><button class="modal-close" data-close aria-label="关闭">×</button><p class="eyebrow">古堡牌桌</p><h2>设置</h2><label class="setting"><input type="checkbox" data-setting="soundEnabled" ${save.settings.soundEnabled ? "checked" : ""}> 开启声音</label><label class="setting"><input type="checkbox" data-setting="reducedMotion" ${save.settings.reducedMotion ? "checked" : ""}> 减少动态效果</label>${resourcePackControlsMarkup()}<div class="save-actions"><label class="save-export-format"><span>导出格式</span><select data-export-format><option value="image">图片存档（推荐）</option><option value="json">JSON 文件</option></select></label><button class="secondary-button" data-export>导出存档</button><button class="secondary-button" data-import>从图片或 JSON 导入</button><button class="danger-button" data-reset>删除长期存档</button><input id="save-file" type="file" accept="image/png,.png,application/json,.json" hidden></div><p class="status-line" id="lobby-status"></p></dialog><dialog id="save-migration" class="modal" aria-labelledby="save-migration-title"><button class="modal-close" data-close aria-label="关闭迁移提示">×</button><p class="eyebrow">存档版本不合牌桌规矩</p><h2 id="save-migration-title">导入失败</h2><p id="save-migration-copy"></p><div class="save-actions"><button class="primary-button" data-migrate-import>迁移并导入</button><button class="secondary-button" data-export-import>导出原始存档</button><button class="secondary-button" data-close>暂不处理</button></div><p class="status-line" data-migration-status></p></dialog>`;
 }
 
 function randomUnit(): number {
@@ -1153,7 +1154,28 @@ function unlockConditionLabel(condition: CharacterUnlockCondition | undefined): 
   return `击败${tagLabel(condition.tag)}角色的 ${condition.percentage}%`;
 }
 async function updateSettings(event: Event): Promise<void> { const input = event.target as HTMLInputElement; const setting = input.dataset.setting === "reducedMotion" ? "reducedMotion" : "soundEnabled"; save = { ...save, settings: { ...save.settings, [setting]: input.checked }, updatedAt: new Date().toISOString() }; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); if (setting === "soundEnabled") { gameAudio.unlock(); gameAudio.configure(input.checked); } const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); if (status) status.textContent = "设置已保存。"; await repository.saveLongTerm(save); }
-async function exportSave(): Promise<void> { const status = root.querySelector<HTMLParagraphElement>("#lobby-status"); try { const method = await downloadSave(autosave?.getSave() ?? save); if (status) status.textContent = method === "file-system-access" ? "存档已写入。" : "已开始下载存档。"; } catch (error) { if (status) status.textContent = uiError(error, "导出失败。"); } }
+function latestDefeatedCharacterId(currentSave: LongTermSave): string {
+  return currentSave.defeats.reduce<CharacterDefeatRecord | undefined>((latest, record) => !latest || Date.parse(record.timestamp) > Date.parse(latest.timestamp) ? record : latest, undefined)?.opponentId
+    ?? SAVE_IMAGE_FALLBACK_CHARACTER_ID;
+}
+async function saveCoverImage(currentSave: LongTermSave): Promise<string> {
+  const latest = await loadCharacter(latestDefeatedCharacterId(currentSave));
+  if (latest.trophyGallery?.headshot) return latest.trophyGallery.headshot;
+  const fallback = await loadCharacter(SAVE_IMAGE_FALLBACK_CHARACTER_ID);
+  if (!fallback.trophyGallery?.headshot) throw new Error("默认存档封面不可用。");
+  return fallback.trophyGallery.headshot;
+}
+async function exportSave(): Promise<void> {
+  const status = root.querySelector<HTMLParagraphElement>("#lobby-status");
+  try {
+    const currentSave = autosave?.getSave() ?? save;
+    const format = root.querySelector<HTMLSelectElement>("[data-export-format]")?.value ?? "image";
+    const method = format === "json"
+      ? await downloadSaveJson(currentSave)
+      : await downloadSaveImage(currentSave, await saveCoverImage(currentSave));
+    if (status) status.textContent = method === "file-system-access" ? "存档已写入。" : "已开始下载存档。";
+  } catch (error) { if (status) status.textContent = uiError(error, "导出失败。"); }
+}
 async function applyImportedSave(next: LongTermSave): Promise<void> { save = next; document.body.classList.toggle("reduced-motion", save.settings.reducedMotion); gameAudio.configure(save.settings.soundEnabled); await repository.saveLongTerm(save); pendingImportedSave = undefined; renderLobby(lobbyLayer); }
 function showImportMigrationPrompt(error: SaveValidationError): void {
   pendingImportedSave = error.input;
@@ -1187,7 +1209,7 @@ async function exportFailedImport(): Promise<void> {
   } catch (error) { if (status) status.textContent = uiError(error, "原始存档导出失败。"); }
 }
 function importFile(event: Event): void { const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return; void importSave(file).then(applyImportedSave).catch(handleImportFailure).finally(() => { input.value = ""; }); }
-async function requestImport(): Promise<void> { try { await applyImportedSave(await openSaveWithFileSystemAccess()); } catch (error) { if (error instanceof Error && error.message.includes("unavailable")) root.querySelector<HTMLInputElement>("#save-file")?.click(); else handleImportFailure(error); } }
+function requestImport(): void { root.querySelector<HTMLInputElement>("#save-file")?.click(); }
 async function startMatch(characterId = selectedCharacterId): Promise<void> {
   if (characterLoadInFlight) return;
   skillDrawerOpen = false;
