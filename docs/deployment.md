@@ -49,6 +49,16 @@ npm run preview chrome -- --device=pixel-7
 npm run preview chrome -- --no-build
 ```
 
+停止本仓库脚本启动的全部普通或 Chrome 预览会话：
+
+```bash
+npm run preview stop
+```
+
+命令只会终止登记在本仓库 `.preview-processes/` 中、且进程身份仍匹配的预览管理进程和 Vite 子进程；过期记录会被清理，不会按进程名批量误杀其他项目。
+
+Chrome 预览使用临时浏览器资料：同一次预览中刷新页面会保留 IndexedDB 存档，但停止后再次运行不会继承上一次预览的存档。需要跨会话保留时，请先用游戏内导出功能保存长期档，再在新会话中导入。
+
 其余参数继续传给 Vite，例如 `--port=4180`。不带 `chrome` 时，`npm run preview` 仍保持原行为，只启动 Vite 生产预览服务器。
 
 ## Cloudflare Pages 生产发布

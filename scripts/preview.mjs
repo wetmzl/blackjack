@@ -1,10 +1,101 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const viteBin = path.join(rootDir, "node_modules", ".bin", process.platform === "win32" ? "vite.cmd" : "vite");
 const npmBin = process.platform === "win32" ? "npm.cmd" : "npm";
+const processRegistryDir = path.join(rootDir, ".preview-processes");
+
+function processIdentity(pid) {
+  try {
+    return execFileSync("ps", ["-p", String(pid), "-o", "lstart=", "-o", "command="], { encoding: "utf8" }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function registerPreviewProcess(server) {
+  mkdirSync(processRegistryDir, { recursive: true });
+  const markerPath = path.join(processRegistryDir, `${process.pid}.json`);
+  writeFileSync(markerPath, JSON.stringify({
+    managerPid: process.pid,
+    managerIdentity: processIdentity(process.pid),
+    serverPid: server.pid,
+    startedAt: new Date().toISOString()
+  }));
+  return () => {
+    try {
+      unlinkSync(markerPath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  };
+}
+
+function isProjectViteProcess(pid) {
+  const identity = processIdentity(pid);
+  return identity.includes(rootDir) && identity.includes("vite") && identity.includes("preview");
+}
+
+function signalProcess(pid, signal) {
+  try {
+    process.kill(pid, signal);
+    return true;
+  } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+    return false;
+  }
+}
+
+async function stopPreviewProcesses() {
+  let markerNames;
+  try {
+    markerNames = readdirSync(processRegistryDir).filter((name) => name.endsWith(".json"));
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      console.log("没有由本项目管理的活跃预览进程。");
+      return;
+    }
+    throw error;
+  }
+
+  const records = markerNames.flatMap((name) => {
+    const markerPath = path.join(processRegistryDir, name);
+    try {
+      return [{ markerPath, ...JSON.parse(readFileSync(markerPath, "utf8")) }];
+    } catch {
+      try {
+        unlinkSync(markerPath);
+      } catch {}
+      return [];
+    }
+  });
+  const signaled = new Set();
+
+  for (const record of records) {
+    if (record.managerIdentity && processIdentity(record.managerPid) === record.managerIdentity) {
+      if (signalProcess(record.managerPid, "SIGTERM")) signaled.add(record.managerPid);
+    }
+    if (record.serverPid && isProjectViteProcess(record.serverPid)) {
+      if (signalProcess(record.serverPid, "SIGTERM")) signaled.add(record.serverPid);
+    }
+    try {
+      unlinkSync(record.markerPath);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  for (const record of records) {
+    if (record.serverPid && isProjectViteProcess(record.serverPid)) signalProcess(record.serverPid, "SIGKILL");
+  }
+
+  if (signaled.size === 0) console.log("没有由本项目管理的活跃预览进程；已清理过期记录。");
+  else console.log(`已停止 ${records.length} 个预览会话（${signaled.size} 个受管理进程）。`);
+}
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
@@ -110,6 +201,7 @@ async function launchChromePreview(rawArgs) {
   if (!noBuild) await run(npmBin, ["run", "build"]);
 
   const server = spawn(viteBin, ["preview", ...viteArgs], { cwd: rootDir, stdio: "inherit" });
+  const unregisterPreviewProcess = registerPreviewProcess(server);
   let serverExit;
   server.once("exit", (code, signal) => {
     serverExit = signal ? `收到 ${signal}` : `退出码 ${code}`;
@@ -123,6 +215,7 @@ async function launchChromePreview(rawArgs) {
     stopping = true;
     if (browser?.isConnected()) await browser.close().catch(() => {});
     if (!server.killed) server.kill("SIGTERM");
+    unregisterPreviewProcess();
   };
 
   process.once("SIGINT", () => void stop());
@@ -156,17 +249,32 @@ async function launchChromePreview(rawArgs) {
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args[0] === "stop") {
+    await stopPreviewProcesses();
+    return;
+  }
   if (args[0] === "chrome") {
     await launchChromePreview(args.slice(1));
     return;
   }
 
   const server = spawn(viteBin, ["preview", ...args], { cwd: rootDir, stdio: "inherit" });
+  const unregisterPreviewProcess = registerPreviewProcess(server);
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    if (!server.killed) server.kill("SIGTERM");
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   server.once("error", (error) => {
+    unregisterPreviewProcess();
     console.error(error);
     process.exitCode = 1;
   });
   server.once("exit", (code) => {
+    unregisterPreviewProcess();
     process.exitCode = code ?? 1;
   });
 }
