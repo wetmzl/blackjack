@@ -328,6 +328,8 @@ h2 { font-size: 1.5rem; }
 .resource-pack-control[data-state="complete"] .resource-pack-progress { color: #9fc6a5; }
 .resource-pack-control[data-state="error"] .resource-pack-progress { color: var(--pink); }
 .save-actions { display: grid; gap: 8px; margin-top: 16px; }
+.save-export-format { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; color: var(--muted); font-size: .72rem; }
+.save-export-format select { min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: #112437; padding: 8px 10px; color: var(--ink); font: inherit; }
 .status-line { min-height: 20px; color: var(--amber) !important; }
 
 /* Table: character rises behind a deep perspective felt and cards stay on top. */
