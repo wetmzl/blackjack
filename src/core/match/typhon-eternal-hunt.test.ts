@@ -40,7 +40,10 @@ describe("Typhon Eternal Hunt", () => {
   it("registers a strict data-driven turn skip and AI threshold modifier", () => {
     const definition = getAbilityDefinition("typhon-eternal-hunt")!;
     expect(definition).toMatchObject({ name: "永恒狩猎", sourceKind: "ai-skill", activation: { type: "automatic" } });
+    expect(definition.description).not.toMatch(/AI|阈值|100/);
     expect(definition.rules.map((rule) => rule.trigger)).toEqual(["before-turn", "before-ai-decision", "before-ai-decision"]);
+    expect(definition.rules[0]?.triggerNotice).toBe("提丰还在伏击，跳过回合");
+    expect(definition.rules.slice(1).map((rule) => rule.notify)).toEqual([false, false]);
     expect(definition.rules[1]?.effects).toEqual([{ type: "add-to-pending-ai-threshold", target: "owner", amount: 100 }]);
     expect(definition.rules[2]?.effects).toEqual([{ type: "add-to-pending-ai-threshold", target: "owner", amount: -100 }]);
     expect(AbilityDefinitionSchema.safeParse({ ...definition, rules: [{ ...definition.rules[1], effects: [{ ...definition.rules[1]!.effects[0], extra: true }] }] }).success).toBe(false);
@@ -55,7 +58,11 @@ describe("Typhon Eternal Hunt", () => {
     expect(events.some((event) => event.type === "OPPONENT_HIT" || event.type === "OPPONENT_STOOD")).toBe(false);
     expect(afterHit.round.currentActor).toBe("player");
     expect(afterHit.opponent.stood).toBe(false);
-    expect(abilityTriggerNotice(events, "提丰")).toContainEqual(expect.objectContaining({ text: expect.stringContaining("跳过本回合") }));
+    expect(abilityTriggerNotice(events, "提丰")).toEqual([{
+      owner: "opponent",
+      tone: "ai",
+      text: "提丰发动「永恒狩猎」：提丰还在伏击，跳过回合"
+    }]);
 
     const afterStand = gameReducer(afterHit, { type: "PLAYER_STAND" });
     expect(afterStand.round.currentActor).toBe("opponent");
@@ -68,6 +75,7 @@ describe("Typhon Eternal Hunt", () => {
 
     expect(next.lastAiDecision).toMatchObject({ handValue: 16, bySkill: 100, threshold: 116, action: "hit" });
     expect(next.history.slice(state.history.length)).toContainEqual(expect.objectContaining({ type: "OPPONENT_HIT" }));
+    expect(abilityTriggerNotice(next.history.slice(state.history.length), "提丰", next)).toEqual([]);
   });
 
   it("adds -100 while ahead and forces Stand through bySkill", () => {
@@ -76,6 +84,7 @@ describe("Typhon Eternal Hunt", () => {
 
     expect(next.lastAiDecision).toMatchObject({ handValue: 18, bySkill: -100, threshold: -84, action: "stand" });
     expect(next.history.slice(state.history.length)).toContainEqual(expect.objectContaining({ type: "OPPONENT_STOOD" }));
+    expect(abilityTriggerNotice(next.history.slice(state.history.length), "提丰", next)).toEqual([]);
   });
 
   it("leaves bySkill at zero when the base hand totals are equal", () => {
