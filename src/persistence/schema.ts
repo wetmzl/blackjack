@@ -57,7 +57,7 @@ const RoundSchema = z.object({
 const AiProfileSchema = z.object({ P: z.number().finite(), A: z.number().finite(), B: z.number().finite(), C: z.number().finite() }).strict();
 const AiNoiseSchema = z.object({ match: z.number().min(-0.3).max(0.3), play: z.number().min(-0.3).max(0.3) }).strict();
 const AiDecisionSchema = z.object({
-  handValue: z.number().int().min(0), threshold: z.number().finite(), bulletDifference: z.number().int(),
+  handValue: z.number().int().min(0), threshold: z.number().finite(), bySkill: z.number().finite().default(0), bulletDifference: z.number().int(),
   matchNoise: z.number().min(-0.3).max(0.3), playNoise: z.number().min(-0.3).max(0.3), action: z.enum(["hit", "stand"])
 }).strict();
 const AbilityCardSchema = z.object({ kind: z.literal("player-skill"), definitionId: z.string().min(1), owner: z.literal("player"), instanceId: z.string().min(1) }).strict();

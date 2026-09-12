@@ -49,7 +49,7 @@ describe("data-driven character registry", () => {
     expect(getCharacterTags(catalog.characters[0]!)).toContain("tier:ss");
   });
 
-  it("registers Typhon from the supplied copy with no skills yet", async () => {
+  it("registers Typhon from the supplied copy with Eternal Hunt", async () => {
     const metadata = getCharacterMetadata("typhon");
     expect(metadata).toEqual(expect.objectContaining({
       name: "提丰",
@@ -57,7 +57,7 @@ describe("data-driven character registry", () => {
       tier: "A",
       unlock: { type: "defeat-count", count: 5 }
     }));
-    expect(typhonData.aiSkills).toEqual([]);
+    expect(typhonData.aiSkills).toEqual([{ definitionId: "typhon-eternal-hunt", enabled: true, parameters: {} }]);
     expect(typhonData.profile.description).toBe("萨米猎人，萨卡兹族，感染者，身形娇小，却背着一张比自己还高的黑弓。你问她知不知道这里的规则——她说知道，然后就坐下了。她冷淡、直接、说话带有明显的口音，但你能隐隐约约感受到她作为猎人的气息，而今天她的猎物就是你。");
     expect(Object.keys(typhonData.dialogue).sort()).toEqual([...DIALOGUE_EVENT_CODES].sort());
     expect(Object.values(typhonData.dialogue).flat().every((line) => !line.startsWith("“") && !line.endsWith("”"))).toBe(true);
@@ -390,11 +390,12 @@ describe("data-driven character registry", () => {
       { definitionId: "dorothy-resonance-device", enabled: true, parameters: {} },
       { definitionId: "dorothy-quicksand-trap", enabled: true, parameters: {} }
     ]);
+    expect(typhonData.aiSkills).toEqual([{ definitionId: "typhon-eternal-hunt", enabled: true, parameters: {} }]);
     expect(dorothyData.infoBar.matchingSuitMarker).toEqual({ type: "resonance", label: "共振牌" });
-    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...cimei.aiSkills, ...nian.aiSkills, ...plume.aiSkills, ...platinum.aiSkills, ...lappland.aiSkills, ...dorothyData.aiSkills]
+    const formalMechanics = [...w.aiSkills, ...texas.aiSkills, ...irene.aiSkills, ...cimei.aiSkills, ...nian.aiSkills, ...plume.aiSkills, ...platinum.aiSkills, ...lappland.aiSkills, ...dorothyData.aiSkills, ...typhonData.aiSkills]
       .filter((binding) => binding.enabled)
       .map((binding) => getAbilityDefinition(binding.definitionId));
-    expect(formalMechanics).toHaveLength(11);
+    expect(formalMechanics).toHaveLength(12);
     expect(formalMechanics.every((ability) => Boolean(ability?.profileLore?.trim()))).toBe(true);
     expect("MATCH_WIN" in w.dialogue).toBe(false);
     expect("MATCH_LOSS" in w.dialogue).toBe(false);

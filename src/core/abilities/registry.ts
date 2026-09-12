@@ -40,6 +40,7 @@ import hoOlheyakInheritanceTerminal from "../../content/abilities/ai-skills/ho-o
 import hoOlheyakOnceHadWings from "../../content/abilities/ai-skills/ho-olheyak-once-had-wings.json" with { type: "json" };
 import dorothyResonanceDevice from "../../content/abilities/ai-skills/dorothy-resonance-device.json" with { type: "json" };
 import dorothyQuicksandTrap from "../../content/abilities/ai-skills/dorothy-quicksand-trap.json" with { type: "json" };
+import typhonEternalHunt from "../../content/abilities/ai-skills/typhon-eternal-hunt.json" with { type: "json" };
 import earlyPreparation from "../../content/abilities/talents/early-preparation.json" with { type: "json" };
 import rhodesHeartthrobStatus from "../../content/abilities/statuses/rhodes-heartthrob-armed.json" with { type: "json" };
 import silentDrizzleStatus from "../../content/abilities/statuses/silent-drizzle-silenced.json" with { type: "json" };
@@ -57,7 +58,7 @@ import pegasusVisionAdvantageStatus from "../../content/abilities/statuses/pegas
 import { AbilityDefinitionSchema, StatusDefinitionSchema, validateBinding } from "./schema";
 import type { AbilityBinding, AbilityDefinition, AbilityInstance, AbilitySourceKind, AiSkillAbilityDefinition, PlayerSkillAbilityDefinition, StatusDefinition, TalentAbilityDefinition } from "./types";
 
-export const ABILITY_CATALOG_VERSION = "abilities-v27" as const;
+export const ABILITY_CATALOG_VERSION = "abilities-v28" as const;
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
     for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
@@ -66,7 +67,7 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-const definitions = [hunterInstinct, criticalJudgment, situationAssessment, liveAmmunitionBet, prepaidPremium, heartHunter, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, playerSwordAndHandcannon, playerForgeHeraldsTheYear, compoundInterest, counterclockwiseClock, sissasTable, aSingleCoin, mimicEggplant, carnival, beforeTheShuffle, quetzalMemory, pegasusVision, sleightOfHand, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, turnSkipMechanic, silentDrizzle, bombManiac, wNightQueen, aiSwordAndHandcannon, aiForgeHeraldsTheYear, aiTinScorch, copperSeal, platinumVision, carnivalIndex, carnivalHeatsUp, hoOlheyakInheritanceTerminal, hoOlheyakOnceHadWings, dorothyResonanceDevice, dorothyQuicksandTrap, earlyPreparation]
+const definitions = [hunterInstinct, criticalJudgment, situationAssessment, liveAmmunitionBet, prepaidPremium, heartHunter, switcheroo, rhodesHeartthrob, nightQueen, scentOfAWoman, blueberryAndDarkChocolate, playerSwordAndHandcannon, playerForgeHeraldsTheYear, compoundInterest, counterclockwiseClock, sissasTable, aSingleCoin, mimicEggplant, carnival, beforeTheShuffle, quetzalMemory, pegasusVision, sleightOfHand, ownerLoadPenalty, rivalBustLoad, actionAdviceMechanic, handChangeObserver, turnSkipMechanic, silentDrizzle, bombManiac, wNightQueen, aiSwordAndHandcannon, aiForgeHeraldsTheYear, aiTinScorch, copperSeal, platinumVision, carnivalIndex, carnivalHeatsUp, hoOlheyakInheritanceTerminal, hoOlheyakOnceHadWings, dorothyResonanceDevice, dorothyQuicksandTrap, typhonEternalHunt, earlyPreparation]
   .map((value) => deepFreeze(AbilityDefinitionSchema.parse(value) as AbilityDefinition));
 const statuses = [rhodesHeartthrobStatus, silentDrizzleStatus, copperSealStatus, platinumVisionAdvantageStatus, carnivalIndexValueStatus, hoOlheyakMemoryCardStatus, playerPointAdvantageStatus, carnivalBustBonusStatus, liveAmmunitionBetBonusStatus, prepaidPremiumCoveredStatus, heartHunterArmedStatus, dorothyResonanceSuitStatus, pegasusVisionAdvantageStatus].map((value) => deepFreeze(StatusDefinitionSchema.parse(value) as StatusDefinition));
 if (new Set(definitions.map((definition) => definition.id)).size !== definitions.length) throw new Error("Duplicate ability definition id across Player Skill, AI Skill, and Talent catalogs");

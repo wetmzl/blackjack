@@ -80,6 +80,12 @@ skip per actor in a single handoff chain. The test-only hidden
 `turn-skip-mechanic` definition is the canonical unbound fixture; production
 characters should bind their own data definition instead of its ID.
 
+AI 点数阈值修改使用 `before-ai-decision` 事件与
+`add-to-pending-ai-threshold` 效果。每次决策窗口以 `bySkill = 0` 开始，
+多个命中规则按标准能力顺序累加，随后一次性传入 AI 阈值公式；不要直接改写
+`AiProfile`，也不要在 reducer 中按角色 ID 特判。需要比较双方牌面时使用
+`hand-total` / `scalar-compare`，它们读取基础手牌点数，不包含结算阶段的点数优势。
+
 `after-stand` is emitted only when an actor explicitly chooses Stand; reaching
 21 does not mark the actor stood and does not emit it. A status with
 `until-owner-action` remains through ability and event resolution, then expires
