@@ -1,7 +1,7 @@
 {
   "id": "typhon-eternal-hunt",
   "name": "永恒狩猎",
-  "description": "提丰会伏击策展人，在策展人 Stand 以前始终跳过自己的回合；开始行动后，自身基础点数低于策展人时，AI 点数阈值增加100，高于策展人时减少100。",
+  "description": "提丰会伏击策展人，在策展人 Stand 以前始终跳过自己的回合；开始行动后，在基础点数追上策展人以前绝不停牌，超过策展人后立即停牌。",
   "profileLore": "真正的猎人不急着暴露位置。她会等猎物停下，再沿着足迹追到刚好能看清后颈的距离。",
   "sourceKind": "ai-skill",
   "primaryDomain": "gambler",
@@ -10,7 +10,7 @@
     {
       "id": "ambush-before-rival-stands",
       "trigger": "before-turn",
-      "triggerNotice": "提丰跳过本回合，伏击仍在等待策展人 Stand。",
+      "triggerNotice": "提丰还在伏击，跳过回合",
       "conditions": [
         { "type": "actor-is", "actor": "owner" },
         { "type": "pending-turn-can-skip", "target": "owner" }
@@ -22,7 +22,7 @@
     {
       "id": "pursue-while-behind",
       "trigger": "before-ai-decision",
-      "triggerNotice": "提丰尚未追上策展人，本次 AI 点数阈值增加100。",
+      "notify": false,
       "conditions": [
         { "type": "actor-is", "actor": "owner" },
         {
@@ -39,7 +39,7 @@
     {
       "id": "halt-after-overtaking",
       "trigger": "before-ai-decision",
-      "triggerNotice": "提丰已经超过策展人，本次 AI 点数阈值减少100。",
+      "notify": false,
       "conditions": [
         { "type": "actor-is", "actor": "owner" },
         {
