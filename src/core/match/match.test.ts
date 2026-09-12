@@ -975,6 +975,7 @@ describe("observation and AI", () => {
     expect(decideAiAction(observation, profile, noise)).toEqual({
       handValue: 16,
       threshold: expect.closeTo(17.2),
+      bySkill: 0,
       bulletDifference: 4,
       matchNoise: 0.2,
       playNoise: -0.1,

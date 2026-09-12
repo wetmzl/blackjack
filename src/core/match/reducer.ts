@@ -13,7 +13,7 @@ import { getRoundStarter } from "../blackjack/round";
 import { advanceRoundAbilityTtls, createAbilityRuntime, addAbilityInstance, clearCounters, clearEventCounters, expireOwnerActionStatuses, expireStatuses, garbageCollectAbilityInstances, isAbilityInstanceExpired } from "../abilities/runtime";
 import { getAbilityDefinition, instantiateAbility, supportsAbilitySourceKind, validateAbilityBinding } from "../abilities/registry";
 import { canPlayAbility, playAbility, resolveAbilityEvent, AbilityResolutionError } from "../abilities/engine";
-import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn, SkillCardInstance } from "../abilities/types";
+import type { AbilityBinding, AbilityEventContext, AbilityInstance, AbilityWorld, PendingAiThreshold, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn, SkillCardInstance } from "../abilities/types";
 import type { Action, Actor, GameEvent, MatchOutcome, MatchState, ParticipantState, RoundOutcome, RoundPhase, RoundState } from "./types";
 import { DEFAULT_AI_PROFILE, type AiProfile } from "../ai/types";
 
@@ -157,9 +157,9 @@ function abilityServices(state: MatchState) {
     }
   };
 }
-function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { turn?: PendingTurn; draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingTurn?: PendingTurn; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly failed: boolean } {
+function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending: { turn?: PendingTurn; aiThreshold?: PendingAiThreshold; draw?: PendingDraw; load?: PendingLoad; bust?: PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}, directInstanceId?: string): { readonly state: MatchState; readonly pendingTurn?: PendingTurn; readonly pendingAiThreshold?: PendingAiThreshold; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly failed: boolean } {
   try {
-    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingTurn: pending.turn, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, directInstanceId, ...abilityServices(state) });
+    const result = resolveAbilityEvent({ world: abilityWorld(state), runtime: state.abilities, event, pendingTurn: pending.turn, pendingAiThreshold: pending.aiThreshold, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, directInstanceId, ...abilityServices(state) });
     let next = commitAbilityWorld(state, result.world);
     // Effects that grant Player Skill cards create their runtime instance in
     // the same transaction. Only legacy/newly-created card projections that
@@ -171,13 +171,13 @@ function runAbilityEvent(state: MatchState, event: AbilityEventContext, pending:
     next = { ...next, abilities: { ...next.abilities, ...result.runtime, instances: [...result.runtime.instances, ...instances], sequence: Math.max(result.runtime.sequence, firstSequence + instances.length) } };
     next = { ...next, abilities: clearEventCounters(next.abilities, event.sourceEventId) };
     next = { ...next, abilities: garbageCollectAbilityInstances(next.abilities, next.playerSkills.cards) };
-    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingTurn: result.pendingTurn, pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, pendingComparison: result.pendingComparison, failed: false };
+    return { state: append(next, ...result.events as GameEvent[], ...cards.map((card) => ({ type: "SKILL_GAINED" as const, skillId: card.definitionId }))), pendingTurn: result.pendingTurn, pendingAiThreshold: result.pendingAiThreshold, pendingDraw: result.pendingDraw, pendingLoad: result.pendingLoad, pendingBust: result.pendingBust, pendingTrigger: result.pendingTrigger, pendingComparison: result.pendingComparison, failed: false };
   } catch (error) {
     // A failed ability event is atomic. The caller may continue with the
     // unmodified pending event so the base game action remains safe.
     if (error instanceof AbilityResolutionError && error.instanceId && error.definitionId) return {
       state: append(state, { type: "ABILITY_RESOLUTION_FAILED", instanceId: error.instanceId, definitionId: error.definitionId, ruleId: error.ruleId ?? "ability-resolution", reason: error.message }),
-      pendingTurn: pending.turn, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust,
+      pendingTurn: pending.turn, pendingAiThreshold: pending.aiThreshold, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust,
       pendingTrigger: pending.trigger, pendingComparison: pending.comparison, failed: true
     };
     throw error;
@@ -604,7 +604,15 @@ export function gameReducer(state: MatchState, action: Action): MatchState {
     case "PLAYER_STAND": { if (state.playerSkills.drawOffer) return state; const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "player" && !checked.player.stood ? standFor(checked, "player") : checked; }
     case "AI_HIT": case "OPPONENT_HIT": return state.round.phase === "turns" && state.round.currentActor === "opponent" && !state.opponent.stood ? drawFor(state, "opponent") : state;
     case "AI_STAND": case "OPPONENT_STAND": { const checked = normalizeAbilityHands(state); return checked.round.phase === "turns" && checked.round.currentActor === "opponent" && !checked.opponent.stood ? standFor(checked, "opponent") : checked; }
-    case "AI_TURN": { if (state.round.phase !== "turns" || state.round.currentActor !== "opponent") return state; const decision = decideAiAction(buildObservation(state, "opponent"), state.aiProfile, state.aiNoise); const next = append({ ...state, lastAiDecision: decision }, { type: "AI_DECISION", decision }); return decision.action === "hit" ? drawFor(next, "opponent") : standFor(next, "opponent"); }
+    case "AI_TURN": {
+      if (state.round.phase !== "turns" || state.round.currentActor !== "opponent") return state;
+      const pending: PendingAiThreshold = { id: `ai-threshold:${state.roundIndex}:${state.history.length}`, actor: "opponent", bySkill: 0 };
+      const prepared = runAbilityEvent(state, { trigger: "before-ai-decision", sourceEventId: pending.id, eventActor: "opponent", roundHitCounts: getRoundHitCounts(state), pendingAiThreshold: pending }, { aiThreshold: pending });
+      const bySkill = prepared.pendingAiThreshold?.bySkill ?? 0;
+      const decision = decideAiAction(buildObservation(prepared.state, "opponent"), prepared.state.aiProfile, prepared.state.aiNoise, bySkill);
+      const next = append({ ...prepared.state, lastAiDecision: decision }, { type: "AI_DECISION", decision });
+      return decision.action === "hit" ? drawFor(next, "opponent") : standFor(next, "opponent");
+    }
     case "PLAY_ABILITY": return play(state, action.instanceId);
     case "TRIGGER_ROULETTE": return state.round.phase === "roulette-reaction" || state.round.phase === "roulette-trigger" ? triggerFor(state, state.round.outcome?.penaltyTarget ?? "player") : state;
     case "CONTINUE_ROUND": return state.round.phase === "round-end" ? startNextRound(state) : state;

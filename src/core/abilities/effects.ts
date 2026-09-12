@@ -6,7 +6,7 @@ import { RANKS, SUITS, type Rank, type Suit } from "../blackjack/types";
 import { getAbilityDefinition, getStatusDefinition, instantiateAbility, type AbilityRegistry } from "./registry";
 import { resolveActor, resolveScalar, type ConditionContext } from "./conditions";
 import { PLAYER_SKILL_INVENTORY_CAPACITY } from "../skills/constants";
-import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, DerivedCardRankExpression, DerivedCardSuitExpression, Effect, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn } from "./types";
+import type { AbilityDomainEvent, AbilityEffectResult, AbilityRuntimeState, AbilityWorld, DerivedCardRankExpression, DerivedCardSuitExpression, Effect, PendingAiThreshold, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn } from "./types";
 
 export interface EffectContext extends ConditionContext {
   readonly ruleId?: string;
@@ -44,9 +44,10 @@ function resultEvent(context: EffectContext, result: Extract<AbilityDomainEvent,
   return { type: "ABILITY_RESULT", instanceId: context.ability.instanceId, definitionId: context.ability.definitionId, owner: context.ability.owner, result };
 }
 
-export function applyEffect(effect: Effect, context: EffectContext, pending: { turn?: PendingTurn; draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
+export function applyEffect(effect: Effect, context: EffectContext, pending: { turn?: PendingTurn; aiThreshold?: PendingAiThreshold; draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
   let world = context.world;
   let turn = pending.turn;
+  let aiThreshold = pending.aiThreshold;
   let draw = pending.draw;
   let load = pending.load;
   let bust = pending.bust;
@@ -58,7 +59,7 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { t
   // intentionally match-global and has no target selector.
   const actor = "target" in effect ? resolveActor(effect.target, context) : "player";
   if (!actor) throw new Error(`Cannot resolve actor selector: ${(effect as { readonly target?: unknown }).target ?? "unknown"}`);
-  const changed = (effectType: string): void => { events.push({ type: "PENDING_EVENT_MODIFIED", eventId: turn?.id ?? draw?.id ?? load?.id ?? bust?.id ?? trigger?.id ?? context.event.sourceEventId, effectType, sourceInstanceId: context.ability.instanceId }); };
+  const changed = (effectType: string): void => { events.push({ type: "PENDING_EVENT_MODIFIED", eventId: turn?.id ?? aiThreshold?.id ?? draw?.id ?? load?.id ?? bust?.id ?? trigger?.id ?? context.event.sourceEventId, effectType, sourceInstanceId: context.ability.instanceId }); };
   switch (effect.type) {
     case "skip-turn": {
       if (!turn) throw new Error("skip-turn outside turn-start event");
@@ -68,6 +69,14 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { t
         turn = { ...turn, skipped: true, skipSourceInstanceId: context.ability.instanceId };
         changed(effect.type);
       }
+      break;
+    }
+    case "add-to-pending-ai-threshold": {
+      if (!aiThreshold) throw new Error("add-to-pending-ai-threshold outside AI decision event");
+      if (aiThreshold.actor !== actor) throw new Error("Pending AI threshold actor does not match effect target");
+      aiThreshold = { ...aiThreshold, bySkill: aiThreshold.bySkill + resolveScalar(effect.amount, context) };
+      if (!Number.isFinite(aiThreshold.bySkill)) throw new Error("Pending AI skill threshold modifier must be finite");
+      changed(effect.type);
       break;
     }
     case "add-skill-draws": {
@@ -395,14 +404,14 @@ export function applyEffect(effect: Effect, context: EffectContext, pending: { t
       break;
     }
   }
-  return { world, pendingTurn: turn, pendingDraw: draw, pendingLoad: load, pendingBust: bust, pendingTrigger: trigger, pendingComparison: comparison, runtime, events };
+  return { world, pendingTurn: turn, pendingAiThreshold: aiThreshold, pendingDraw: draw, pendingLoad: load, pendingBust: bust, pendingTrigger: trigger, pendingComparison: comparison, runtime, events };
 }
 
-export function applyEffects(effects: readonly Effect[], context: EffectContext, pending: { turn?: PendingTurn; draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
-  let result: AbilityEffectResult = { world: context.world, pendingTurn: pending.turn, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, runtime: context.runtime, events: [] };
+export function applyEffects(effects: readonly Effect[], context: EffectContext, pending: { turn?: PendingTurn; aiThreshold?: PendingAiThreshold; draw?: PendingDraw; load?: PendingLoad; bust?: import("./types").PendingBustCheck; trigger?: PendingTrigger; comparison?: PendingComparison } = {}): AbilityEffectResult {
+  let result: AbilityEffectResult = { world: context.world, pendingTurn: pending.turn, pendingAiThreshold: pending.aiThreshold, pendingDraw: pending.draw, pendingLoad: pending.load, pendingBust: pending.bust, pendingTrigger: pending.trigger, pendingComparison: pending.comparison, runtime: context.runtime, events: [] };
   for (const effect of effects) {
-    const next = applyEffect(effect, { ...context, world: result.world, runtime: result.runtime }, { turn: result.pendingTurn, draw: result.pendingDraw, load: result.pendingLoad, bust: result.pendingBust, trigger: result.pendingTrigger, comparison: result.pendingComparison });
-    result = { world: next.world, pendingTurn: next.pendingTurn, pendingDraw: next.pendingDraw, pendingLoad: next.pendingLoad, pendingBust: next.pendingBust, pendingTrigger: next.pendingTrigger, pendingComparison: next.pendingComparison, runtime: next.runtime, events: [...result.events, ...next.events] };
+    const next = applyEffect(effect, { ...context, world: result.world, runtime: result.runtime }, { turn: result.pendingTurn, aiThreshold: result.pendingAiThreshold, draw: result.pendingDraw, load: result.pendingLoad, bust: result.pendingBust, trigger: result.pendingTrigger, comparison: result.pendingComparison });
+    result = { world: next.world, pendingTurn: next.pendingTurn, pendingAiThreshold: next.pendingAiThreshold, pendingDraw: next.pendingDraw, pendingLoad: next.pendingLoad, pendingBust: next.pendingBust, pendingTrigger: next.pendingTrigger, pendingComparison: next.pendingComparison, runtime: next.runtime, events: [...result.events, ...next.events] };
   }
   return result;
 }

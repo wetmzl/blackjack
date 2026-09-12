@@ -3,7 +3,7 @@ import { allConditionsPass } from "./conditions";
 import { applyEffects } from "./effects";
 import { ABILITY_CATALOG_VERSION, getAbilityDefinition, getStatusDefinition, supportsAbilitySourceKind, type AbilityRegistry } from "./registry";
 import { addAbilityInstance, canConsumeRule, consumeAbilityTriggerTtl, consumeRule, isAbilityInstanceExpired } from "./runtime";
-import type { AbilityDefinition, AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn } from "./types";
+import type { AbilityDefinition, AbilityDomainEvent, AbilityEventContext, AbilityEffectResult, AbilityInstance, AbilityRuntimeState, AbilityWorld, PendingAiThreshold, PendingBustCheck, PendingComparison, PendingDraw, PendingLoad, PendingTrigger, PendingTurn } from "./types";
 
 const MAX_ABILITY_DEPTH = 16;
 export class AbilityResolutionError extends Error {
@@ -37,7 +37,7 @@ function collect(runtime: AbilityRuntimeState, trigger: AbilityEventContext["tri
   return rules.sort((left, right) => (left.rule.priority ?? 0) - (right.rule.priority ?? 0) || left.instance.createdAtSequence - right.instance.createdAtSequence || left.index - right.index);
 }
 
-export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingTurn?: PendingTurn; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; readonly forecastHitBust?: import("./effects").EffectContext["forecastHitBust"]; }
+export interface AbilityResolutionInput { readonly world: AbilityWorld; readonly runtime: AbilityRuntimeState; readonly event: AbilityEventContext; readonly pendingTurn?: PendingTurn; readonly pendingAiThreshold?: PendingAiThreshold; readonly pendingDraw?: PendingDraw; readonly pendingLoad?: PendingLoad; readonly pendingBust?: PendingBustCheck; readonly pendingTrigger?: PendingTrigger; readonly pendingComparison?: PendingComparison; readonly directInstanceId?: string; readonly depth?: number; readonly chain?: readonly string[]; readonly registry?: AbilityRegistry; readonly publishAdvice?: import("./effects").EffectContext["publishAdvice"]; readonly forecastHitBust?: import("./effects").EffectContext["forecastHitBust"]; }
 export interface AbilityResolution extends AbilityEffectResult { readonly triggered: readonly string[]; }
 
 export interface PlayAbilityInput extends Omit<AbilityResolutionInput, "event" | "directInstanceId"> {
@@ -120,6 +120,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
   let runtime = input.runtime;
   world = { ...world, statuses: runtime.statuses };
   let pendingTurn = input.pendingTurn;
+  let pendingAiThreshold = input.pendingAiThreshold;
   let pendingDraw = input.pendingDraw;
   let pendingLoad = input.pendingLoad;
   let pendingBust = input.pendingBust;
@@ -134,14 +135,15 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
   for (const entry of collect(runtime, event.trigger, input.directInstanceId, input.registry)) {
     const liveInstance = runtime.instances.find((instance) => instance.instanceId === entry.instance.instanceId);
     if (!liveInstance || isAbilityInstanceExpired(liveInstance)) continue;
-    const context = { world, ability: liveInstance, event: { ...event, pendingTurn, pendingDraw, pendingBust } };
+    const context = { world, ability: liveInstance, event: { ...event, pendingTurn, pendingAiThreshold, pendingDraw, pendingBust } };
     if (!allConditionsPass(entry.rule.conditions, context)) continue;
     if (!canConsumeRule(runtime, entry.instance.instanceId, entry.rule.id, entry.rule.limit, event.sourceEventId)) continue;
     try {
       const abilityRng = SeededRng.fromSnapshot(runtime.rng);
-      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, publishAdvice: input.publishAdvice, forecastHitBust: input.forecastHitBust }, { turn: pendingTurn, draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger, comparison: pendingComparison });
+      const result = applyEffects(entry.rule.effects, { ...context, rng: abilityRng, runtime, registry: input.registry, ruleId: entry.rule.id, publishAdvice: input.publishAdvice, forecastHitBust: input.forecastHitBust }, { turn: pendingTurn, aiThreshold: pendingAiThreshold, draw: pendingDraw, load: pendingLoad, bust: pendingBust, trigger: pendingTrigger, comparison: pendingComparison });
       world = result.world;
       pendingTurn = result.pendingTurn;
+      pendingAiThreshold = result.pendingAiThreshold;
       pendingDraw = result.pendingDraw;
       pendingLoad = result.pendingLoad;
       pendingBust = result.pendingBust;
@@ -165,7 +167,7 @@ export function resolveAbilityEvent(input: AbilityResolutionInput): AbilityResol
       throw new AbilityResolutionError(`${entry.instance.instanceId}/${entry.rule.id}: ${reason}`, [...triggered, `${entry.instance.instanceId}:${entry.rule.id}`], { instanceId: entry.instance.instanceId, definitionId: entry.instance.definitionId, ruleId: entry.rule.id });
     }
   }
-  return { world, pendingTurn, pendingDraw, pendingLoad, pendingBust, pendingTrigger, pendingComparison, runtime, events, triggered };
+  return { world, pendingTurn, pendingAiThreshold, pendingDraw, pendingLoad, pendingBust, pendingTrigger, pendingComparison, runtime, events, triggered };
 }
 
 export { MAX_ABILITY_DEPTH };

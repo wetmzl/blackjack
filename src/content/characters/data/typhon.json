@@ -108,7 +108,9 @@
     "B": 1,
     "C": 1
   },
-  "aiSkills": [],
+  "aiSkills": [
+    { "definitionId": "typhon-eternal-hunt", "enabled": true, "parameters": {} }
+  ],
   "dialogue": {
     "MATCH_START": [
       "你打你的，不用管我。",

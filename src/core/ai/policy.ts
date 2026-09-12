@@ -31,22 +31,24 @@ function assertNoise(noise: AiNoiseState): void {
   }
 }
 
-export function calculateAiThreshold(observation: MatchObservation, profile: AiProfile, noise: AiNoiseState): number {
+export function calculateAiThreshold(observation: MatchObservation, profile: AiProfile, noise: AiNoiseState, bySkill = 0): number {
   assertFiniteProfile(profile);
   assertNoise(noise);
+  if (!Number.isFinite(bySkill)) throw new RangeError("AI skill threshold modifier must be finite");
   const bulletDifference = observation.roulette.playerBullets - observation.roulette.opponentBullets;
-  return 16 + profile.P + 0.1 * profile.A * bulletDifference + profile.B * noise.match + profile.C * noise.play;
+  return 16 + profile.P + 0.1 * profile.A * bulletDifference + profile.B * noise.match + profile.C * noise.play + bySkill;
 }
 
-export function decideAiAction(observation: MatchObservation, profile: AiProfile, noise: AiNoiseState): AiDecision {
+export function decideAiAction(observation: MatchObservation, profile: AiProfile, noise: AiNoiseState, bySkill = 0): AiDecision {
   const side = observation.viewer === "player" ? observation.player : observation.opponent;
   const knownCards = side.cards.filter((card): card is Card => card !== null);
   const value = knownCards.length === 0 ? 0 : handValue({ cards: knownCards });
   const bulletDifference = observation.roulette.playerBullets - observation.roulette.opponentBullets;
-  const threshold = calculateAiThreshold(observation, profile, noise);
+  const threshold = calculateAiThreshold(observation, profile, noise, bySkill);
   return {
     handValue: value,
     threshold,
+    bySkill,
     bulletDifference,
     matchNoise: noise.match,
     playNoise: noise.play,

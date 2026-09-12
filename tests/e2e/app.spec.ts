@@ -1100,7 +1100,7 @@ test("刺玫在击败三名不同对手后解锁并可进入牌桌", async ({ pa
   await expect.poll(() => page.locator(".character-portrait").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1536);
 });
 
-test("提丰在击败五名不同对手后解锁且角色技能保持为空", async ({ page }) => {
+test("提丰在击败五名不同对手后解锁且显示永恒狩猎", async ({ page }) => {
   const imported = saveWithDefeats("plume", "irene", "texas", "w");
   imported.settings.reducedMotion = true;
   const activeMatch = playerWinSummary("nian");
@@ -1117,7 +1117,8 @@ test("提丰在击败五名不同对手后解锁且角色技能保持为空", as
   await ensureGuestCandidate(page, "typhon");
   await inviteCharacter(page, "typhon");
   await expect(page.locator("#profile")).toContainText("萨米猎人，萨卡兹族，感染者");
-  await expect(page.locator("#profile .profile-abilities")).toHaveCount(0);
+  await expect(page.locator("#profile .profile-ability")).toHaveCount(1);
+  await expect(page.locator("#profile .profile-ability summary strong")).toHaveText("永恒狩猎");
   await page.locator("#profile [data-profile-start]").click();
   await expect(page.locator("main.table-shell")).toBeVisible({ timeout: 8_000 });
   await expect(page.locator(".character-portrait")).toHaveAttribute("src", /typhon-relaxed\.png/);

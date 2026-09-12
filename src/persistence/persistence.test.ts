@@ -155,6 +155,20 @@ describe("runtime save schema and validation", () => {
     expect(imported.activeMatch.opponent.stood).toBe(false);
   });
 
+  it("defaults bySkill to zero when restoring an older AI decision", () => {
+    const match = createMatch("legacy-ai-decision");
+    const legacyDecision = { handValue: 16, threshold: 16, bulletDifference: 0, matchNoise: 0, playNoise: 0, action: "hit" };
+    const runtime = createRuntimeSave({
+      ...match,
+      lastAiDecision: legacyDecision,
+      history: [...match.history, { type: "AI_DECISION", decision: legacyDecision }]
+    } as unknown as MatchState, NOW);
+    const imported = validateRuntimeSave(JSON.parse(JSON.stringify(runtime)) as unknown);
+
+    expect(imported.activeMatch.lastAiDecision?.bySkill).toBe(0);
+    expect(imported.activeMatch.history.at(-1)).toMatchObject({ type: "AI_DECISION", decision: { bySkill: 0 } });
+  });
+
   it("round-trips intelligence reports and direct gun-load results", () => {
     const match = createMatch("new-player-skill-events");
     const events = [

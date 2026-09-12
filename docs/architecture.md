@@ -91,7 +91,9 @@ Player Skill、AI Skill、Talent 和状态共享 `src/core/abilities/` 的执行
 - `runtime.ts` 管理实例、状态、计数、生命周期和能力随机流。
 - card/roulette adapter 为受控状态变更提供窄接口。
 
-能力使用 `owner` / `rival` 等相对语义，不写死玩家、与会者或角色。待回合、待抽牌、待装填和待扣扳机通过受控 pending event 修改；单条能力解析失败时保持原子性，基础行动仍可安全继续。`before-turn` 打开待回合窗口，`pending-turn-can-skip` 只在另一方仍可行动时成立，`skip-turn` 记录 `TURN_SKIPPED` 后交出决策权，不写入 Hit/Stand 事实或 `stood`。一次连续交接中每名角色最多被跳过一次，避免双方规则互相触发形成死循环。
+能力使用 `owner` / `rival` 等相对语义，不写死玩家、与会者或角色。待回合、待 AI 点数阈值、待抽牌、待装填和待扣扳机通过受控 pending event 修改；单条能力解析失败时保持原子性，基础行动仍可安全继续。`before-turn` 打开待回合窗口，`pending-turn-can-skip` 只在另一方仍可行动时成立，`skip-turn` 记录 `TURN_SKIPPED` 后交出决策权，不写入 Hit/Stand 事实或 `stood`。一次连续交接中每名角色最多被跳过一次，避免双方规则互相触发形成死循环。
+
+AI 正式决策前由 `before-ai-decision` 打开一次事件级阈值窗口，初值 `bySkill = 0`。能力只能通过 `add-to-pending-ai-threshold` 向对应行动者累加有限数值，最终公式为 `T = 16 + P + 0.1 × A × (Bp - Ba) + B × Rmatch + C × Rplay + bySkill`；窗口随本次决策结束，不写回角色配置或跨决策保存。AI 策略本身仍只接收过滤后的 observation 和已合成的 `bySkill`，不读取能力运行时。能力规则中的手牌比较使用基础手牌点数，不包含 pending comparison 的点数优势。
 
 被动 Player Skill 与被动 AI Skill 的 Definition 必须声明按回合或按成功触发次数计算的有限 TTL。实例化时把初始值写入运行时；规则成功提交后才扣触发 TTL，`on-round-end` 完成后才扣回合 TTL。归零实例不再进入普通规则收集，玩家实例同时移除对应真实卡牌并释放库存位；该实例创建的状态同步过期，随后可安全回收来源实例。Talent 和主动卡不使用 TTL。
 

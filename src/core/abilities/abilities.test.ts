@@ -32,6 +32,31 @@ const relativeFixture = {
 } as const;
 
 describe("ability schemas and immutable registry", () => {
+  it("composes temporary AI threshold modifiers through one pending bySkill value", () => {
+    const registry = createAbilityRegistry([1, 2].map((amount) => ({
+      id: `ai-threshold-${amount}`,
+      name: `threshold ${amount}`,
+      description: "fixture",
+      sourceKind: "ai-skill",
+      primaryDomain: "gambler",
+      activation: { type: "automatic" },
+      tags: ["test-fixture"],
+      rules: [{ id: "modify", trigger: "before-ai-decision", effects: [{ type: "add-to-pending-ai-threshold", target: "owner", amount }] }]
+    })));
+    const instances = [mechanic("ai-threshold-1", "opponent", "threshold-1", 1), mechanic("ai-threshold-2", "opponent", "threshold-2", 2)];
+    const runtime = { ...createAbilityRuntime(createRng("threshold-composition").snapshot()), instances, sequence: 2 };
+    const result = resolveAbilityEvent({
+      world: world(),
+      runtime,
+      registry,
+      event: { trigger: "before-ai-decision", sourceEventId: "ai-threshold", eventActor: "opponent" },
+      pendingAiThreshold: { id: "ai-threshold", actor: "opponent", bySkill: 0 }
+    });
+
+    expect(result.pendingAiThreshold).toEqual({ id: "ai-threshold", actor: "opponent", bySkill: 3 });
+    expect(result.events.filter((event) => event.type === "PENDING_EVENT_MODIFIED")).toHaveLength(2);
+  });
+
   it("applies parameter defaults and rejects missing, unknown, and out-of-range values", () => {
     const registry = createAbilityRegistry([{
       id: "parameter-fixture", name: "parameter", description: "fixture", sourceKind: "ai-skill", primaryDomain: "cheater",
@@ -48,9 +73,9 @@ describe("ability schemas and immutable registry", () => {
   });
 
   it("registers three disjoint ability domains as deeply frozen data", () => {
-    expect(ABILITY_DEFINITIONS).toHaveLength(43);
+    expect(ABILITY_DEFINITIONS).toHaveLength(44);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "player-skill")).toHaveLength(23);
-    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(19);
+    expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "ai-skill")).toHaveLength(20);
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind === "talent")).toHaveLength(1);
     expect(getAbilityDefinition("silent-drizzle")).toMatchObject({ name: "细雨无声", activation: { type: "automatic" } });
     expect(ABILITY_DEFINITIONS.filter((definition) => definition.sourceKind !== "talent").every((definition) => definition.rules.length > 0)).toBe(true);

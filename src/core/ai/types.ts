@@ -52,6 +52,8 @@ export interface MatchObservation {
 export interface AiDecision {
   readonly handValue: number;
   readonly threshold: number;
+  /** Event-scoped threshold modifier composed by the ability system. */
+  readonly bySkill: number;
   readonly bulletDifference: number;
   readonly matchNoise: number;
   readonly playNoise: number;
